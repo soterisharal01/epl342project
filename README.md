@@ -29,7 +29,7 @@
 
 1. ✓ Λίστα οντοτήτων
 2. ✓ Μοντέλο Chen ER (σημειογραφία Elmasri/Navathe, διαλέξεις 4-6): 53 οντότητες, 92 συσχετίσεις
-3. ✓ Σχεσιακό σχήμα T-SQL: 62 πίνακες, 74 έλεγχοι περιορισμών περνούν σε SQL Server 2025 (17/10/26)
+3. ✓ Σχεσιακό σχήμα T-SQL: 62 πίνακες, 76 έλεγχοι περιορισμών περνούν σε SQL Server 2025 (17/10/26)
    - ✓ Ολόκληρο το ER ως αρχείο ERD+ (`er-model/mdms-er.erdplus`), εισήχθη επιτυχώς στο ERD+ (10/10/26)
    - ✱ **Το έγγραφο της Φάσης Α**: πρώτο σχέδιο στο `deliverables/phase-a/phase-a.docx` (από το `er-model/phase-a-doc.js`). Λείπουν η εικόνα από το ERD+, ο αριθμός ομάδας και τα ονόματα, και ο έλεγχος. Τι μένει και ποιος το κάνει: πίνακας στο `COLLABORATION.md`.
 4. ○ Scripts create/drop + λίγα δεδομένα
@@ -57,12 +57,12 @@
 | `p.txt` | Κείμενο της εκφώνησης (pdftotext), το χρειάζεται το `check.js` |
 | `DECISIONS.md` | Όλες οι αποφάσεις D1-D32, συγκρούσεις C1-C7, παραδοχές, συμβάσεις σχήματος T1-T10, 21 κανόνες Φάσης Β, ιστορικό αλλαγών, οντότητες ανά περιοχή. Παράγεται από τον κώδικα. |
 | **Παραδοτέα / αποτελέσματα** | |
-| `er-model/mdms-er.erdplus` | Ολόκληρο το ER για το ERD+ (Import στη σελίδα diagrams του erdplus.com). 53 οντότητες, 92 συσχετίσεις, 221 γνωρίσματα. |
+| `er-model/mdms-er.erdplus` | Ολόκληρο το ER για το ERD+ (Import στη σελίδα diagrams του erdplus.com). 53 οντότητες, 92 συσχετίσεις, 222 γνωρίσματα. |
 | `er-model/mdms-er-preview.png` | Προεπισκόπηση της διάταξης του αρχείου ERD+ |
-| `er-model/create.sql` | Το σχεσιακό σχήμα T-SQL (62 πίνακες, 101 FK, 108 CHECK, 18 UNIQUE + 3 filtered UNIQUE) |
+| `er-model/create.sql` | Το σχεσιακό σχήμα T-SQL (62 πίνακες, 324 στήλες, 101 FK, 106 CHECK, 18 UNIQUE + 3 filtered UNIQUE) |
 | `er-model/drop.sql` | Σβήνει όλους τους πίνακες με αντίστροφη σειρά |
-| `er-model/test.sql` | Δείγμα δεδομένων + 74 έλεγχοι περιορισμών (ο καθένας σε transaction που γίνεται rollback) |
-| `er-model/test-results.json`, `test-env.json` | Αποτελέσματα του τελευταίου τρεξίματος (74/74 OK, SQL Server 2025 CU9, 17/10/26) |
+| `er-model/test.sql` | Δείγμα δεδομένων + 76 έλεγχοι περιορισμών (ο καθένας σε transaction που γίνεται rollback) |
+| `er-model/test-results.json`, `test-env.json` | Αποτελέσματα του τελευταίου τρεξίματος (76/76 OK, SQL Server 2025 CU9, 17/10/26) |
 | `er-model/mdms-er.html` | Σελίδα του μοντέλου ER στα ελληνικά: κάθε οντότητα/συσχέτιση με παραπομπή, αποφάσεις, οδηγίες ERD+ ανά σχήμα. Ανοίγει σε browser. |
 | `er-model/mdms-schema.html` | Σελίδα του σχήματος: πίνακες, στήλες, περιορισμοί, έλεγχοι, κανόνες Φάσης Β. Ανοίγει σε browser. |
 | `er-model/weak-entities-check.md` | Πίνακας ελέγχου (1,1) για τις weak entities |
@@ -71,7 +71,7 @@
 | `er-model/model.js` | **Πηγή αλήθειας**: περιοχές, οντότητες, γνωρίσματα, συσχετίσεις (άκρα, cardinality, ολική συμμετοχή, ρόλοι, `fk` renames), αποφάσεις, συγκρούσεις, παραδοχές |
 | `er-model/sources.js` | Παραπομπές S1-S79 (κείμενο εκφώνησης + σελίδα) και L1-L16 (διαλέξεις, Εργασία 1) |
 | `er-model/schema.js` | Αντιστοίχιση ER → σχεσιακό (Elmasri κεφ. 9): τύποι στηλών (TYPES), CHECK (CHECKS), filtered indexes, RULES, συμβάσεις SDEC. Γράφει `create.sql`, `drop.sql`. |
-| `er-model/tests.js` | Ορίζει τους 74 ελέγχους, γράφει `test.sql` |
+| `er-model/tests.js` | Ορίζει τους 76 ελέγχους, γράφει `test.sql` |
 | `er-model/runtests.sh`, `counts.sql` | Τρέχει create → tests → drop → create σε Docker SQL Server 2025 |
 | `er-model/erdplus-export.js` | Γράφει το `mdms-er.erdplus` από το `model.js` |
 | `er-model/layout-grid.js` | Διάταξη πλέγματος για το αρχείο ERD+ (simulated annealing, seed 10) |
@@ -86,7 +86,7 @@
 
 ```bash
 cd er-model
-npm i                                   # μόνο το @viz-js/viz
+npm i                                   # @viz-js/viz, docx και (dev) playwright
 node erdplus-check.js                   # "errors": [] = το .erdplus ταιριάζει με το model.js
 node check.js                           # παραπομπές στο ../p.txt (γνωστές προειδοποιήσεις: S18 και S55 γιατί το pdftotext κολλά λέξεις σε αλλαγή γραμμής, S62 γιατί είναι λίστα κωδικών OBIS· το κείμενο υπάρχει στις σελ. 6, 10, 15)
 node checkwhole.js

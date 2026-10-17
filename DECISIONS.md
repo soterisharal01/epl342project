@@ -111,7 +111,7 @@ Generated from er-model/model.js and er-model/schema.js (the source of truth); d
 
 **T6. Numbers.** Energy, voltage and current are DECIMAL(15,4), since the sample packet has four decimals; sums are DECIMAL(18,4). Money is DECIMAL(12,2), fees DECIMAL(10,2). Coordinates are DECIMAL(9,6) (about 0.1 m), with range CHECKs. _(S64, S16)_
 
-**T7. Fixed lists are CHECKs, open lists are tables.** A status or type whose values the spec fixes has a CHECK ... IN (...) list. Where the spec wants new values without a change of structure (meter models, communication types, supply schemes, OBIS codes, VEE methods), the values are rows of a table, and VEE_RULE.RuleType has no fixed list. _(S60, S44)_
+**T7. Fixed lists are CHECKs, open lists are tables.** A status or type whose values the spec fixes has a CHECK ... IN (...) list. Where the spec wants new values without a change of structure (meter models, communication types, supply schemes, OBIS codes, VEE methods), the values are rows of a table. Types the spec gives only as examples or wants extensible have no fixed list: METER_MODEL.MeterType (with PhaseCount 1-3 for the phase rule), REMOTE_COMMAND.CommandType, EVENT.EventType and VEE_RULE.RuleType. The CHECKs that compare one of their values (Load shed, Unmatched packet) still work. _(S60, S44, S36, S19)_
 
 **T8. ON DELETE.** CASCADE only from an owner to rows that are part of it: multivalued attributes, M:N rows, AVAILABILITY, TASK_NOTE, COMMAND_ATTEMPT and READING_EDIT (the retention purge deletes the edits with their reading). Every other foreign key is NO ACTION, so deleting an account, meter or premise that has history fails instead of erasing that history. _(S39, S49, D19, D29)_
 
@@ -134,7 +134,7 @@ Generated from er-model/model.js and er-model/schema.js (the source of truth); d
 | R9 | field | An installation is done in an Installation or Replacement task whose premise is the installation's premise. When a task or request names a premise and a meter, the meter is installed there at that date. | trigger | D24, D26 |
 | R10 | meters | The installations of a meter do not overlap, and METER.Status follows its open installation (Active only while it is Confirmed). | trigger | D10, S38 |
 | R11 | meters | A meter has at least one document, and one of each equipment type, Accepted, before CONFIRMS may set Confirmed. | procedure | S37, S38 |
-| R12 | meters | A Single-Phase meter has one connected phase and a Three-Phase meter three. | trigger | S36 |
+| R12 | meters | A meter has as many connected phases (METER_CONNECTED_PHASE rows) as the PhaseCount of its model, for example one for Single-Phase and three for Three-Phase. | trigger | S36 |
 | R13 | meters | A shedding order creates one Load shed command for every Active meter SERVED_BY its transformer, so it has at least one. Order status follows its commands, and command status follows its attempts. | procedure | D11, D24 |
 | R14 | telemetry | A finalized reading (RunID set) is immutable: its value and status never change, and it gets no more edits. | trigger | S49, S50 |
 | R15 | telemetry | A reading from a packet has the packet's meter, and an event from a packet has the packet's meter as EVENT_ON. | trigger | D24 |
@@ -190,6 +190,12 @@ Generated from er-model/model.js and er-model/schema.js (the source of truth); d
 - An aggregate row is written once, when every reading of its period is final, so a reading that becomes final in a later VEE run is not left out. The current-state table is computed from the latest final readings, ignoring missing ones, instead of copying a 15-minute aggregate. _(S49, S72, S75, D13)_
 - Manual estimate is a third Origin of READING_EDIT, as Figure 3 names manual estimation. A received value that is estimated keeps its ReceivedValue. Load shedding targets only Active meters, since a Retired meter could never send an ACK. _(S75, S6, D11)_
 - The ERD+ guide lists the foreign-key columns to rename after the conversion, so that no table ends up with two UserID columns. _(L9)_
+
+### Fifth review (review of the second Claude, 17/10/26)
+
+- METER_MODEL.MeterType is an open list and the new attribute PhaseCount (1-3) carries the phase rule R12, because the spec gives the meter types only as an example and wants new meter types without a change of structure. _(S36, S60)_
+- REMOTE_COMMAND.CommandType and EVENT.EventType lost their fixed lists for the same reason: the spec lists events only as examples, and new telemetry protocols bring new events and commands. The CHECKs on Load shed and Unmatched packet still hold. _(S19, S60)_
+- Two new tests (a new meter type is accepted, a model with 4 phases is refused): 76/76 on SQL Server 2025.
 
 ### Fourth review (plain ER, 9/10/26)
 

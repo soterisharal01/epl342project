@@ -128,7 +128,7 @@ footer { color: var(--muted); font-size: 0.88rem; }
           <li><b>3ος έλεγχος:</b> το HOLDING έγινε weak entity (κάθε περίοδος κατοχής υποστατικού είναι δική της γραμμή), το READING κρατά δύο τιμές (ReceivedValue, UsedValue), και τα αθροίσματα γράφονται μία φορά, όταν όλες οι μετρήσεις της περιόδου γίνουν οριστικές.</li>
           <li><b>4ος έλεγχος (9/10):</b> με δική σου απόφαση, απλό ER χωρίς EER. Οι 7 ρόλοι έγιναν weak entities του USER_ACCOUNT, και οι SUPPLIER και AGGREGATOR δύο ξεχωριστές οντότητες.</li>
         </ul>
-        <p>Αποτέλεσμα: 53 οντότητες (16 weak), 92 συσχετίσεις, 221 γνωρίσματα. Η σελίδα είναι το <a href="https://claude.ai/artifact/8m249QKjvQKEdPWzo1HdbW">Μοντέλο ER</a>.</p>
+        <p>Αποτέλεσμα: 53 οντότητες (16 weak), 92 συσχετίσεις, 222 γνωρίσματα. Η σελίδα είναι το <a href="https://claude.ai/artifact/8m249QKjvQKEdPWzo1HdbW">Μοντέλο ER</a>.</p>
       </div>
     </li>
     <li>
@@ -136,7 +136,7 @@ footer { color: var(--muted); font-size: 0.88rem; }
       <div class="step">
         <h3>Βήμα 3: Το σχεσιακό σχήμα σε T-SQL</h3>
         <p>Το ER μετατράπηκε σε πίνακες με τον αλγόριθμο του βιβλίου (Elmasri κεφ. 9): κάθε οντότητα γίνεται πίνακας, κάθε 1:N γίνεται ξένο κλειδί στην πλευρά N, κάθε M:N γίνεται δικός της πίνακας, κάθε πλειότιμο γνώρισμα δικός του πίνακας. Μετά προστέθηκαν τύποι, NOT NULL, UNIQUE και CHECK.</p>
-        <p>Αποτέλεσμα: 62 πίνακες (37 κανονικές οντότητες, 16 weak, 7 M:N, 2 πλειότιμα γνωρίσματα), 101 FK, 108 CHECK. Γράφτηκαν 71 έλεγχοι (74 από τις 17/10) που δοκιμάζουν κάθε περιορισμό σε πραγματικό SQL Server 2025 και πέρασαν όλοι. Η σελίδα είναι το <a href="https://claude.ai/artifact/28B9Bgi5SprzfBVzJWyB12">Σχεσιακό σχήμα</a>.</p>
+        <p>Αποτέλεσμα: 62 πίνακες (37 κανονικές οντότητες, 16 weak, 7 M:N, 2 πλειότιμα γνωρίσματα), 101 FK, 106 CHECK. Γράφτηκαν 71 έλεγχοι (76 από τις 17/10) που δοκιμάζουν κάθε περιορισμό σε πραγματικό SQL Server 2025 και πέρασαν όλοι. Η σελίδα είναι το <a href="https://claude.ai/artifact/28B9Bgi5SprzfBVzJWyB12">Σχεσιακό σχήμα</a>.</p>
         <p class="why">Ό,τι δεν μπορεί να γίνει CHECK, γιατί χρειάζεται να κοιτάξει άλλη γραμμή ή άλλο πίνακα, γράφτηκε ως ένας από τους 21 κανόνες της Φάσης Β (triggers και stored procedures).</p>
       </div>
     </li>
@@ -164,8 +164,8 @@ footer { color: var(--muted); font-size: 0.88rem; }
 
   <h3>Τι επιβεβαίωσα</h3>
   <div class="items">
-    <div class="item"><span class="tag ok">σωστό</span><p><b>Το αρχείο ERD+ ταιριάζει ακριβώς με το μοντέλο.</b> Το <code>erdplus-check.js</code> βρίσκει 53 οντότητες, 92 συσχετίσεις, 21 identifying, 221 γνωρίσματα και 0 σφάλματα.</p></div>
-    <div class="item"><span class="tag ok">σωστό</span><p><b>Το <code>create.sql</code> είναι ενημερωμένο.</b> Το ξαναπαρήγαγα από το μοντέλο και βγήκε ίδιο byte προς byte. Ξανάτρεξα όλους τους ελέγχους σε SQL Server 2025 στις 17/10: 74/74 σωστοί (οι 71 παλιοί και 3 νέοι για το GDPR).</p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Το αρχείο ERD+ ταιριάζει ακριβώς με το μοντέλο.</b> Το <code>erdplus-check.js</code> βρίσκει 53 οντότητες, 92 συσχετίσεις, 21 identifying, 222 γνωρίσματα και 0 σφάλματα.</p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Το <code>create.sql</code> είναι ενημερωμένο.</b> Το ξαναπαρήγαγα από το μοντέλο και βγήκε ίδιο byte προς byte. Ξανάτρεξα όλους τους ελέγχους σε SQL Server 2025 στις 17/10: 74/74 σωστοί (οι 71 παλιοί και 3 νέοι για το GDPR). Μετά τον έλεγχο του δεύτερου Claude (PR #2): 76/76, με το νέο PhaseCount και ανοιχτές λίστες για MeterType, CommandType, EventType.</p></div>
     <div class="item"><span class="tag ok">σωστό</span><p><b>Οι ρόλοι ως weak entities χωρίς partial key στηρίζονται στη διάλεξη.</b> Η διάλεξη λέει ότι το partial key είναι «(Προαιρετικά)» και ότι η identifying συσχέτιση είναι «Πάντα 1:1 ή 1:N».</p><p class="ev"><span class="src">διαφ. 5-14</span> <span class="src">διαφ. 5-15</span></p></div>
     <div class="item"><span class="tag ok">σωστό</span><p><b>Ο κανόνας «η weak entity συμμετέχει πάντα ολικά» ισχύει και στις 21 identifying συσχετίσεις.</b></p><p class="ev"><span class="src">διαφ. 5-15</span> <code>weak-entities-check.md</code></p></div>
     <div class="item"><span class="tag ok">σωστό</span><p><b>Η επιλογή απλού ER αντί για EER έχει βάση.</b> Η Φάση Α ζητά «Chen ER», η Εργασία 1 έλεγε «ER – όχι EER», και η διάλεξη λέει ότι κάθε EER γράφεται σε ER με κάποια απώλεια νοήματος, που τη χειρίζεται το πρόγραμμα της βάσης. Αυτό ακριβώς κάνει ο κανόνας R1 της Φάσης Β.</p><p class="ev"><span class="src">εκφ. σελ. 2</span> <span class="src">as1 σελ. 1</span> <span class="src">διαφ. 6-39</span></p></div>
