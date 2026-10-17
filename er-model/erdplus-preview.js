@@ -2,8 +2,9 @@
 // ERD+ shape sizes, and counts shapes that would overlap. Used to check the export before importing it.
 const fs = require('fs');
 const path = require('path');
-const FILE = process.argv[2] || path.join(__dirname, 'mdms-er.erdplus');
-const OUT = process.argv[3] || FILE.replace(/\.erdplus$/, '-preview.svg');
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const FILE = args[0] || path.join(__dirname, 'mdms-er.erdplus');
+const OUT = args[1] || FILE.replace(/\.erdplus$/, process.argv.includes('--card') ? '-card.svg' : '-preview.svg');
 const doc = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 const CH = 7.5; // px per character at the ERD+ font size (estimate)
 // anchor: the size the export assumed when it turned centres into top-left corners (erdplus-export.js ERD)
@@ -48,7 +49,22 @@ for (const b of box.values()) {
   }
   const t = d.name || d.text;
   const deco = b.s.type === 'Attribute' && d.isUnique ? (weakOwners.has(attrOwner.get(d.id)) ? ' text-decoration="underline" style="text-decoration-style:dashed"' : ' text-decoration="underline"') : '';
-  parts.push(`<text x="${b.cx}" y="${b.cy + 5}" font-family="Arial" font-size="13" text-anchor="middle"${deco}>${esc(t)}</text>`);
+  // names wider than their shape are squeezed to fit (Arial 13px is about 8px per capital letter)
+  const fit = b.s.type !== 'Label' && String(t).length * 8 > b.w - 10 ? ` textLength="${b.w - 10}" lengthAdjust="spacingAndGlyphs"` : '';
+  parts.push(`<text x="${b.cx}" y="${b.cy + 5}" font-family="Arial" font-size="13" text-anchor="middle"${deco}${fit}>${esc(t)}</text>`);
+}
+// --card: also print each entity's (min,max) the way ERD+ does, next to the OTHER entity of the relationship
+if (process.argv.includes('--card')) {
+  for (const r of doc.shapes.filter(s => s.type === 'Relationship')) {
+    const sl = r.details.slots;
+    if (sl[0].entityId === sl[1].entityId) continue; // recursive: ERD+ shows nothing, the diagram has Labels
+    for (const x of sl) {
+      const other = sl.find(o => o !== x), rel = box.get(r.details.id), ent = box.get(other.entityId);
+      const t = `(${x.participation === 'mandatory' ? 1 : 0},${x.cardinality === 'one' ? 1 : 'N'})`;
+      const k = 0.72, lx = rel.cx + (ent.cx - rel.cx) * k, ly = rel.cy + (ent.cy - rel.cy) * k;
+      parts.push(`<rect x="${lx - 19}" y="${ly - 9}" width="38" height="15" fill="#fff" opacity="0.85"/><text x="${lx}" y="${ly + 3}" font-family="Arial" font-size="11" font-weight="bold" fill="#a00000" text-anchor="middle">${t}</text>`);
+    }
+  }
 }
 // overlaps between estimated shapes
 const L = [...box.values()]; const hits = [];
