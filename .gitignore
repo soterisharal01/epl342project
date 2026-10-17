@@ -2,3 +2,5 @@ node_modules/
 p.txt
 *.zip
 project.pdf
+er-model/*-card.svg
+er-model/*-preview.svg

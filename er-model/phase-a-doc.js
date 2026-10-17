@@ -1,7 +1,8 @@
 // Builds the Phase A deliverable (spec V.A: ER diagram, relational schema, assumptions <= 1/2 page)
 // as deliverables/phase-a/phase-a.docx. Rename it to <team-number>.docx before uploading to Moodle.
 // The ER figure is deliverables/phase-a/er-diagram.png (exported from ERD+ with "Download image");
-// until that file exists the script uses mdms-er-preview.png and marks the figure as temporary.
+// until that file exists the script uses mdms-er-card.png (the same .erdplus file drawn with the (min,max)
+// labels by erdplus-preview.js --card and svg-to-png.js) and marks the figure as temporary.
 const fs = require('fs');
 const path = require('path');
 const {
@@ -13,7 +14,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'deliverables', 'phase-a');
 const OUT = path.join(OUT_DIR, 'phase-a.docx');
 const ERD = path.join(OUT_DIR, 'er-diagram.png');
-const PREVIEW = path.join(__dirname, 'mdms-er-preview.png');
+const PREVIEW = path.join(__dirname, 'mdms-er-card.png');
 const TEAM = process.env.TEAM || '<team-number>';
 const MEMBERS = (process.env.MEMBERS || '<Ονοματεπώνυμο 1 (ID)>|<Ονοματεπώνυμο 2 (ID)>|<Ονοματεπώνυμο 3 (ID)>').split('|');
 
@@ -67,7 +68,7 @@ const erSection = [
   new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: img, transformation: { width: Math.round(imgW * scale), height: Math.round(imgH * scale) } })] }),
   p(finalFigure
     ? 'Ενιαίο διάγραμμα Chen ER σχεδιασμένο στο ERD+: 53 οντότητες (16 weak), 92 συσχετίσεις. Το ERD+ γράφει το (min,max) κάθε οντότητας στην απέναντι άκρη της γραμμής.'
-    : 'ΠΡΟΣΩΡΙΝΗ ΕΙΚΟΝΑ: προεπισκόπηση της διάταξης. Αντικαθίσταται από την εικόνα που εξάγει το ERD+ (Download image) ως deliverables/phase-a/er-diagram.png.',
+    : 'ΠΡΟΣΩΡΙΝΗ ΕΙΚΟΝΑ: το αρχείο ERD+ (mdms-er.erdplus) σχεδιασμένο από δικό μας script, με τα (min,max) όπως τα τοποθετεί το ERD+ (στην απέναντι άκρη). Αντικαθίσταται από την εικόνα που εξάγει το ίδιο το ERD+ (Download image) ως deliverables/phase-a/er-diagram.png.',
     { alignment: AlignmentType.CENTER, run: { size: 18, italics: true, color: finalFigure ? '000000' : 'C00000' } }),
 ];
 
@@ -100,4 +101,4 @@ const doc = new Document({
 });
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
-Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log(`wrote ${path.relative(ROOT, OUT)} (ER figure: ${finalFigure ? 'ERD+ export' : 'TEMPORARY preview'})`); });
+Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log(`wrote ${path.relative(ROOT, OUT)} (ER figure: ${finalFigure ? 'ERD+ export' : 'TEMPORARY render of the .erdplus file'})`); });

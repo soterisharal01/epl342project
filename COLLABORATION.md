@@ -28,6 +28,7 @@ git log --all --oneline -15        # τι έκανε ο καθένας
    node tests.js                                # test.sql
    node build.js && node build-schema.js        # σελίδες HTML του ER και του σχήματος
    node erdplus-export.js && node erdplus-check.js   # αρχείο ERD+ και έλεγχος (errors: [])
+   node erdplus-preview.js --card && node svg-to-png.js mdms-er-card.svg mdms-er-card.png 2   # προσωρινή εικόνα του ER με (min,max)
    node phase-a-doc.js                          # έγγραφο Φάσης Α
    ```
    Αρχεία που παράγονται από scripts δεν διορθώνονται με το χέρι. Το `DECISIONS.md` ενημερώνεται με το χέρι όταν αλλάζει μια απόφαση.
@@ -49,4 +50,4 @@ git log --all --oneline -15        # τι έκανε ο καθένας
 | A9 | Διορθώσεις από τα σχόλια των A5/A6, ξαναπαραγωγή όλων των αρχείων | Claude του project | ○ |
 | A10 | Τελικό: μετονομασία σε `<team-number>.docx` (ή .pdf) και ανέβασμα στο Moodle | Soteris | ○ |
 
-Το A7 το κάνει άνθρωπος, γιατί κανένα Claude δεν φτάνει στο erdplus.com. Μέχρι να υπάρξει το `er-diagram.png`, το έγγραφο έχει μια προσωρινή προεπισκόπηση με κόκκινη σημείωση.
+Το A7 το κάνει άνθρωπος, γιατί κανένα Claude δεν φτάνει στο erdplus.com. Μέχρι να υπάρξει το `er-diagram.png`, το έγγραφο έχει το ίδιο αρχείο ERD+ σχεδιασμένο από δικό μας script (`er-model/mdms-er-card.png`, με τα (min,max)), με κόκκινη σημείωση «προσωρινή».
