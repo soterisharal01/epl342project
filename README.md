@@ -28,7 +28,7 @@
 Σχέδιο 8 βημάτων:
 
 1. ✓ Λίστα οντοτήτων
-2. ✓ Μοντέλο Chen ER (σημειογραφία Elmasri/Navathe, διαλέξεις 4-6): 53 οντότητες, 92 συσχετίσεις
+2. ✓ Μοντέλο Chen ER (σημειογραφία Elmasri/Navathe, διαλέξεις 4-6): 53 οντότητες, 91 συσχετίσεις
 3. ✓ Σχεσιακό σχήμα T-SQL: 62 πίνακες, 76 έλεγχοι περιορισμών περνούν σε SQL Server 2025 (17/10/26)
    - ✓ Ολόκληρο το ER ως αρχείο ERD+ (`er-model/mdms-er.erdplus`), εισήχθη επιτυχώς στο ERD+ (10/10/26)
    - ✱ **Το έγγραφο της Φάσης Α**: πρώτο σχέδιο στο `deliverables/phase-a/phase-a.docx` (από το `er-model/phase-a-doc.js`). Οι πίνακες είναι σχεδιασμένοι από τον SQL Server 2025 (`deliverables/phase-a/relational-diagram-1.png` … `-9.png`). Λείπουν η εικόνα του ER από το ERD+, ο αριθμός ομάδας και τα ονόματα, και ο έλεγχος. Τι μένει και ποιος το κάνει: πίνακας στο `COLLABORATION.md`.
@@ -57,9 +57,9 @@
 | `p.txt` | Κείμενο της εκφώνησης (pdftotext), το χρειάζεται το `check.js` |
 | `DECISIONS.md` | Όλες οι αποφάσεις D1-D32, συγκρούσεις C1-C7, παραδοχές, συμβάσεις σχήματος T1-T10, 21 κανόνες Φάσης Β, ιστορικό αλλαγών, οντότητες ανά περιοχή. Παράγεται από τον κώδικα. |
 | **Παραδοτέα / αποτελέσματα** | |
-| `er-model/mdms-er.erdplus` | Ολόκληρο το ER για το ERD+ (Import στη σελίδα diagrams του erdplus.com). 53 οντότητες, 92 συσχετίσεις, 222 γνωρίσματα. |
+| `er-model/mdms-er.erdplus` | Ολόκληρο το ER για το ERD+ (Import στη σελίδα diagrams του erdplus.com). 53 οντότητες, 91 συσχετίσεις, 222 γνωρίσματα. |
 | `er-model/mdms-er-preview.png` | Προεπισκόπηση της διάταξης του αρχείου ERD+ |
-| `er-model/create.sql` | Το σχεσιακό σχήμα T-SQL (62 πίνακες, 324 στήλες, 101 FK, 106 CHECK, 18 UNIQUE + 3 filtered UNIQUE) |
+| `er-model/create.sql` | Το σχεσιακό σχήμα T-SQL (62 πίνακες, 323 στήλες, 100 FK, 106 CHECK, 18 UNIQUE + 3 filtered UNIQUE) |
 | `er-model/drop.sql` | Σβήνει όλους τους πίνακες με αντίστροφη σειρά |
 | `er-model/test.sql` | Δείγμα δεδομένων + 76 έλεγχοι περιορισμών (ο καθένας σε transaction που γίνεται rollback) |
 | `er-model/test-results.json`, `test-env.json` | Αποτελέσματα του τελευταίου τρεξίματος (76/76 OK, SQL Server 2025 CU9, 17/10/26) |

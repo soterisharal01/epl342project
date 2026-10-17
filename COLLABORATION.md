@@ -41,7 +41,7 @@ git log --all --oneline -15        # τι έκανε ο καθένας
 
 | # | Εργασία | Ποιος | Κατάσταση |
 |---|---|---|---|
-| A1 | Μοντέλο ER (`model.js`), 53 οντότητες, 92 συσχετίσεις | Claude του project | ✓ |
+| A1 | Μοντέλο ER (`model.js`), 53 οντότητες, 91 συσχετίσεις | Claude του project | ✓ |
 | A2 | Αρχείο ERD+ (`er-model/mdms-er.erdplus`) | Claude του project | ✓ |
 | A3 | Σχεσιακό σχήμα (`create.sql`), 76 έλεγχοι σε SQL Server 2025 | Claude του project | ✓ |
 | A4 | Έγγραφο Φάσης Α (`deliverables/phase-a/phase-a.docx`, από το `er-model/phase-a-doc.js`) | Claude του project | ✓ πρώτο σχέδιο |

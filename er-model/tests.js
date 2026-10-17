@@ -86,8 +86,8 @@ const tests = [
   { area: 'billing', el: 'Πληρωμή μηδενικού ποσού', sql: `INSERT INTO PAYMENT (Amount, PaidAt, InvoiceID, BankAccountID) VALUES (0, SYSUTCDATETIME(), 1, 1);`, expect: 'CK_PAYMENT_Amount' },
   { area: 'billing', el: 'Πληρωμή από λογαριασμό του καταναλωτή', sql: `INSERT INTO PAYMENT (Amount, PaidAt, InvoiceID, BankAccountID) VALUES (55.20, SYSUTCDATETIME(), 1, 1);`, expect: 'OK' },
   { area: 'billing', el: 'IBAN με σύμβολα', sql: `INSERT INTO BANK_ACCOUNT (IBAN, HolderName) VALUES ('CY17-0020-0128', N'Χ');`, expect: 'CK_BANK_ACCOUNT_IBAN' },
-  { area: 'billing', el: 'Αγορά ιστορικών μηνών που δεν αρχίζουν την 1η', sql: `INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, UserID, ServiceTypeID, PremiseID, InvoiceID) VALUES ('2026-03-15', '2026-04-01', 5.00, 3, 1, 1, 1);`, expect: 'CK_SERVICE_PURCHASE_Months' },
-  { area: 'billing', el: 'Αγορά ιστορικών μηνών Μαρτίου έως Απριλίου', sql: `INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, UserID, ServiceTypeID, PremiseID, InvoiceID) VALUES ('2026-03-01', '2026-04-01', 5.00, 3, 1, 1, 1);`, expect: 'OK' },
+  { area: 'billing', el: 'Αγορά ιστορικών μηνών που δεν αρχίζουν την 1η', sql: `INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, ServiceTypeID, PremiseID, InvoiceID) VALUES ('2026-03-15', '2026-04-01', 5.00, 1, 1, 1);`, expect: 'CK_SERVICE_PURCHASE_Months' },
+  { area: 'billing', el: 'Αγορά ιστορικών μηνών Μαρτίου έως Απριλίου', sql: `INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, ServiceTypeID, PremiseID, InvoiceID) VALUES ('2026-03-01', '2026-04-01', 5.00, 1, 1, 1);`, expect: 'OK' },
   // field work
   { area: 'field', el: 'Εργασία Done χωρίς ημερομηνία ολοκλήρωσης', sql: `UPDATE FIELD_TASK SET Status = 'Done', Result = N'OK' WHERE TaskID = 1;`, expect: 'CK_FIELD_TASK_Done' },
   { area: 'field', el: 'Αντικατάσταση χωρίς τον παλιό μετρητή', sql: `INSERT INTO FIELD_TASK (TaskType, ScheduledFrom, ScheduledTo, TechnicianID, PremiseID) VALUES ('Replacement', '2026-03-01 08:00', '2026-03-01 10:00', 4, 1);`, expect: 'CK_FIELD_TASK_Install' },

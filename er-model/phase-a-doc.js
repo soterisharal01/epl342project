@@ -75,7 +75,7 @@ const erSection = [
   h1('1. Διάγραμμα Οντοτήτων Συσχετίσεων (Chen ER)'),
   ...(finalFigure ? erShots : [PREVIEW]).flatMap((f, i) => i ? [pageBreak(), figure(f)] : [figure(f)]),
   p(finalFigure
-    ? 'Ενιαίο διάγραμμα Chen ER σχεδιασμένο στο ERD+: 53 οντότητες (16 weak), 92 συσχετίσεις. Το ERD+ γράφει το (min,max) κάθε οντότητας στην απέναντι άκρη της γραμμής.'
+    ? 'Ενιαίο διάγραμμα Chen ER σχεδιασμένο στο ERD+: 53 οντότητες (16 weak), 91 συσχετίσεις. Το ERD+ γράφει το (min,max) κάθε οντότητας στην απέναντι άκρη της γραμμής.'
     : 'ΠΡΟΣΩΡΙΝΗ ΕΙΚΟΝΑ: το αρχείο ERD+ (mdms-er.erdplus) σχεδιασμένο από δικό μας script, με τα (min,max) όπως τα τοποθετεί το ERD+ (στην απέναντι άκρη). Αντικαθίσταται από την εικόνα που εξάγει το ίδιο το ERD+ (Download image) ως deliverables/phase-a/er-diagram.png.',
     { alignment: AlignmentType.CENTER, run: { size: 18, italics: true, color: finalFigure ? '000000' : 'C00000' } }),
 ];
@@ -103,7 +103,7 @@ const sql = fs.readFileSync(path.join(__dirname, 'create.sql'), 'utf8').replace(
 while (sql.length && sql[sql.length - 1] === '') sql.pop();
 const schema = [
   h1(relShots.length ? '4. Σχεσιακό σχήμα σε T-SQL' : '3. Σχεσιακό σχήμα (T-SQL)'),
-  p('Το σχήμα προκύπτει από το διάγραμμα ER με την αντιστοίχιση του βιβλίου (Elmasri & Navathe, κεφ. 9): 62 πίνακες με τύπους δεδομένων T-SQL, πρωτεύοντα και ξένα κλειδιά (101), περιορισμούς CHECK (106), UNIQUE (18 και 3 φιλτραρισμένοι) και DEFAULT. Κάθε περιορισμός έχει όνομα της μορφής PK_, FK_ΠΙΝΑΚΑΣ_ΣΥΣΧΕΤΙΣΗ, UQ_, CK_, DF_. Το σχήμα δοκιμάστηκε σε Microsoft SQL Server 2025 με 76 ελέγχους περιορισμών.', { run: { size: 19 } }),
+  p('Το σχήμα προκύπτει από το διάγραμμα ER με την αντιστοίχιση του βιβλίου (Elmasri & Navathe, κεφ. 9): 62 πίνακες με τύπους δεδομένων T-SQL, πρωτεύοντα και ξένα κλειδιά (100), περιορισμούς CHECK (106), UNIQUE (18 και 3 φιλτραρισμένοι) και DEFAULT. Κάθε περιορισμός έχει όνομα της μορφής PK_, FK_ΠΙΝΑΚΑΣ_ΣΥΣΧΕΤΙΣΗ, UQ_, CK_, DF_. Το σχήμα δοκιμάστηκε σε Microsoft SQL Server 2025 με 76 ελέγχους περιορισμών.', { run: { size: 19 } }),
   ...sql.map(line => new Paragraph({ spacing: { after: 0, line: 220 }, children: [new TextRun({ text: line === '' ? ' ' : line, font: 'Consolas', size: 14 })] })),
 ];
 
