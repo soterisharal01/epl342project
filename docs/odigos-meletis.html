@@ -1,0 +1,248 @@
+<title>Οδηγός μελέτης MDMS-Cy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one reading column, verdict first, then timeline, review, reading plan, exam questions. Same palette as the ER and schema pages. */
+:root {
+  --bg: #f5f5f2; --surface: #ffffff; --surface-2: #f0f1ed; --text: #1a1f24; --muted: #5b6570; --border: #e0e2dd; --border-2: #cfd3cc;
+  --accent: #0f766e; --accent-soft: #e1f2ef;
+  --ok-bg: #dff1ed; --ok-fg: #0d5e57; --bad-bg: #fde3df; --bad-fg: #a2261a; --deb-bg: #fcefd2; --deb-fg: #8a5200; --lec-bg: #e7ebf0; --lec-fg: #394555;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111315; --surface: #181b1e; --surface-2: #1f2327; --text: #e5e8eb; --muted: #9ca5ae; --border: #2a2f34; --border-2: #3a4047;
+  --accent: #5fd6c4; --accent-soft: #15302c;
+  --ok-bg: #163a35; --ok-fg: #8ce3d5; --bad-bg: #3d1c1a; --bad-fg: #fca5a0; --deb-bg: #3a2d12; --deb-fg: #f3c56b; --lec-bg: #29303a; --lec-fg: #c6cfd9;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #111315; --surface: #181b1e; --surface-2: #1f2327; --text: #e5e8eb; --muted: #9ca5ae; --border: #2a2f34; --border-2: #3a4047;
+  --accent: #5fd6c4; --accent-soft: #15302c;
+  --ok-bg: #163a35; --ok-fg: #8ce3d5; --bad-bg: #3d1c1a; --bad-fg: #fca5a0; --deb-bg: #3a2d12; --deb-fg: #f3c56b; --lec-bg: #29303a; --lec-fg: #c6cfd9;
+  color-scheme: dark; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+.wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.25; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.4rem; font-weight: 600; padding-bottom: 8px; border-bottom: 1px solid var(--border-2); }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+section { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.eyebrow { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.verdict { background: var(--surface); border: 1px solid var(--border-2); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.verdict .answer { font-size: 1.15rem; font-weight: 600; }
+.tally { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.tally div { border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; }
+.tally b { font-size: 1.6rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tally span { font-size: 0.85rem; }
+.t-ok { background: var(--ok-bg); color: var(--ok-fg); }
+.t-bad { background: var(--bad-bg); color: var(--bad-fg); }
+.t-deb { background: var(--deb-bg); color: var(--deb-fg); }
+.urgent { border-left: 4px solid var(--bad-fg); background: var(--surface); padding: 14px 16px; border-radius: 0 8px 8px 0; display: flex; flex-direction: column; gap: 8px; }
+ol.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; }
+ol.timeline > li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-top: 1px solid var(--border); }
+ol.timeline > li:first-child { border-top: none; }
+.when { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); padding-top: 3px; font-variant-numeric: tabular-nums; }
+.step { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.step ul, .item ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.why { color: var(--muted); font-size: 0.95rem; }
+.items { display: flex; flex-direction: column; gap: 12px; }
+.item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; width: fit-content; }
+.tag.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.tag.bad { background: var(--bad-bg); color: var(--bad-fg); }
+.tag.deb { background: var(--deb-bg); color: var(--deb-fg); }
+.ev { font-size: 0.88rem; color: var(--muted); }
+.src { display: inline-block; font-family: var(--mono); font-size: 0.78rem; background: var(--lec-bg); color: var(--lec-fg); border-radius: 4px; padding: 0 5px; }
+.fix { font-size: 0.92rem; border-top: 1px dashed var(--border-2); padding-top: 8px; }
+ol.read { margin: 0; padding-left: 0; list-style: none; counter-reset: r; display: flex; flex-direction: column; gap: 14px; }
+ol.read > li { counter-increment: r; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; }
+ol.read > li::before { content: counter(r); font-family: var(--mono); font-weight: 500; color: var(--accent); background: var(--accent-soft); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; font-size: 0.9rem; }
+.read-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.qa { display: flex; flex-direction: column; gap: 10px; }
+.qa div { border-bottom: 1px solid var(--border); padding-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.qa b { font-weight: 600; }
+.tbl { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; font-size: 0.82rem; }
+tr:last-child td { border-bottom: none; }
+footer { color: var(--muted); font-size: 0.88rem; }
+@media (max-width: 560px) {
+  .tally { grid-template-columns: 1fr; }
+  ol.timeline > li { grid-template-columns: 1fr; gap: 4px; }
+  h1 { font-size: 1.6rem; }
+}
+</style>
+
+<div class="wrap">
+
+<header style="display:flex;flex-direction:column;gap:10px">
+  <div class="eyebrow">ΕΠΛ342 · MDMS-Cy · 17/10/2026</div>
+  <h1>Οδηγός μελέτης MDMS-Cy</h1>
+  <p class="lede">Τι έχει γίνει μέχρι τώρα, βήμα βήμα, αν είναι σωστό, και τι να διαβάσεις και με ποια σειρά για να το καταλάβεις και να το υπερασπιστείς στην εξέταση.</p>
+</header>
+
+<section id="verdict">
+  <div class="verdict">
+    <div class="eyebrow">Η σύντομη απάντηση</div>
+    <p class="answer">Ναι, στα βασικά η εργασία είναι σωστή και συνεπής με την εκφώνηση και τις διαλέξεις. Βρήκα ένα μικρό λάθος, στη διατύπωση δύο κανόνων της Φάσης Β, και διορθώθηκε στις 17/10. Το διάγραμμα ER και το <code>create.sql</code> δεν χρειάστηκαν αλλαγή.</p>
+    <p>Το αρχείο ERD+ που έχεις ήδη εισαγάγει δεν αλλάζει. Υπάρχουν και μερικές επιλογές που ένας βαθμολογητής μπορεί να αμφισβητήσει· γι' αυτές γράφω πιο κάτω τι να απαντήσεις.</p>
+    <div class="tally">
+      <div class="t-ok"><b>10</b><span>σημεία που επιβεβαίωσα</span></div>
+      <div class="t-bad"><b>1</b><span>λάθος, διορθώθηκε</span></div>
+      <div class="t-deb"><b>6</b><span>συζητήσιμες επιλογές</span></div>
+    </div>
+  </div>
+  <div class="urgent">
+    <h3>Το πιο επείγον: το έγγραφο της Φάσης Α δεν έχει γραφτεί ακόμα</h3>
+    <p>Η εκφώνηση ζητά ένα <code>&lt;team-number&gt;.docx</code> ή <code>.pdf</code> με (a) το διάγραμμα ER, (b) το σχεσιακό σχήμα με τύπους, PK, FK και περιορισμούς, (c) υποθέσεις έως μισή σελίδα <span class="src">σελ. 13</span>. Το μοντέλο και το σχήμα είναι έτοιμα, αλλά το ίδιο το έγγραφο λείπει. Η εκφώνηση γράφει «Παρασκευή 19/10/26», ενώ η 19/10/2026 είναι Δευτέρα, οπότε δες την ακριβή προθεσμία στο Moodle.</p>
+  </div>
+</section>
+
+<section id="steps">
+  <h2>Τι έγινε μέχρι τώρα, βήμα βήμα</h2>
+  <p>Το σχέδιο είναι 8 βήματα. Τα βήματα 1 έως 3 (η σχεδίαση της Φάσης Α) έχουν γίνει. Τα 4 έως 8 είναι η Φάση Β.</p>
+  <ol class="timeline">
+    <li>
+      <div class="when">3/10</div>
+      <div class="step">
+        <h3>Βήμα 1: Λίστα οντοτήτων και σχέδιο δουλειάς</h3>
+        <p>Διαβάσαμε την εκφώνηση και γράψαμε ποια «πράγματα» πρέπει να θυμάται η βάση: χρήστες, υποστατικά, μετρητές, μετρήσεις, εργασίες πεδίου, geofences, συμβόλαια κ.λπ. Συμφωνήσαμε ότι παραδίδεται <b>ένα ενιαίο</b> διάγραμμα Chen ER σε ERD+ και ότι τα ονόματα μένουν στα αγγλικά.</p>
+        <p class="why">Γιατί: η εκφώνηση μιλά για «Διάγραμμα Οντοτήτων Συσχετίσεων (ER)» σε ενικό <span class="src">σελ. 13</span>, και η Εργασία 1 επέτρεπε αγγλικά ονόματα.</p>
+      </div>
+    </li>
+    <li>
+      <div class="when">3/10 – 9/10</div>
+      <div class="step">
+        <h3>Βήμα 2: Το μοντέλο ER, με τέσσερις γύρους ελέγχου</h3>
+        <p>Κάθε οντότητα, γνώρισμα και συσχέτιση πήρε παραπομπή: S1–S79 σε φράση της εκφώνησης, L1–L16 σε διαφάνεια διάλεξης, ή D1–D32 όταν είναι δική μας απόφαση. Ό,τι η εκφώνηση αφήνει ανοιχτό σημειώθηκε ως ερώτηση για το εργαστήριο (C1–C7).</p>
+        <ul>
+          <li><b>1ος έλεγχος:</b> βγήκαν όσα είχαμε επινοήσει χωρίς να τα ζητά η εκφώνηση (μετρητές μετασχηματιστών, πίνακες τύπων χωρίς λόγο). Από 59 οντότητες πήγαμε στις 48.</li>
+          <li><b>2ος έλεγχος:</b> κάθε μετρητής μπαίνει με εγκατάσταση, και κάθε εγκατάσταση γίνεται σε εργασία πεδίου. Διορθώθηκαν οι διπλοί δρόμοι στην τιμολόγηση.</li>
+          <li><b>3ος έλεγχος:</b> το HOLDING έγινε weak entity (κάθε περίοδος κατοχής υποστατικού είναι δική της γραμμή), το READING κρατά δύο τιμές (ReceivedValue, UsedValue), και τα αθροίσματα γράφονται μία φορά, όταν όλες οι μετρήσεις της περιόδου γίνουν οριστικές.</li>
+          <li><b>4ος έλεγχος (9/10):</b> με δική σου απόφαση, απλό ER χωρίς EER. Οι 7 ρόλοι έγιναν weak entities του USER_ACCOUNT, και οι SUPPLIER και AGGREGATOR δύο ξεχωριστές οντότητες.</li>
+        </ul>
+        <p>Αποτέλεσμα: 53 οντότητες (16 weak), 92 συσχετίσεις, 221 γνωρίσματα. Η σελίδα είναι το <a href="https://claude.ai/artifact/8m249QKjvQKEdPWzo1HdbW">Μοντέλο ER</a>.</p>
+      </div>
+    </li>
+    <li>
+      <div class="when">9/10</div>
+      <div class="step">
+        <h3>Βήμα 3: Το σχεσιακό σχήμα σε T-SQL</h3>
+        <p>Το ER μετατράπηκε σε πίνακες με τον αλγόριθμο του βιβλίου (Elmasri κεφ. 9): κάθε οντότητα γίνεται πίνακας, κάθε 1:N γίνεται ξένο κλειδί στην πλευρά N, κάθε M:N γίνεται δικός της πίνακας, κάθε πλειότιμο γνώρισμα δικός του πίνακας. Μετά προστέθηκαν τύποι, NOT NULL, UNIQUE και CHECK.</p>
+        <p>Αποτέλεσμα: 62 πίνακες (37 κανονικές οντότητες, 16 weak, 7 M:N, 2 πλειότιμα γνωρίσματα), 101 FK, 108 CHECK. Γράφτηκαν 71 έλεγχοι (74 από τις 17/10) που δοκιμάζουν κάθε περιορισμό σε πραγματικό SQL Server 2025 και πέρασαν όλοι. Η σελίδα είναι το <a href="https://claude.ai/artifact/28B9Bgi5SprzfBVzJWyB12">Σχεσιακό σχήμα</a>.</p>
+        <p class="why">Ό,τι δεν μπορεί να γίνει CHECK, γιατί χρειάζεται να κοιτάξει άλλη γραμμή ή άλλο πίνακα, γράφτηκε ως ένας από τους 21 κανόνες της Φάσης Β (triggers και stored procedures).</p>
+      </div>
+    </li>
+    <li>
+      <div class="when">10/10</div>
+      <div class="step">
+        <h3>Το διάγραμμα ως αρχείο ERD+</h3>
+        <p>Αντί να σχεδιάσεις 53 οντότητες με το χέρι, φτιάχτηκε το <code>mdms-er.erdplus</code>, που το εισήγαγες στο ERD+ με επιτυχία. Ένα script ξαναδιαβάζει το αρχείο και το συγκρίνει με το μοντέλο, ώστε να μην έχει χαθεί τίποτα.</p>
+        <p class="why">Το σχήμα της Φάσης Α είναι το <code>create.sql</code> και όχι η αυτόματη μετατροπή του ERD+, γιατί το ERD+ θα έβαζε δύο στήλες <code>UserID</code> σε 5 πίνακες (π.χ. στο GDPR_REQUEST).</p>
+      </div>
+    </li>
+    <li>
+      <div class="when">17/10</div>
+      <div class="step">
+        <h3>Φάκελος παράδοσης και ανεξάρτητος έλεγχος</h3>
+        <p>Όλη η δουλειά μαζεύτηκε στον φάκελο <code>handoff/</code> για τα άλλα μέλη της ομάδας. Σήμερα έγινε και ο έλεγχος αυτής της σελίδας, από την αρχή, με την εκφώνηση και τις διαλέξεις δίπλα.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="review">
+  <h2>Είναι σωστά; Ο έλεγχος σημείο προς σημείο</h2>
+  <p>Ξαναδιάβασα όλη την εκφώνηση (15 σελίδες), τις διαλέξεις 4–6 και ολόκληρο το <code>create.sql</code>, και ξανάτρεξα τα scripts ελέγχου.</p>
+
+  <h3>Τι επιβεβαίωσα</h3>
+  <div class="items">
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Το αρχείο ERD+ ταιριάζει ακριβώς με το μοντέλο.</b> Το <code>erdplus-check.js</code> βρίσκει 53 οντότητες, 92 συσχετίσεις, 21 identifying, 221 γνωρίσματα και 0 σφάλματα.</p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Το <code>create.sql</code> είναι ενημερωμένο.</b> Το ξαναπαρήγαγα από το μοντέλο και βγήκε ίδιο byte προς byte. Ξανάτρεξα όλους τους ελέγχους σε SQL Server 2025 στις 17/10: 74/74 σωστοί (οι 71 παλιοί και 3 νέοι για το GDPR).</p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Οι ρόλοι ως weak entities χωρίς partial key στηρίζονται στη διάλεξη.</b> Η διάλεξη λέει ότι το partial key είναι «(Προαιρετικά)» και ότι η identifying συσχέτιση είναι «Πάντα 1:1 ή 1:N».</p><p class="ev"><span class="src">διαφ. 5-14</span> <span class="src">διαφ. 5-15</span></p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Ο κανόνας «η weak entity συμμετέχει πάντα ολικά» ισχύει και στις 21 identifying συσχετίσεις.</b></p><p class="ev"><span class="src">διαφ. 5-15</span> <code>weak-entities-check.md</code></p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Η επιλογή απλού ER αντί για EER έχει βάση.</b> Η Φάση Α ζητά «Chen ER», η Εργασία 1 έλεγε «ER – όχι EER», και η διάλεξη λέει ότι κάθε EER γράφεται σε ER με κάποια απώλεια νοήματος, που τη χειρίζεται το πρόγραμμα της βάσης. Αυτό ακριβώς κάνει ο κανόνας R1 της Φάσης Β.</p><p class="ev"><span class="src">εκφ. σελ. 2</span> <span class="src">as1 σελ. 1</span> <span class="src">διαφ. 6-39</span></p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Οι απαιτήσεις της εκφώνησης καλύπτονται.</b> Πολλά υποστατικά ανά καταναλωτή (HOLDING), συντεταγμένες WGS84 σε υποστατικό και μετρητή, ιστορικό αντικατάστασης μετρητή (METER_INSTALLATION), εντολή με διαδοχικές προσπάθειες μέχρι το ACK (REMOTE_COMMAND, COMMAND_ATTEMPT), ιεραρχία geofences αυθαίρετου βάθους (PARENT_OF), ενδιάμεσος πίνακας τρέχουσας κατάστασης μόνο για 1.8.0 και 2.8.0, κατάσταση μέτρησης validated/estimated με αρχική και νέα τιμή (READING_EDIT).</p><p class="ev"><span class="src">σελ. 5</span> <span class="src">σελ. 8</span> <span class="src">σελ. 9–10</span></p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Νέοι κωδικοί OBIS, τύποι μετρητών και πρωτόκολλα μπαίνουν ως γραμμές, χωρίς αλλαγή δομής.</b> Αυτό ζητά ρητά η εκφώνηση για τη μελλοντική επέκταση.</p><p class="ev"><span class="src">σελ. 8</span> <span class="src">σελ. 13</span></p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Τα συνθηματικά αποθηκεύονται μόνο ως hash</b> (<code>PasswordHash</code>), όπως ζητά η εκφώνηση.</p><p class="ev"><span class="src">σελ. 5</span></p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Ένα αίτημα GDPR μπορεί να απορριφθεί και στην εξέταση και στην τελική απόφαση.</b> Στην πρώτη μου ανάγνωση το είχα γράψει ως λάθος, αλλά ήταν δικό μου λάθος: τα <code>PreApprovedBy</code> και <code>PreApprovedAt</code> καταγράφουν τον ΛΣ και την ώρα της εξέτασης, οπότε ένα αίτημα που απορρίπτεται εκεί τα έχει, χωρίς τελική απόφαση. Πρόσθεσα τρεις ελέγχους που το δείχνουν (απόρριψη στην εξέταση, απόρριψη στην τελική απόφαση, απόρριψη χωρίς καταγραφή εξέτασης), και περνούν.</p><p class="ev">Αν σε ρωτήσουν, το όνομα «PreApproved» σημαίνει «εξετάστηκε από», όχι «εγκρίθηκε».</p></div>
+    <div class="item"><span class="tag ok">σωστό</span><p><b>Οι παραπομπές στην εκφώνηση είναι αληθινές.</b> Το <code>check.js</code> βγάζει τρεις προειδοποιήσεις (S18, S55, S62). Τις έλεγξα: είναι λέξεις που το pdftotext κόλλησε σε αλλαγή γραμμής («παραγωγώνκαταναλωτών», «15λεπτο») και μια λίστα στο παράρτημα· το κείμενο υπάρχει στις σελ. 6, 10 και 15. Το README αναφέρει μόνο τη μία από τις τρεις.</p></div>
+  </div>
+
+  <h3>Τι βρήκα λάθος</h3>
+  <div class="items">
+    <div class="item">
+      <span class="tag bad">λάθος, διορθώθηκε</span>
+      <p><b>Οι κανόνες R5 και R6 της Φάσης Β δεν δουλεύουν ως trigger κατά την εισαγωγή.</b> Το R6 λέει ότι ένα INVOICE πρέπει να έχει συμβόλαιο ή τουλάχιστον ένα SERVICE_PURCHASE, «με trigger». Όμως το SERVICE_PURCHASE δείχνει στο INVOICE (<code>InvoiceID NOT NULL</code>), άρα το τιμολόγιο μπαίνει πρώτο. Στον SQL Server ένα AFTER INSERT trigger τρέχει αμέσως μετά την εντολή, όχι στο τέλος του transaction, οπότε θα απέρριπτε κάθε τιμολόγιο υπηρεσιών. Το ίδιο ισχύει για το R5 (BANK_ACCOUNT χωρίς ιδιοκτήτη πριν μπει το ACCOUNT_FOR).</p>
+      <p class="fix"><b>Διορθώθηκε στις 17/10:</b> γράφουν «procedure + trigger» (η εισαγωγή γίνεται μέσα σε μία stored procedure που ελέγχει στο τέλος), και trigger μόνο για τη διαγραφή της τελευταίας γραμμής. Άλλαξε μόνο το κείμενο των κανόνων στο <code>DECISIONS.md</code> και στη σελίδα του σχήματος.</p>
+    </div>
+  </div>
+
+  <h3>Συζητήσιμα: σωστά, αλλά μπορεί να σε ρωτήσουν</h3>
+  <div class="items">
+    <div class="item"><span class="tag deb">συζητήσιμο</span><p><b>Το μέγεθος του μοντέλου.</b> 53 οντότητες είναι πολλές για ένα διάγραμμα, ενώ η Εργασία 1 ζητούσε «το απλούστερο δυνατό» μοντέλο. Η εκφώνηση του project όμως λέει ότι θέτει «ένα ελάχιστο όριο» και ότι η ορθότητα του εννοιολογικού σχήματος βαθμολογείται <span class="src">σελ. 14</span>. Ο πραγματικός κίνδυνος είναι πρακτικός: η εικόνα στο docx πρέπει να διαβάζεται (εξαγωγή σε μεγάλη ανάλυση, σελίδα landscape ή A3), και κάθε μέλος της ομάδας πρέπει να ξέρει να την εξηγεί.</p></div>
+    <div class="item"><span class="tag deb">συζητήσιμο</span><p><b>Ρόλοι ως weak entities.</b> Είναι σύμφωνο με τη διάλεξη (δες πιο πάνω), αλλά ασυνήθιστο. Η εναλλακτική θα ήταν κανονικές οντότητες με δικό τους κλειδί και μια 1:1 συσχέτιση με το USER_ACCOUNT. Οι πίνακες βγαίνουν σχεδόν ίδιοι. Η απάντηση αν σε ρωτήσουν: «Ένας ρόλος δεν έχει δική του ταυτότητα· υπάρχει μόνο όσο υπάρχει ο λογαριασμός, άρα το κλειδί του είναι το UserID του ιδιοκτήτη.»</p></div>
+    <div class="item"><span class="tag deb">συζητήσιμο</span><p><b>Το AUDIT_LOG είναι γενικό</b> (ObjectType + ObjectID), άρα το αντικείμενο που αφορά δεν είναι ξένο κλειδί και δεν φαίνεται ως συσχέτιση στο διάγραμμα. Η εκφώνηση ζητά «να συσχετίζει την ενέργεια με το αντικείμενο» <span class="src">σελ. 5</span>· εμείς το κάνουμε με τιμή και όχι με FK, ώστε να καταγράφεται οποιοσδήποτε νέος τύπος αντικειμένου χωρίς νέο πίνακα (D18).</p></div>
+    <div class="item"><span class="tag deb">συζητήσιμο</span><p><b>Ο τεχνικός πρέπει να έχει τουλάχιστον μία διαθεσιμότητα</b> (DECLARES, (1,M)). Η εκφώνηση λέει ότι «πρέπει ... να δηλώνει» διαθεσιμότητα <span class="src">σελ. 7</span>, αλλά ένας τεχνικός που μόλις εγγράφηκε και περιμένει έγκριση ίσως δεν έχει ακόμα. Αν το θεωρήσεις υπερβολικό, γίνεται (0,M) με μια αλλαγή στο ERD+.</p></div>
+    <div class="item"><span class="tag deb">συζητήσιμο</span><p><b>Ο ΛΣ «καθορίζει πρότυπα μετρητών, τύπους υπηρεσιών και τιμολογίων»</b> <span class="src">σελ. 5</span>, αλλά στο διάγραμμα δεν υπάρχει συσχέτιση από τον SYSTEM_OPERATOR προς METER_MODEL, SERVICE_TYPE και TARIFF_TYPE. Το ποιος τα όρισε καταγράφεται στο AUDIT_LOG. Είναι αποδεκτό, αλλά να ξέρεις την απάντηση.</p></div>
+    <div class="item"><span class="tag deb">συζητήσιμο</span><p><b>Αποθηκευμένα παράγωγα στοιχεία.</b> Το SERVED_BY (ο μετασχηματιστής του μετρητή) θα μπορούσε να υπολογίζεται από τις συντεταγμένες, και το METER.Status ακολουθεί την ανοιχτή εγκατάσταση. Κρατιούνται για ταχύτητα (D25), και οι κανόνες R10 και R19 τα κρατούν συνεπή. Μαζί με αυτά, οι ερωτήσεις C1–C7 για το εργαστήριο είναι ακόμα ανοιχτές.</p></div>
+  </div>
+</section>
+
+<section id="reading">
+  <h2>Πού να διαβάσεις, με αυτή τη σειρά</h2>
+  <p>Η σειρά πάει από το «τι ζητείται» στο «με ποια εργαλεία» και μετά στο «τι φτιάξαμε». Τα αρχεία είναι στον φάκελο του project.</p>
+  <ol class="read">
+    <li><div class="read-body"><h3>Εκφώνηση, σελ. 2 και 13–14: τι παραδίδεται</h3><p>Οι δύο φάσεις και τα παραδοτέα της Φάσης Α. Έτσι ξέρεις από την αρχή τι κρίνεται. <code>project.pdf</code></p></div></li>
+    <li><div class="read-body"><h3>Εκφώνηση, σελ. 3–4 και 5–11: το σενάριο και οι απαιτήσεις</h3><p>Οι πέντε ομάδες χρηστών και μετά οι ενότητες 1–5, μία για κάθε ομάδα. Εδώ βγαίνουν σχεδόν όλες οι οντότητες. Σημείωσε κάθε ουσιαστικό (υποστατικό, μετρητής, εργασία, geofence) και κάθε «ένα ή περισσότερα».</p></div></li>
+    <li><div class="read-body"><h3>Εκφώνηση, σελ. 15: παράρτημα OBIS</h3><p>Οι κωδικοί μετρήσεων και το παράδειγμα πακέτου JSON. Εξηγεί τους πίνακες OBIS_CODE, TELEMETRY_PACKET και READING.</p></div></li>
+    <li><div class="read-body"><h3>Διάλεξη 4, διαφ. 4-11 έως 4-25: οντότητες και γνωρίσματα</h3><p>Οντότητα, γνώρισμα, κλειδί, σύνθετα και πλειότιμα γνωρίσματα. <code>διαλεξεις/04.pdf</code></p></div></li>
+    <li><div class="read-body"><h3>Διάλεξη 5: συσχετίσεις, weak entities, (min,max)</h3><p>Διαφ. 5-3 έως 5-13 (cardinality, ολική/μερική συμμετοχή, αναδρομικές), <b>5-14 και 5-15 (weak entities, η βάση για ρόλους, HOLDING, READING)</b>, 5-16 (γιατί γνωρίσματα μπαίνουν σε M:N), 5-20 (ολοκληρωμένο διάγραμμα), 5-21 έως 5-23 (σημειογραφία min,max). <code>διαλεξεις/05.pdf</code></p></div></li>
+    <li><div class="read-body"><h3>Διάλεξη 6: ERD+ και γιατί όχι EER</h3><p>Διαφ. 6-15 έως 6-19 (σημειογραφία ERD+), 6-26 έως 6-35 (τι είναι το EER, για να ξέρεις τι αποφύγαμε), <b>6-39 (ER vs EER)</b>. Μετά το εργαστήριο 3 για το ERD+. <code>διαλεξεις/06.pdf</code>, <code>labs/lab3.week3.pdf</code></p></div></li>
+    <li><div class="read-body"><h3>Η σελίδα του μοντέλου ER, περιοχή προς περιοχή</h3><p>Ξεκίνα από «Users and roles», μετά «Meters», «Telemetry and VEE» και «Grid topology», που είναι η καρδιά του θέματος, και άφησε για το τέλος billing και market. Σε κάθε οντότητα πάτα την παραπομπή S για να δεις τη φράση της εκφώνησης. <a href="https://claude.ai/artifact/8m249QKjvQKEdPWzo1HdbW">Μοντέλο ER</a></p></div></li>
+    <li><div class="read-body"><h3>Οι αποφάσεις D1–D32 και οι ερωτήσεις C1–C7</h3><p>Εδώ είναι το «γιατί» κάθε επιλογής. Αν διαβάσεις μόνο λίγες, διάβασε D2, D5, D10, D12, D13, D14, D19 και D32. <code>handoff/DECISIONS.md</code></p></div></li>
+    <li><div class="read-body"><h3>Από το ER στους πίνακες</h3><p>Οι κανόνες μετατροπής T1–T10 στο <code>DECISIONS.md</code> και η σελίδα του σχήματος. Πάρε τρεις οντότητες (μία κανονική, μία weak, μία M:N) και ακολούθησέ τες μέχρι το <code>CREATE TABLE</code> τους στο <code>create.sql</code>. Η διάλεξη για τη μετατροπή δεν είναι ακόμα στον φάκελο· η ύλη είναι το βιβλίο Elmasri/Navathe, κεφ. 9. <a href="https://claude.ai/artifact/28B9Bgi5SprzfBVzJWyB12">Σχεσιακό σχήμα</a></p></div></li>
+    <li><div class="read-body"><h3>Οι 21 κανόνες της Φάσης Β</h3><p>Τι δεν μπορεί να φανεί στο διάγραμμα ούτε να γίνει CHECK, και πώς θα γίνει. Είναι και η βάση για τις παραδοχές του εγγράφου. Τέλος του <code>DECISIONS.md</code>.</p></div></li>
+  </ol>
+</section>
+
+<section id="exam">
+  <h2>Ερωτήσεις που μπορεί να σου κάνουν</h2>
+  <p>Στην εξέταση κάθε μέλος πρέπει να δείξει τη σχεδίαση <span class="src">σελ. 14</span>. Αυτές είναι οι πιο πιθανές ερωτήσεις, με τη σύντομη απάντηση και πού στηρίζεται.</p>
+  <div class="qa">
+    <div><b>Γιατί το READING είναι weak entity; Ποιο είναι το κλειδί του;</b><p>Μια μέτρηση δεν έχει νόημα χωρίς τον μετρητή και τον κωδικό OBIS. Κλειδί: (MeterID, ObisCode, IntervalStart), δηλαδή τα κλειδιά των δύο ιδιοκτητών και το 15λεπτο ως partial key.</p></div>
+    <div><b>Πώς υποστηρίζεται ένας νέος κωδικός OBIS χωρίς αλλαγή δομής;</b><p>Κάθε κωδικός είναι γραμμή του OBIS_CODE και κάθε μέτρηση μια γραμμή του READING με τον κωδικό της. Ένας νέος κωδικός είναι ένα INSERT, όχι νέα στήλη. Έτσι καλύπτεται και ότι «δεν περιέχει κάθε πακέτο όλους τους κωδικούς».</p></div>
+    <div><b>Γιατί HOLDING και όχι απλή M:N μεταξύ CONSUMER και PREMISE;</b><p>Μια M:N κρατά ένα ζευγάρι μία φορά. Αν ο ίδιος καταναλωτής φύγει και ξαναγυρίσει, χρειάζονται δύο περίοδοι, αλλιώς θα έβλεπε τις μετρήσεις του ενδιάμεσου ενοίκου. Άρα κάθε περίοδος είναι γραμμή με κλειδί (UserID, PremiseID, StartDate) (D5).</p></div>
+    <div><b>Πώς δεν χάνεται το ιστορικό όταν αλλάζει μετρητής;</b><p>Οι μετρήσεις ανήκουν στον μετρητή. Η METER_INSTALLATION κρατά πότε ήταν ποιος μετρητής σε ποιο υποστατικό (InstalledAt, RemovedAt), οπότε το ιστορικό του υποστατικού είναι η ένωση των εγκαταστάσεών του (D10).</p></div>
+    <div><b>Γιατί δύο τιμές, ReceivedValue και UsedValue;</b><p>Το 1.8.0 είναι μετρητής που μόνο αυξάνει, ενώ τα παραδείγματα VEE μιλούν για kWh ανά 15λεπτο. Η ReceivedValue κρατά αυτό που έστειλε ο μετρητής και δεν αλλάζει ποτέ. Η UsedValue είναι η τιμή που χρησιμοποιούν οι επόμενες λειτουργίες, και μόνο αυτή αλλάζει η εκτίμηση ή η διόρθωση (D12).</p></div>
+    <div><b>Πώς εξασφαλίζεται ότι μετά το VEE οι μετρήσεις δεν αλλάζουν;</b><p>Μια οριστική μέτρηση δείχνει στο VEE_RUN που την οριστικοποίησε (RunID). Ο CHECK επιτρέπει RunID μόνο σε Validated, Estimated ή Edited, και στη Φάση Β ένα trigger απορρίπτει κάθε αλλαγή γραμμής με RunID (R14).</p></div>
+    <div><b>Πώς φτιάχνεται η ιεραρχία των geofences;</b><p>Με την αναδρομική 1:N συσχέτιση PARENT_OF: κάθε geofence έχει το πολύ έναν γονέα (ParentGeofenceID), οπότε σχηματίζεται δέντρο αυθαίρετου βάθους. Μόνο τα geofences επιπέδου 1 έχουν μετασχηματιστή (D14).</p></div>
+    <div><b>Τι σβήνει το δικαίωμα στη λήθη;</b><p>Μειώνει τη διατήρηση των πρωτογενών μετρήσεων σε 1 μήνα και σβήνει τις παλαιότερες, μαζί με τα πακέτα τους. Κρατά τιμολόγια, πληρωμές, aggregates και το log, γιατί η εκφώνηση ζητά να μη χάνεται η λογιστική πληροφορία (D29, σελ. 6). Αν πρέπει να ανωνυμοποιείται και το όνομα, είναι η ερώτηση C6.</p></div>
+    <div><b>Γιατί δεν χρησιμοποιήσατε το σχήμα που βγάζει το ERD+;</b><p>Το ERD+ ονομάζει κάθε ξένο κλειδί με το όνομα του κλειδιού που δείχνει, οπότε π.χ. το GDPR_REQUEST θα είχε τέσσερις στήλες UserID. Το <code>create.sql</code> έχει ονόματα που λένε τον ρόλο (ConsumerID, PreApprovedBy, DecidedBy) και ελέγχθηκε σε SQL Server.</p></div>
+  </div>
+</section>
+
+<section id="next">
+  <h2>Τι έγινε μετά τον έλεγχο και τι ακολουθεί</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>#</th><th>Τι</th><th>Κατάσταση</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Νέοι έλεγχοι για την απόρριψη αιτήματος GDPR, 74/74 σε SQL Server 2025</td><td>Έγινε</td></tr>
+        <tr><td>2</td><td>Διόρθωση της διατύπωσης των R5 και R6 και του README, νέο zip στον φάκελο <code>handoff/</code></td><td>Έγινε</td></tr>
+        <tr><td>3</td><td>Το έγγραφο της Φάσης Α: εικόνα από το ERD+, το σχήμα, παραδοχές μισής σελίδας</td><td>Επόμενο</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>Ο έλεγχος έγινε στις 17/10/2026 στα αρχεία του φακέλου <code>handoff/</code>. Στις 17/10 άλλαξαν μόνο οι έλεγχοι και το κείμενο των κανόνων R5 και R6· το <code>model.js</code>, το <code>create.sql</code> και το αρχείο ERD+ έμειναν ίδια.</footer>
+
+</div>

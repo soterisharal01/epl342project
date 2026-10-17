@@ -1,0 +1,192 @@
+Sources: L1, L4, L5 and L6 are lectures 01, 04, 05 and 06, with slide numbers. AS1 is the as1.txt assignment statement. ST is the student's epl342.as1.1368010.txt. SPEC is p.txt, with line numbers. ERD+ means the exact UI label found in the bundled ERD+ main.js.
+
+Extracted texts: /tmp/claude-0/-home-claude/18f6b56c-e705-5f7d-8549-726eef9efa85/scratchpad/wf/glossary/lec04.txt and /tmp/claude-0/-home-claude/18f6b56c-e705-5f7d-8549-726eef9efa85/scratchpad/wf/glossary/lec01.txt
+
+== A. ER/EER COURSE TERMS ==
+entity => Οντότητα (L4 4-12 "Οντότητες (Entitities)"; L5 5-3; ST)
+entity type => Τύπος Οντότητας / Τύποι Οντοτήτων (Entity Types) (L4 4-15)
+entity set => Σύνολο Οντοτήτων (Entity Set ή Entity State) (L4 4-15). L4 adds that Οντότητα, Τύπος Οντότητας and Σύνολο Οντότητας are usually all just called "Οντότητα".
+strong/regular entity => Οντότητα (Δυνατή, Κανονική) (L5 5-18); "ΚΑΝΟΝΙΚΗ", "ισχυρή οντότητα" (L5 5-14); ERD+ "Regular"
+weak entity => Ασθενής Οντότητα (Weak Entity) (L5 5-14, 5-19); Ασθενείς Τύποι Οντοτήτων (L5 5-14); Μη-Ισχυροί Τύποι Οντοτήτων (L5 5-2); ST "ασθενής οντότητα"; ERD+ "Weak"
+owner entity => προσδιορίζουσα (ή ισχυρή) οντότητα (L5 5-14); "οι δυο προσδιορίζουσες οντότητες δίνουν το κλειδί τους" (L6 6-9). The course never uses "ιδιοκτήτρια".
+identifying relationship => "προσδιορίζων σύνολο συσχετίσεων για ασθενή οντότητα" (L5 5-19 notation); ST "προσδιορίζουσες συσχετίσεις"; ERD+ checkbox "Identifying"
+relationship => Συσχέτιση (Relationships) (L5 5-3). The lectures also use "σχέση" loosely (L5 5-4 "τύπου σχέσης"), so prefer Συσχέτιση.
+relationship type => Τύπος Συσχέτισης (Relationship Type) (L5 5-6)
+relationship set => Σύνολο Συσχετίσεων (Relat. Set ή Rela. State) (L5 5-6); "σύνολο συσχετίσεων" (L5 5-19)
+relationship instance => στιγμιότυπο (L5 5-4 "Στιγμιότυπα του τύπου σχέσης"; ST)
+relationship attribute => Γνώρισμα Συσχέτισης (L6 6-19); "Γνωρίσματα σε Τύπους Συσχετίσεων" (L5 5-16)
+attribute => Γνώρισμα (L4 4-12 "Attributes (Γνωρίσματα, Πεδία ή Χαρακτηριστικά)"); the notation slides say "χαρακτηριστικό" (L4 4-18, L5 5-18); SPEC 656 "γνωρίσματα"
+simple/single-valued => Απλά (ή Μονότιμα Simple) (L4 4-14)
+composite => Σύνθετο (Composite) χαρακτηριστικό (L4 4-14, 4-18; L5 5-18); ERD+ "Composite"
+multivalued => Πλειότιμο (Multivalue / Multi-valued) χαρακτηριστικό (L4 4-14, 4-18; L5 5-18); ERD+ "Multivalued"
+derived => Υπολογισμένο χαρακτηριστικό (L4 4-18; L5 5-18); AS1 "(που προέρχεται από ...)"; ST "υπολογίζονται από"; ERD+ "Derived"
+optional => προαιρετικό/προαιρετική (L5 5-14 "(Προαιρετικά) Ένα μερικό κλειδί"; ST Άσκ.3 #6 "είναι προαιρετική"); ERD+ "Optional"
+mandatory => υποχρεωτικό/υποχρεωτικά (L6 6-9 "Υποχρεωτικά πάντα (1,1)"; L6 6-30 "υποχρεωτική υποκλάση"); ERD+ "Mandatory"
+null => NULL, κενές τιμές (L4 4-4 "Αποφυγή πολλών κενών τιμών ... (111, NULL, NULL)"; L4 4-17 "περιορισμό NOT NULL")
+data type => τύπος δεδομένων (data type) (L4 4-12; SPEC 656)
+key => Κλειδί (Key) (L4 4-16); "Ένα κλειδί υπογραμμίζεται" (L4 4-16)
+primary key => πρωτεύων κλειδί (L4 4-17 "Πρωτεύων Κλειδί (Primary Key)"; L5 5-18; SPEC 657 "τα πρωτεύων και ξένα κλειδιά"). This is the course's own spelling. The course never writes "πρωτεύον".
+candidate key => Υποψήφιο Κλειδί (Candidate Key) ή Εναλλακτικά κλειδιά (L4 4-17); "εναλλακτικό κλειδί (candidate key)" (L4 4-18, L5 5-18)
+unique key => Μοναδικό Κλειδί (L4 4-17); "μοναδικό" (AS1, SPEC); ERD+ "Unique" (Lab3 uses "key, unique")
+partial key => μερικό κλειδί (partial key) (L5 5-14); "Διευκρινιστικό μερικό κλειδί (partial key)" (L5 5-18); AS1 "μερικώς μοναδικό"; ST "είναι μερικό κλειδί"; ERD+ "Partially Unique" (shown instead of "Unique" in some cases)
+composite key => Σύνθετο κλειδί (Composite key) (L4 4-18)
+superkey => Υπερκλειδί (SuperKey) (L4 4-17)
+foreign key => ξένο κλειδί (SPEC 657 "ξένα κλειδιά"; not in L4–L6)
+referential integrity => αναφορική ακεραιότητα (SPEC 658 "αναφορικής ακεραιότητας")
+uniquely identifies => προσδιορίζει μοναδικά (ST Άσκ.2 #1); "αναγνωρίζει ΜΟΝΑΔΙΚΑ" (L4 4-16)
+cardinality ratio => Λόγος Πληθικότητας (Cardinality Ratio) (L5 5-10, where the slide has the typo "Πληθικότητα"; L5 5-8 "Λόγοι Πληθικότητας"; L6 6-18 "ο λόγος πληθικότητας"); short form "πληθικότητα/πληθικότητες" (L5 5-19, 5-22; ST)
+(min,max) => Εναλλακτική Σημειογραφία (min, max) (L5 5-21); "Πληθικότητες με όρια" (L5 5-19); "άνω και κάτω όρια (δηλ., τουλάχιστο/μέχρι)" (L5 5-21); ERD+ "Edit Exact Constraints" → "Minimum"/"Maximum"
+notation => σημειογραφία (notation) (L4 4-11; L6 6-15; AS1)
+participation constraint => Περιορισμός Συμμετοχής (Participation Constraint) (L5 5-10)
+total participation => Ολική Συμμετοχή (Total – Existence Dependency) (L5 5-10); drawn as "Διπλή Γραμμή" (L5 5-11)
+partial participation => Μερική Συμμετοχή (Partial) (L5 5-10); drawn as "Μονή Γραμμή" (L5 5-11); "πρέπει να παραμένει ανοικτή" (L6 6-22); ST "η συμμετοχή τους παραμένει ανοικτή (0,M)"
+minimum participation => ελάχιστη συμμετοχή (L5 5-10; ST Άσκ.3 #1)
+structural constraints => Δομικοί Περιορισμοί (Structural Constraints) (L5 5-10; L6 6-5)
+one-to-one => One-to-one (1:1), kept in English (L5 5-10); SPEC 246-247 "σχέση ένα-προς-ένα"
+one-to-many => One-to-many (1:N), English (L5 5-10). "ένα-προς-πολλά" is not in the course texts and is formed by analogy only. ST prose: "από 1 έως πολλά".
+many-to-one => Many-to-one (N:1) (L5 5-10)
+many-to-many => Many-to-many (M:N) (L5 5-10); "M:N σχέση" (L5 5-5)
+role => ρόλος (L5 5-12 "ρόλος προϊσταμένου / ρόλος υφιστάμενου", "επί μέρους ρόλους"; L5 5-13 "Η ρητή αναφορά στους επί μέρους ρόλους είναι απαραίτητη")
+recursive => Αναδρομικός Τύπος Συσχέτισης (Recursive Relationship Type) (L5 5-12); "Αναδρομική Σχέση" (L5 5-13); ST "αναδρομική συσχέτιση"
+degree => Βαθμός Σχέσης (Relationship Degree) (L5 5-6); "Συσχετίσεις Υψηλότερου Βαθμού" (L6 6-3)
+binary => δυαδική (binary) συσχέτιση (L6 6-3; L5 5-6)
+ternary => τριαδική (ternary) συσχέτιση (L6 6-3, 6-7; ST)
+n-ary => Ν-αδική (n-ary) / n-αδική συσχέτιση (L6 6-3, 6-5)
+n-ary drawn as a weak entity => "Μετατροπή σε ασθενή οντότητα", "O προτρεπόμενος τρόπος αναπαράστασης των n-αδικών" (L6 6-7); "Λογικά Ισοδύναμα" / "ΌΧΙ Λογικά Ισοδύναμα" (L6 6-7); ST "σύμφωνα με τον προτεινόμενο τρόπο των διαλέξεων"
+redundant => περιττή ("η δυαδική αυτή σχέση είναι περιττή και μπορεί να αφαιρεθεί", L6 6-10)
+EER => Επεκταμένο ER (ΕΕR - Enhanced ER ή Extended ER) / Επεκταμένο Μοντέλο ΕR (L6 6-2, 6-26)
+specialization => Εξειδίκευση (Specialization) (L6 6-26, 6-31)
+generalization => Γενίκευση (Generalization) (L6 6-26, 6-32)
+superclass => Υπερκλάση (L6 6-27..6-33); ERD+ entity type "Supertype"
+subclass => Υποκλάση; "υποκλάσεις (subclasses) ή υποτύποι (subtypes)" (L6 6-27)
+superclass/subclass relationship => Συσχετίσεις Υπερκλάσης / Υποκλάσης; "συσχετίσεις IS-A" (L6 6-29)
+inheritance => Κληρονομικότητα; "η υποκλάση κληρονομεί όλα τα γνωρίσματα της υπερκλάσης" (L6 6-29)
+class => Κλάσεις (Classes) (L6 6-33)
+defining attribute / predicate => "Γνώρισμα που ορίζει την εξειδίκευση"; "θα ήταν συνθήκη" (L6 6-31)
+disjoint => Μη-Επικάλυψη; "d (disjoint): Μη Επικάλυψης"; "Περιορισμός Μη-Επικάλυψης (Disjointness Constraint)" (L6 6-33); "Ανεξάρτητα Σύνολα" (L6 6-28); ERD+ "Disjointed"
+overlapping => Επικάλυψη; "o (overlap): Επικάλυψης" (L6 6-33); "Περιορισμός Επικάλυψης (Overlap)" (L6 6-35); ERD+ "Overlapping"
+completeness constraint => Περιορισμός Πληρότητας ή Συμμετοχής (Completeness Constraint) (L6 6-33)
+total specialization => Ολική Συμμετοχή (Total) Υπερκλάσης (L6 6-33); "d/ο + διπλή γραμμή" (L6 6-35); ERD+ "Total Specialization"
+partial specialization => Μερική Συμμετοχή (Partial) Υπερκλάσης (L6 6-33); "+ μονή γραμμή" (L6 6-35)
+hierarchy => Ιεραρχία (hierarchy) (L6 6-36)
+lattice => Πλέγμα (lattice) (L6 6-36)
+shared subclass => Διαμοιραζόμενη Υποκλάση (Shared Subclass) (L6 6-37)
+single/multiple inheritance => Μονή / Πολλαπλή Κληρονομικότητα (L6 6-36)
+loss of meaning => απώλεια νοήματος (L6 6-39)
+constraint => Περιορισμός (L4–L6 throughout; L1 1-24 "περιορισμοί (constraints)")
+constraints the diagram cannot show => "Περιορισμοί που δεν απεικονίζονται στο διάγραμμα" (ST Άσκ.3, 4); "περιορισμοί τους οποίους δεν μπορείτε να αναπαραστήσετε με το διάγραμμα" (AS1)
+schema => Σχήμα; "Το σχήμα (δομή) μιας οντότητας" (L4 4-15, L5 5-6); "εννοιολογικό σχήμα" (L4 4-10; L6 6-11)
+relational schema => Σχεσιακό Σχήμα (L4 4-9; L5 5-17; SPEC 95 "Λογική Σχεδίαση Σχεσιακού Σχήματος (ANSI)"; SPEC 655 "Το Σχεσιακό Σχήμα (ANSI ή TSQL)")
+conceptual design => Εννοιολογική Σχεδίαση (L4 4-3; SPEC 20, 94; AS1)
+logical design => Λογική Σχεδίαση (L4 4-4; SPEC 95)
+schema refinement => Εκλέπτυνση Σχήματος (L4 4-4; SPEC 20)
+physical design => Φυσική Σχεδίαση / Φυσικός Σχεδιασμός (L4 4-4; SPEC 599)
+requirements => Απαιτήσεις; Ανάλυση Απαιτήσεων (L4 4-3); "Λειτουργικές Απαιτήσεις" (SPEC 206)
+specification => προδιαγραφές; "εγγράφου προδιαγραφών" (SPEC 67); "Προδιαγραφή Ι..IV" (L4 4-21)
+problem statement => εκφώνηση (SPEC 715; ST Άσκ.4 #1 "η εκφώνηση δεν δίνει")
+design decision => not in the course texts. Closest wording: "βασικές επιλογές στο σχεδιασμό της βάσης" (SPEC 685) and "Θέματα Σχεδιασμού" (L5 5-2). Suggested: "επιλογή σχεδιασμού".
+assumption => Υπόθεση/Υποθέσεις (L6 6-22 "(Λογική) Υπόθεση: Υποθέτω ότι..."; SPEC 659 "Περιγραφή τυχών υποθέσεων μέχρι και (1/2) μισή σελίδα"; AS1 "υποθέσεις"). Also "Παραδοχές" (AS1 "δώστε τις όποιες παραδοχές κάνατε"; ST Άσκ.2/3 "Παραδοχές:"; ST Άσκ.4 "Υποθέσεις:").
+ambiguity => Ασάφεια/Ασάφειες (L6 6-22)
+openness => Ανοικτότητα; "πρέπει να παραμένει ανοικτή" (L6 6-22)
+interpretation => Ερμηνεία ("Ερμηνεία (0, N)", L6 6-24)
+conflict => not in the course texts. SPEC uses "ασυνέπειες" for data inconsistencies (404). Suggested: "αντίφαση" for contradicting statements in the spec.
+diagram => Διάγραμμα. ER diagram: "Διάγραμμα Οντοτήτων-Συσχετίσεων" (L5 5-2; ST); "Διάγραμμα Οντοτήτων Συσχετίσεων (ER)" (SPEC 654; AS1 title); "ΔΟΣ ή ER Diagram (ERD)" (L4 4-11); "Διάγραμμα ER" (L5 5-8); "Διαγράμματος Chen ER" (SPEC 94)
+edge/line => ακμή ("μέσω ακμών", L4 4-13, L5 5-6); "Μονή Γραμμή" / "Διπλή Γραμμή" (L5 5-11)
+underlined => υπογραμμισμένο / υπογραμμίζεται (L4 4-16, 4-17)
+instance => στιγμιότυπο (L5 5-4; SPEC 591)
+mini-world => Mini-world (Σύνολο Αναφοράς – Universe of Discourse) (L1 1-21)
+data dictionary => λεξικό δεδομένων (SPEC 687)
+ERD+ "other side" placement => "βρίσκονται στην άλλη πλευρά" (L6 6-18); ST "στην απέναντι πλευρά"
+naming rule => AS1: "Tα ονόματα των οντοτήτων, συσχετίσεων και γνωρίσματων δύναται να δοθούν στα Αγγλικά". Entity, relationship and attribute names stay in English.
+
+== B. MDMS-Cy SPEC TERMS (exact spelling in p.txt) ==
+consumer (ΚΧ) => Καταναλωτής/Απλός Χρήστης (ΚΧ) (SPEC 243); heading "Καταναλωτές/Χρήστες & Υποστατικά (ΚΧ)" (119); "καταναλωτής/καταναλωτές"; "τελικούς καταναλωτές" (39); "καταναλωτές (consumers)" (171); also "πελάτης" ("τα aggregates του πελάτη", 322)
+prosumer => παραγωγοί-καταναλωτές (prosumers) (171, 255-256); "ενεργοί καταναλωτές" (171); "κλάσεων prosumer" (638)
+premise => υποστατικό/υποστατικά (26, 119, 247); "Premise ID" (247, 355)
+premise usage => χρήση υποστατικού (Οικιακό, Εμπορικό, Βιομηχανικό, Γεωργικό) (248-249)
+administrative location => διοικητική ένταξη (Επαρχία, Δήμος, Ενορία, Ταχυδρομικός Κώδικας) (249-250)
+coordinates / address => γεωγραφικές συντεταγμένες WGS84; διεύθυνση (248, 453)
+user account / password => μοναδικός λογαριασμός (217); συνθηματικά "σε μη αναστρέψιμη μορφή" (218-219); "κωδικού/συνθηματικού πρόσβασης" (582)
+self-registration => self-registration, in English (243, 338)
+field technician (ΤΠ) => Τεχνικός Πεδίου (ΤΠ) / Τεχνικοί Πεδίου (ΤΠ) (126, 338)
+technician category / specialty / availability => "κατηγορία/κατάλογο τεχνικών ανάλογα με την ειδικότητά του"; "ημερήσια χρονική και γεωγραφική διαθεσιμότητα" (339-341)
+technician documents => Ταυτότητα, Άδεια Εγκαταστάτη, Πιστοποιητικό Τεχνικής Κατάρτισης (342-343). Fields: "αναγνωριστικός αριθμός/κωδικός, ημερομηνία έκδοσης, ημερομηνία λήξης, ηλεκτρονικό αντίγραφο/φωτογραφία" (343-344).
+system operator (ΛΣ) => Λειτουργός Συστήματος (ΛΣ) / Λειτουργοί Συστήματος (ΛΣ) (221, 339); "οριζόντιος ρόλος ελέγχου και έγκρισης" (222)
+system administrator (ΔΣ) => Διαχειριστής Συστήματος (ΔΣ), "τον root ρόλο" (220)
+DSO => Διαχειριστές Διανομής (DSO – Distribution System Operator) (137); "Διαχειριστή Διανομής (DSO)" (383)
+TSO => Διαχειριστές Δικτύου (TSO – Transmission System Operator) (151); "TSO/Διαχειριστής Ηλεκτρικού Δικτύου (ΔΗΔ)" (451); "επιχειρησιακοί επόπτες" (151)
+supplier => Προμηθευτές; "προμηθευτές ηλεκτρικής ενέργειας (suppliers)" (164, 172)
+aggregator => Φορείς Σωρευτικής Εκπροσώπησης (Aggregators) (164, 498, 502)
+portfolio => χαρτοφυλάκιο ("πελάτες ή τα χαρτοφυλάκια που εκπροσωπούν", 504)
+stakeholder => stakeholders, in English (209, 503)
+meter => Μετρητής / έξυπνος μετρητής (37, 452); "Smart Meters" (466); "MeterID" (460)
+meter technical data => σειριακός αριθμός, τύπος μετρητή (Single-Phase ή Three-Phase), firmware, τύπος επικοινωνίας, φάσεις σύνδεσης, μέγιστη χωρητικότητα/όρια φορτίου σε Amps (356-357)
+meter equipment documents => Πιστοποιητικό Εργοστασιακής Βαθμονόμησης, Δήλωση Συμμόρφωσης CE & Πρωτοκόλλου, Πιστοποιητικό Διασφάλισης Κρυπτογράφησης Τηλεμετρίας (359-360)
+meter model => πρότυπα μετρητών ("καθορίζουν πρότυπα μετρητών, τύπους υπηρεσιών και τιμολογίων", 223)
+meter confirmation => "επιβεβαιώνει τον μετρητή" (368); "ενεργή κατάσταση για ingestion" (369); "υπαρκτό και ενεργό/επιβεβαιωμένο μετρητή" (391)
+reading/measurement => μέτρηση/μετρήσεις; "πρωτογενείς 15-λεπτες μετρήσεις" (315); "πρωτογενή 15-λεπτα δεδομένα" (277); "πρωτογενείς εγγραφές" (281); "πρωτογενών (raw) δεδομένων" (510)
+15-minute interval => "15-λεπτο αναφοράς" (488); "στο αντίστοιχο 15-λεπτο" (392). Other forms: 15-λεπτες, 15-λεπτα, 15-λεπτης, 15-λεπτων, and once 15-λεπτές (121).
+time series => χρονοσειρά/χρονοσειρές (121, 253, 404)
+timestamp => χρονική σήμανση (231, 389); "timestamp" (392); "χρονόσημο" (26)
+measurement code / unit => "μονάδα και κωδικό μέτρησης" (392); "OBIS κωδικός" (403); "ζεύγη OBIS code/value" (390); "ζεύγη OBIS_Code:Value" (775)
+measurable quantity => "μετρήσιμων μεγεθών" (399)
+registers => "σωρευτικά μητρώα" (485-486); "Συγκεντρωτικές Μετρήσεις Κατανάλωσης Ενεργού & Αέργου Ισχύος (Energy Registers)" (745)
+instantaneous values => Στιγμιαίες Μετρήσεις Ποιότητας Ισχύος (Instantaneous Grid Values) (762)
+import / export => εισαγόμενη ενέργεια (κατανάλωση) / εξαγόμενη ενέργεια (παραγωγή) (255-257, 515-516); "ισοζύγιο ενέργειας" (122); "ενεργειακού ισοζυγίου" (258)
+active / reactive / voltage / current => ενεργός / άεργος ενέργεια; τάση; "ένταση ανά φάση" (397); "Ένταση Ρεύματος ανά Φάση" (769)
+packet => πακέτο τηλεμετρίας; "εισερχόμενα πακέτα τηλεμετρίας" (387); "Πηγαίου Πακέτου Τηλεμετρίας" (773)
+packet contents => "αναγνωριστικό δικτύου του μετρητή, χρονική σήμανση, πληροφορία επικοινωνίας και ζεύγη OBIS code/value" (389-390). JSON keys: Meter_Network_ID, Transmission_Timestamp, Cell_Signal_Strength_dBm, Network_Type, Telemetry_Payload.
+unmatched packet => "Πακέτα που δεν μπορούν να αντιστοιχιστούν ... ως αποτυχίες/συμβάντα" (392-394)
+ingestion => ingestion, in English; heading "Εισαγωγή και αντιστοίχιση 15-λεπτης τηλεμετρίας" (385)
+telecom infrastructure => "τηλεπικοινωνιακών υποδομών (π.χ. Cellular/NB-IoT ή PLC)" (388)
+transformer => Μετασχηματιστής; "μετασχηματιστή χαμηλής τάσης (LV Transformer)" (454); "φυσικό μετασχηματιστή χαμηλής τάσης" (453); "Μετασχηματιστές" (194)
+geofence => Geofence/Geofences, in English; "γεωγραφική περιοχή εξυπηρέτησης (Geofence)" (455); "GeofenceID" (463)
+geofence levels => "Geofence πρώτου επιπέδου (Geofence L1)", "δεύτερου επιπέδου (Geofence L2)", "ανώτερων επιπέδων (L3 … Ln)" (462-465); "ιεραρχία Geofences αυθαίρετου βάθους" (466); "ανώτερων Geofences (ancestors)" (493); "υποκείμενων Geofences" (482)
+geofence shape => "πολυγωνικό γεωγραφικό όριο ή ... ορθογώνια περιοχή" (456-457)
+spatial organisation => "Χωρική οργάνωση και τοπολογική ιεραρχία" (450)
+current-state table => "ενδιάμεσο πίνακα τρέχουσας κατάστασης, με τουλάχιστον GeofenceID, 15-λεπτο αναφοράς, OBIS κωδικό, SUM" (487-488)
+remote shedding => "απομακρυσμένη αποσύνδεση φορτίου (remote shedding)" (162)
+aggregate => aggregates, in English; "συγκεντρωτικά δεδομένα (aggregates)" (178, 304); "ημερήσια, μηνιαία και ετήσια aggregates" (279-280, 316); "συγκεντρωτικές τιμές" (433); "15-λεπτα provisional aggregates" (543)
+VEE => "Επικύρωσης, Εκτίμησης και Διόρθωσης (Validation, Estimation and Editing – VEE)" (140-141); "λογική VEE" (402); "VEE Pipeline" (743)
+validation / estimation / editing => Validation, Estimation, Editing in English in §3.2; "επικυρωμένες μετρήσεις" (513); "εκτιμημένη τιμή" (406); "ελεγχόμενη διόρθωση" (406)
+measurement status => "κατάσταση της μέτρησης (π.χ. validated/estimated)" (407-408); "κατάσταση estimated" (425)
+edit trail => "την αρχική τιμή, τη διορθωμένη τιμή και την προέλευση της αλλαγής" (427-428)
+finalized / immutable => "οριστικοποιημένες και αμετάβλητες (immutable)" (431); "VEE-verified" (477); "VEE έγκυρες τιμές" (491)
+suspicious / gap / missing => "ύποπτη" (414); "κενό στη χρονοσειρά" (416); "ελλιπής μέτρηση" (423); "ελλιπείς ή μη έγκυρες μετρήσεις" (142)
+event => συμβάν/συμβάντα (146, 228, 260, 380); "Event Log" (381); "Κρίσιμα συμβάντα" (380); "συμβάν (event)" (739)
+power-quality / theft => υπόταση / υπέρταση (260); "βυθίσεων και υπερτάσεων τάσης" (145); "ρευματοκλοπή" (147)
+audit log => "κατάστιχο ενεργειών (log)" (135); "κατάστιχο (log)" (229); "καταγραφή σε log" (308). Required log contents (229-232): "την ενέργεια με το αντικείμενο που αφορά, τον χρήστη ή μηχανισμό που την προκάλεσε, χρονική σήμανση, προηγούμενη/νέα κατάσταση όπου εφαρμόζεται και αποτέλεσμα ή σχόλιο".
+traceability / history => ιχνηλασιμότητα (136, 376); "ιχνηλάσιμη" (229); ιστορικό (289, 353); ιστορικότητα (214); κατάσταση (status, passim)
+task => εργασία πεδίου / εργασίες πεδίου (347-348). Types (348-349): "εγκατάσταση, αντικατάσταση, τεχνικό έλεγχο και anti-tamper έλεγχο". Fields (350-351): "τύπο εργασίας, προγραμματισμό/χρονική περίοδο, κατάσταση και αποτέλεσμα". Verbs: "ανατίθενται" / "αποδέχεται" (351). Also "παρατηρήσεις, τα ευρήματα και τα σχετικά τεκμήρια" (352-353).
+consumer request => "αίτημα ελέγχου μετρητή ή αναφορά βλάβης" (286); "Το αίτημα αποκτά κατάσταση και ιστορικό" (287)
+remote command => απομακρυσμένες εντολές (372); "εξουσιοδοτημένες εντολές δικτύου" (134); "διακοπή/επανενεργοποίηση παροχής ή αναβάθμιση firmware" (373); "εγγραφή εντολής" (374); "ο αιτών/εκτελών χρήστης, ο στόχος, η χρονική στιγμή, η κατάσταση και οι διαδοχικές προσπάθειες" (374-375); "επιβεβαίωση επιτυχίας (ACK)" (376)
+security check => "περιοδικούς ελέγχους ασφάλειας και anti-tampering" (378). Fields (379-380): "ο υπεύθυνος τεχνικός/λειτουργός, η ημερομηνία, σχόλια/ευρήματα και τα πρόσωπα που πρέπει να ενημερωθούν".
+approval => έγκριση / απόρριψη (227, 345); προέγκριση (244, 308); τελική έγκριση (308)
+GDPR request => αίτημα GDPR (228, 322); "αίτημα άσκησης του δικαιώματος στη λήθη (right-to-be-forgotten)" (294); "δικαίωμα στη λήθη" (293); flow "υποβολής, εξέτασης, προέγκρισης και τελικής έγκρισης" (307-308)
+retention => "πολιτική διατήρησης (δεδομένων)" (276, 311); "περίοδο διατήρησης" (323); "τρία (3) χρόνια" / "τριετία" (315-317); "σε έναν (1) μήνα" (323-324); "προτιμήσεις ιδιωτικότητας και διατήρησης δεδομένων" (272-273); transformer data "διατηρούνται μόνιμα" (327)
+invoice / billing => τιμολόγιο ("χρέωσης/τιμολογίου", 290); τιμολόγηση (197); "δυναμικής τιμολόγησης" (291)
+charge / fee => χρέωση ("ιστορικό χρεώσεων και πληρωμών", 289); "πρόσθετη χρέωση της αντίστοιχης υπηρεσίας" (269-270); "τέλους υπηρεσίας MDMS-Cy" (291)
+payment => πληρωμή; "στοιχεία πληρωμών/τραπεζικών λογαριασμών" (250); "ροή πληρωμών" (251); "έκδοση ή εξόφληση λογαριασμών" (234-235)
+service type => "τύπους υπηρεσιών" (223)
+thresholds / notifications => "όρια (thresholds) κατανάλωσης"; "προτιμήσεις ειδοποίησής του ... email ή SMS" (264-265)
+current vs history access => "μετρήσεις του τρέχοντος μήνα" vs "ιστορικά δεδομένα προηγούμενων μηνών" (268-269)
+Day-Ahead / Intraday => "Day-Ahead (Προημερήσιες)" (526); "Intraday (Ενδοημερήσιων)" (529)
+net billing => Net Billing / Net Metering, in English (256)
+phase unbalance / losses => "Εξισορρόπησης Φάσεων (Phase Unbalance)" (771); "ανισορροπίας μεταξύ φάσεων" (146); "τεχνικών απωλειών" (145)
+atomic operation => "μία ενιαία και ατομική ενέργεια" (236)
+future extension => "επιτρέπεται επέκταση αλλά όχι αλλαγή" (633-636)
+
+== C. WORDS THAT CAN BE MISREAD ==
+"σχήμα" has three meanings. It means schema in L4/L5 and "Σχεσιακό Σχήμα". The spec also uses "Σχήμα 1..6" for figures. In the user's message "σχήμα" means an ERD+ shape. For shapes, the Greek word "σύμβολο" (symbol) avoids the confusion.
+"σχέση" vs "συσχέτιση": the lectures use both for relationship. In the relational model "σχέση" means relation (table), so use "συσχέτιση" for ER.
+"λογαριασμός" has three meanings in the spec: user account (217), bill ("εξόφληση λογαριασμών", 235) and bank account (250).
+"τιμολόγιο" can mean invoice (290) or tariff ("τύπους υπηρεσιών και τιμολογίων" set by ΛΣ, 223).
+"Διαχειριστής" covers several roles: ΔΣ is the system admin, DSO is Διαχειριστής Διανομής, TSO is Διαχειριστής Δικτύου/ΔΗΔ, and "Διαχειριστές της Βάσης (DBA)" appears at 63.
+"ασθενής" means weak in ER, but patient in AS1 Exercise 3.
+"πρωτεύων κλειδί" is the course's non-standard spelling. Both the lectures and the spec use it.
+
+== D. ERD+ UI labels (from main.js) ==
+entity type => Regular / Weak / Associative / Supertype (and subtype)
+attribute flags => Unique (sometimes "Partially Unique"), Multivalued, Composite, Derived, Optional
+relationship => Identifying checkbox; cardinality One/Many; participation Mandatory/Optional; Edit Exact Constraints (Minimum/Maximum)
+specialization => Disjointed / Overlapping; Total Specialization checkbox
