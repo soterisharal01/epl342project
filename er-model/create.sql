@@ -197,7 +197,8 @@ CREATE TABLE METER_MODEL (
     ModelID INT IDENTITY(1,1) NOT NULL,
     Manufacturer NVARCHAR(100) NOT NULL,
     ModelName NVARCHAR(100) NOT NULL,
-    MeterType VARCHAR(12) NOT NULL CONSTRAINT CK_METER_MODEL_MeterType CHECK (MeterType IN ('Single-Phase', 'Three-Phase')),
+    MeterType VARCHAR(30) NOT NULL,
+    PhaseCount TINYINT NOT NULL CONSTRAINT CK_METER_MODEL_PhaseCount CHECK (PhaseCount BETWEEN 1 AND 3),
     CONSTRAINT PK_METER_MODEL PRIMARY KEY (ModelID),
     CONSTRAINT UQ_METER_MODEL_Manufacturer_ModelName UNIQUE (Manufacturer, ModelName)
 );
@@ -561,7 +562,7 @@ GO
 -- EVENT
 CREATE TABLE EVENT (
     EventID BIGINT IDENTITY(1,1) NOT NULL,
-    EventType VARCHAR(21) NOT NULL CONSTRAINT CK_EVENT_EventType CHECK (EventType IN ('Undervoltage', 'Overvoltage', 'Communication failure', 'Unmatched packet', 'Tamper', 'Suspected theft')),
+    EventType VARCHAR(30) NOT NULL,
     Severity VARCHAR(8) NOT NULL CONSTRAINT CK_EVENT_Severity CHECK (Severity IN ('Info', 'Warning', 'Critical')),
     Description NVARCHAR(1000) NULL,
     OccurredAt DATETIME2(0) NOT NULL,
@@ -628,7 +629,7 @@ GO
 -- REMOTE_COMMAND
 CREATE TABLE REMOTE_COMMAND (
     CommandID INT IDENTITY(1,1) NOT NULL,
-    CommandType VARCHAR(16) NOT NULL CONSTRAINT CK_REMOTE_COMMAND_CommandType CHECK (CommandType IN ('Disconnect', 'Reconnect', 'Firmware upgrade', 'Load shed')),
+    CommandType VARCHAR(30) NOT NULL,
     Parameters NVARCHAR(1000) NULL CONSTRAINT CK_REMOTE_COMMAND_Parameters CHECK (ISJSON(Parameters) = 1),
     RequestedAt DATETIME2(0) NOT NULL CONSTRAINT DF_REMOTE_COMMAND_RequestedAt DEFAULT SYSUTCDATETIME(),
     Status VARCHAR(17) NOT NULL CONSTRAINT CK_REMOTE_COMMAND_Status CHECK (Status IN ('Awaiting approval', 'Sent', 'Acknowledged', 'Failed', 'Cancelled')),

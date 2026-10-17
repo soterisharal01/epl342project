@@ -153,16 +153,16 @@ const areas = [
     lead: 'A meter is linked to premises through dated installations, so a replacement never breaks the premise history. Remote commands keep every attempt until the ACK.',
     leadSrc: ['S36', 'S38', 'S39', 'S40'],
     entities: [
-      E('METER_MODEL', ['_ModelID', 'Manufacturer', 'ModelName', 'MeterType'], ['S12', 'S36', 'S60'],
-        { note: 'Defined by a System Operator. MeterType: Single-Phase or Three-Phase. A new meter type is a new row.' }),
+      E('METER_MODEL', ['_ModelID', 'Manufacturer', 'ModelName', 'MeterType', 'PhaseCount'], ['S12', 'S36', 'S60'],
+        { note: 'Defined by a System Operator. MeterType, for example Single-Phase or Three-Phase, is an open list, so a new meter type is a new row with a new MeterType value. PhaseCount (1 to 3) is how many phases a meter of this model is wired to.' }),
       E('COMM_TYPE', ['_CommTypeID', '!Name'], ['S42', 'S60'],
         { note: 'Rows: Cellular, NB-IoT, PLC. A new telemetry protocol is a new row.' }),
       E('METER', ['_MeterID', '!SerialNumber', '!NetworkID', 'Firmware', '{ConnectedPhase}', 'MaxLoadAmps', 'Latitude', 'Longitude', 'Status'], ['S36', 'S38', 'S42', 'S51', 'S64'],
-        { note: 'NetworkID is the Meter_Network_ID that packets carry. ConnectedPhase: L1, L2, L3, the transformer phases the meter is wired to (one for a Single-Phase model, three for a Three-Phase model). Status: Pending confirmation, Active, Retired. Only Active meters are ingested; a disconnected or shed meter stays Active and keeps sending data. Status is Active only while the open installation is Confirmed (set in the same transaction as CONFIRMS), Pending confirmation while it is Pending or Rejected, and Retired when no installation is open.' }),
+        { note: 'NetworkID is the Meter_Network_ID that packets carry. ConnectedPhase: L1, L2, L3, the transformer phases the meter is wired to (as many as the PhaseCount of its model). Status: Pending confirmation, Active, Retired. Only Active meters are ingested; a disconnected or shed meter stays Active and keeps sending data. Status is Active only while the open installation is Confirmed (set in the same transaction as CONFIRMS), Pending confirmation while it is Pending or Rejected, and Retired when no installation is open.' }),
       E('METER_INSTALLATION', ['_InstallationID', 'InstalledAt', 'RemovedAt', 'ConfirmationStatus', 'ConfirmedAt', 'ConfirmComment'], ['S36', 'S38', 'S39', 'D10'],
         { note: 'RemovedAt is empty while the meter is in place. In a replacement, the old installation\'s RemovedAt equals the new installation\'s InstalledAt. ConfirmationStatus: Pending, Confirmed, Rejected.' }),
       E('REMOTE_COMMAND', ['_CommandID', 'CommandType', 'Parameters', 'RequestedAt', 'Status'], ['S40', 'S6'],
-        { note: 'CommandType: Disconnect, Reconnect, Firmware upgrade, Load shed. Status: Awaiting approval, Sent, Acknowledged, Failed, Cancelled; Acknowledged if and only if the last attempt has Outcome ACK. A meter\'s supply state (connected or cut) is its latest acknowledged Disconnect, Reconnect or Load shed command.' }),
+        { note: 'CommandType (open list): Disconnect, Reconnect, Firmware upgrade, Load shed, and any type a new telemetry protocol adds. Status: Awaiting approval, Sent, Acknowledged, Failed, Cancelled; Acknowledged if and only if the last attempt has Outcome ACK. A meter\'s supply state (connected or cut) is its latest acknowledged Disconnect, Reconnect or Load shed command.' }),
       E('COMMAND_ATTEMPT', ['~AttemptNo', 'AttemptAt', 'RespondedAt', 'Outcome'], ['S40', 'L2'], { weak: true,
         note: 'Weak entity owned by REMOTE_COMMAND. Outcome: Timeout, NAK, ACK, and empty while the attempt waits for an answer. RespondedAt is when the meter answered; no attempt follows an ACK.' }),
       E('LOAD_SHED_ORDER', ['_ShedOrderID', 'Reason', 'CreatedAt', 'Status'], ['S6', 'D11'],
@@ -288,7 +288,7 @@ const areas = [
       E('AUDIT_LOG', ['_LogID', 'ObjectType', 'ObjectID', 'Action', 'ActorMechanism', 'LoggedAt', 'OldState', 'NewState', 'ResultComment'], ['S13', 'S33', 'S4', 'D18'],
         { note: 'ActorMechanism names a job (e.g. the VEE run and rule) when no user acted. A VEE result is logged with ObjectType READING, ObjectID the reading key (MeterID, ObisCode, IntervalStart), the status change in OldState and NewState, and the reason in ResultComment.' }),
       E('EVENT', ['_EventID', 'EventType', 'Severity', 'Description', 'OccurredAt', 'Status'], ['S5', 'S19', 'S41', 'S43'],
-        { note: 'EventType: Undervoltage, Overvoltage, Communication failure, Unmatched packet, Tamper, Suspected theft. Severity: Info, Warning, Critical. Status: Open, In progress, Closed. An Unmatched packet event points (EVENT_FROM) to a packet whose IngestStatus is Unknown meter or Meter not active, and is raised when follow-up is needed.' })
+        { note: 'EventType (open list): Undervoltage, Overvoltage, Communication failure, Unmatched packet, Tamper, Suspected theft, and any new type. Severity: Info, Warning, Critical. Status: Open, In progress, Closed. An Unmatched packet event points (EVENT_FROM) to a packet whose IngestStatus is Unknown meter or Meter not active, and is raised when follow-up is needed.' })
     ],
     rels: [
       R('REQUESTS_ERASURE', [['CONSUMER', '1', false], ['GDPR_REQUEST', 'N', true]], ['S25'], { fk: 'ConsumerID' }),

@@ -42,13 +42,13 @@ git log --all --oneline -15        # τι έκανε ο καθένας
 |---|---|---|---|
 | A1 | Μοντέλο ER (`model.js`), 53 οντότητες, 92 συσχετίσεις | Claude του project | ✓ |
 | A2 | Αρχείο ERD+ (`er-model/mdms-er.erdplus`) | Claude του project | ✓ |
-| A3 | Σχεσιακό σχήμα (`create.sql`), 74 έλεγχοι σε SQL Server 2025 | Claude του project | ✓ |
+| A3 | Σχεσιακό σχήμα (`create.sql`), 76 έλεγχοι σε SQL Server 2025 | Claude του project | ✓ |
 | A4 | Έγγραφο Φάσης Α (`deliverables/phase-a/phase-a.docx`, από το `er-model/phase-a-doc.js`) | Claude του project | ✓ πρώτο σχέδιο |
-| A5 | Έλεγχος ER σε σχέση με την εκφώνηση (κάθε απαίτηση S1-S79 καλύπτεται, σωστές cardinalities, weak entities) | Claude ελέγχου | ○ |
-| A6 | Έλεγχος σχήματος (τύποι, PK/FK, CHECK, αντιστοίχιση ER → πίνακες) και των παραδοχών (≤ 1/2 σελίδα) | Claude ελέγχου | ○ |
+| A5 | Έλεγχος ER σε σχέση με την εκφώνηση (κάθε απαίτηση S1-S79 καλύπτεται, σωστές cardinalities, weak entities) | Claude ελέγχου | ✓ ([reviews/phase-a-A5-A6.md](reviews/phase-a-A5-A6.md), PR #2) |
+| A6 | Έλεγχος σχήματος (τύποι, PK/FK, CHECK, αντιστοίχιση ER → πίνακες) και των παραδοχών (≤ 1/2 σελίδα) | Claude ελέγχου | ✓ ([reviews/phase-a-A5-A6.md](reviews/phase-a-A5-A6.md), PR #2) |
 | A7 | Εικόνες από το ERD+: (α) Import `er-model/mdms-er.erdplus` → Download image ή screenshots → `deliverables/phase-a/er-diagram.png` (ή `er-diagram-1.png`, `-2.png`…). (β) Import/Restore `er-model/mdms-relational.erdplus` (οι 62 πίνακες) → `deliverables/phase-a/relational-diagram.png` (ή `-1.png`…). Μετά `node er-model/phase-a-doc.js`. | Soteris | ○ |
 | A8 | Αριθμός ομάδας και ονόματα μελών στο έγγραφο: `TEAM=<αρ.> MEMBERS="Όνομα 1 (ID)\|Όνομα 2 (ID)\|Όνομα 3 (ID)" node phase-a-doc.js` | Soteris | ○ |
-| A9 | Διορθώσεις από τα σχόλια των A5/A6, ξαναπαραγωγή όλων των αρχείων | Claude του project | ○ |
+| A9 | Διορθώσεις από τα σχόλια των A5/A6, ξαναπαραγωγή όλων των αρχείων | Claude του project | ✓ Σ1-Σ4 (Σ5, Σ7 στο A7, Σ6 στη Φάση Β) |
 | A10 | Τελικό: μετονομασία σε `<team-number>.docx` (ή .pdf) και ανέβασμα στο Moodle | Soteris | ○ |
 
 Το A7 το κάνει άνθρωπος, γιατί κανένα Claude δεν φτάνει στο erdplus.com. Μέχρι να υπάρξει το `er-diagram.png`, το έγγραφο έχει το ίδιο αρχείο ERD+ σχεδιασμένο από δικό μας script (`er-model/mdms-er-card.png`, με τα (min,max)), με κόκκινη σημείωση «προσωρινή».

@@ -29,7 +29,7 @@ INSERT INTO PARISH (Name, MunicipalityID) VALUES (N'Άγιος Δημήτριο�
 INSERT INTO SUPPLY_SCHEME (Name) VALUES (N'Net metering');
 INSERT INTO PREMISE (Address, PostalCode, Latitude, Longitude, UsageType, ParishID, SchemeID) VALUES (N'Οδός Παράδεισου 1', '2001', 35.150000, 33.350000, 'Residential', 1, 1);
 INSERT INTO HOLDING (UserID, PremiseID, StartDate) VALUES (3, 1, '2026-01-01');
-INSERT INTO METER_MODEL (Manufacturer, ModelName, MeterType) VALUES (N'Landis+Gyr', N'E450', 'Single-Phase');
+INSERT INTO METER_MODEL (Manufacturer, ModelName, MeterType, PhaseCount) VALUES (N'Landis+Gyr', N'E450', 'Single-Phase', 1);
 INSERT INTO COMM_TYPE (Name) VALUES (N'PLC');
 INSERT INTO GEOFENCE (Name, Level, MinLat, MinLon, MaxLat, MaxLon) VALUES (N'Στρόβολος 1', 1, 35.100000, 33.300000, 35.200000, 33.400000);
 INSERT INTO TRANSFORMER (Name, Latitude, Longitude, GeofenceID) VALUES (N'TR-001', 35.150000, 33.350000, 1);
@@ -101,6 +101,8 @@ const tests = [
   { area: 'meters', el: 'Δεύτερη ανοιχτή εγκατάσταση του ίδιου μετρητή', sql: `INSERT INTO FIELD_TASK (TaskType, ScheduledFrom, ScheduledTo, TechnicianID, PremiseID) VALUES ('Installation', '2026-03-01 08:00', '2026-03-01 10:00', 4, 1); INSERT INTO METER_INSTALLATION (InstalledAt, MeterID, PremiseID, TaskID) VALUES ('2026-03-01 09:00', 1, 1, SCOPE_IDENTITY());`, expect: 'UX_METER_INSTALLATION_Open' },
   { area: 'meters', el: 'Δύο εγκαταστάσεις από την ίδια εργασία (DONE_IN 1:1)', sql: `UPDATE METER_INSTALLATION SET RemovedAt = '2026-02-20' WHERE InstallationID = 1; INSERT INTO METER_INSTALLATION (InstalledAt, MeterID, PremiseID, TaskID) VALUES ('2026-03-01 09:00', 1, 1, 1);`, expect: 'UQ_METER_INSTALLATION_TaskID' },
   { area: 'meters', el: 'Επιβεβαίωση εγκατάστασης χωρίς ΛΣ', sql: `UPDATE METER_INSTALLATION SET ConfirmationStatus = 'Confirmed' WHERE InstallationID = 1;`, expect: 'CK_METER_INSTALLATION_Confirmation' },
+  { area: 'meters', el: 'Νέος τύπος μετρητή χωρίς αλλαγή δομής (S60)', sql: `INSERT INTO METER_MODEL (Manufacturer, ModelName, MeterType, PhaseCount) VALUES (N'Kaifa', N'MA309', 'Split-Phase', 2);`, expect: 'OK' },
+  { area: 'meters', el: 'Μοντέλο με 4 φάσεις', sql: `INSERT INTO METER_MODEL (Manufacturer, ModelName, MeterType, PhaseCount) VALUES (N'Kaifa', N'MA310', 'Three-Phase', 4);`, expect: 'CK_METER_MODEL_PhaseCount' },
   { area: 'meters', el: 'Κατάσταση μετρητή εκτός λίστας', sql: `UPDATE METER SET Status = 'Broken' WHERE MeterID = 1;`, expect: 'CK_METER_Status' },
   { area: 'meters', el: 'Εντολή Load shed χωρίς εντολή περικοπής', sql: `INSERT INTO REMOTE_COMMAND (CommandType, Status, MeterID, RequestedBy) VALUES ('Load shed', 'Sent', 1, 6);`, expect: 'CK_REMOTE_COMMAND_ShedOrder' },
   { area: 'meters', el: 'Εντολή σε αναμονή έγκρισης που έχει ήδη εγκρίνοντα', sql: `INSERT INTO REMOTE_COMMAND (CommandType, Status, MeterID, RequestedBy, ApprovedBy) VALUES ('Disconnect', 'Awaiting approval', 1, 2, 2);`, expect: 'CK_REMOTE_COMMAND_Approval' },
