@@ -29,7 +29,8 @@ git log --all --oneline -15        # τι έκανε ο καθένας
    node build.js && node build-schema.js        # σελίδες HTML του ER και του σχήματος
    node erdplus-export.js && node erdplus-check.js   # αρχείο ERD+ και έλεγχος (errors: [])
    node erdplus-preview.js --card && node svg-to-png.js mdms-er-card.svg mdms-er-card.png 2   # προσωρινή εικόνα του ER με (min,max)
-   node relational-export.js                    # mdms-relational.erdplus: οι πίνακες ως σχεσιακό διάγραμμα ERD+
+   node relational-export.js                    # mdms-relational.erdplus: οι πίνακες ως σχεσιακό διάγραμμα ERD+ (επιπλέον)
+   # διαγράμματα πινάκων από τον SQL Server: deliverables/phase-a/sqlserver-diagram/README.md
    node phase-a-doc.js                          # έγγραφο Φάσης Α
    ```
    Αρχεία που παράγονται από scripts δεν διορθώνονται με το χέρι. Το `DECISIONS.md` ενημερώνεται με το χέρι όταν αλλάζει μια απόφαση.
@@ -46,9 +47,9 @@ git log --all --oneline -15        # τι έκανε ο καθένας
 | A4 | Έγγραφο Φάσης Α (`deliverables/phase-a/phase-a.docx`, από το `er-model/phase-a-doc.js`) | Claude του project | ✓ πρώτο σχέδιο |
 | A5 | Έλεγχος ER σε σχέση με την εκφώνηση (κάθε απαίτηση S1-S79 καλύπτεται, σωστές cardinalities, weak entities) | Claude ελέγχου | ✓ ([reviews/phase-a-A5-A6.md](reviews/phase-a-A5-A6.md), PR #2) |
 | A6 | Έλεγχος σχήματος (τύποι, PK/FK, CHECK, αντιστοίχιση ER → πίνακες) και των παραδοχών (≤ 1/2 σελίδα) | Claude ελέγχου | ✓ ([reviews/phase-a-A5-A6.md](reviews/phase-a-A5-A6.md), PR #2) |
-| A7 | Εικόνες από το ERD+: (α) Import `er-model/mdms-er.erdplus` → Download image ή screenshots → `deliverables/phase-a/er-diagram.png` (ή `er-diagram-1.png`, `-2.png`…). (β) Import/Restore `er-model/mdms-relational.erdplus` (οι 62 πίνακες) → `deliverables/phase-a/relational-diagram.png` (ή `-1.png`…). Μετά `node er-model/phase-a-doc.js`. | Soteris | ○ |
+| A7 | Εικόνες: (α) από το ERD+: Import `er-model/mdms-er.erdplus` → Download image ή screenshots → `deliverables/phase-a/er-diagram.png` (ή `er-diagram-1.png`, `-2.png`…), μετά `node er-model/phase-a-doc.js`. (β) Οι πίνακες σχεδιάζονται από τον SQL Server 2025 (κατάλογος της βάσης μετά το `create.sql`), ένα διάγραμμα ανά περιοχή: `deliverables/phase-a/relational-diagram-1.png` … `-9.png`, οδηγίες στο [sqlserver-diagram/README.md](deliverables/phase-a/sqlserver-diagram/README.md). Το `mdms-relational.erdplus` μένει ως επιπλέον αρχείο, όχι στο έγγραφο. | (α) Soteris, (β) Claude ελέγχου | (α) ○, (β) ✓ |
 | A8 | Αριθμός ομάδας και ονόματα μελών στο έγγραφο: `TEAM=<αρ.> MEMBERS="Όνομα 1 (ID)\|Όνομα 2 (ID)\|Όνομα 3 (ID)" node phase-a-doc.js` | Soteris | ○ |
-| A9 | Διορθώσεις από τα σχόλια των A5/A6, ξαναπαραγωγή όλων των αρχείων | Claude του project | ✓ Σ1-Σ4 (Σ5, Σ7 στο A7, Σ6 στη Φάση Β) |
+| A9 | Διορθώσεις από τα σχόλια των A5/A6, ξαναπαραγωγή όλων των αρχείων | Claude του project | ✓ Σ1-Σ4 (Σ5 στο A7α, Σ6 στη Φάση Β, Σ7 δεν χρειάζεται πια: οι πίνακες βγαίνουν από τον SQL Server) |
 | A10 | Τελικό: μετονομασία σε `<team-number>.docx` (ή .pdf) και ανέβασμα στο Moodle | Soteris | ○ |
 
-Το A7 το κάνει άνθρωπος, γιατί κανένα Claude δεν φτάνει στο erdplus.com. Μέχρι να υπάρξει το `er-diagram.png`, το έγγραφο έχει το ίδιο αρχείο ERD+ σχεδιασμένο από δικό μας script (`er-model/mdms-er-card.png`, με τα (min,max)), με κόκκινη σημείωση «προσωρινή».
+Το A7(α) το κάνει άνθρωπος, γιατί κανένα Claude δεν φτάνει στο erdplus.com. Μέχρι να υπάρξει το `er-diagram.png`, το έγγραφο έχει το ίδιο αρχείο ERD+ σχεδιασμένο από δικό μας script (`er-model/mdms-er-card.png`, με τα (min,max)), με κόκκινη σημείωση «προσωρινή».

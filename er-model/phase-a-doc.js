@@ -1,7 +1,8 @@
 // Builds the Phase A deliverable (spec V.A: ER diagram, relational schema, assumptions <= 1/2 page)
 // as deliverables/phase-a/phase-a.docx. Rename it to <team-number>.docx before uploading to Moodle.
 // The ER figure is deliverables/phase-a/er-diagram.png or er-diagram-1.png, -2.png ... (ERD+ export or screenshots),
-// the tables relational-diagram.png or relational-diagram-1.png ... (mdms-relational.erdplus in ERD+);
+// the tables relational-diagram-1.png ... -9.png (one per ER area, drawn from the SQL Server 2025 catalog after
+// running create.sql, see deliverables/phase-a/sqlserver-diagram/README.md);
 // until that file exists the script uses mdms-er-card.png (the same .erdplus file drawn with the (min,max)
 // labels by erdplus-preview.js --card and svg-to-png.js) and marks the figure as temporary.
 const fs = require('fs');
@@ -19,7 +20,7 @@ const TEAM = process.env.TEAM || '<team-number>';
 const MEMBERS = (process.env.MEMBERS || '<Ονοματεπώνυμο 1 (ID)>|<Ονοματεπώνυμο 2 (ID)>|<Ονοματεπώνυμο 3 (ID)>').split('|');
 
 // ERD+ screenshots: er-diagram.png, or er-diagram-1.png, er-diagram-2.png, ... (one landscape page each);
-// relational-diagram*.png the same for the tables (mdms-relational.erdplus opened in ERD+)
+// relational-diagram-N.png the same for the tables (sqlserver-diagram/render.py, one per ER area)
 const shots = prefix => fs.existsSync(OUT_DIR) ? fs.readdirSync(OUT_DIR).filter(f => new RegExp(`^${prefix}(-\\d+)?\\.png$`).test(f))
   .sort((a, b) => (+(a.match(/-(\d+)\./) || [0, 0])[1]) - (+(b.match(/-(\d+)\./) || [0, 0])[1])).map(f => path.join(OUT_DIR, f)) : [];
 const erShots = shots('er-diagram'), relShots = shots('relational-diagram');
@@ -61,12 +62,13 @@ const cover = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 600 }, children: [new TextRun({ text: `Ομάδα ${TEAM}`, font: FONT, size: 28 })] }),
   ...MEMBERS.map(m => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: m, font: FONT, size: 24 })] })),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1200, after: 80 }, children: [new TextRun({ text: 'Περιεχόμενα', font: FONT, size: 24, bold: true })] }),
-  ...['1. Διάγραμμα Οντοτήτων Συσχετίσεων (Chen ER, ERD+)', '2. Παραδοχές', ...(relShots.length ? ['3. Σχεσιακό σχήμα: πίνακες στο ERD+', '4. Σχεσιακό σχήμα σε T-SQL'] : ['3. Σχεσιακό σχήμα (T-SQL)'])].map(t => p(t, { alignment: AlignmentType.CENTER })),
+  ...['1. Διάγραμμα Οντοτήτων Συσχετίσεων (Chen ER, ERD+)', '2. Παραδοχές', ...(relShots.length ? ['3. Σχεσιακό σχήμα: πίνακες στον SQL Server 2025', '4. Σχεσιακό σχήμα σε T-SQL'] : ['3. Σχεσιακό σχήμα (T-SQL)'])].map(t => p(t, { alignment: AlignmentType.CENTER })),
 ];
 
 // 2. ER diagram on a landscape page, scaled to the printable area
 const landW = A4.height - 1200, landH = A4.width - 2600; // DXA
-const figure = f => { const { d, w, h } = png(f); const k = Math.min(landW / 15 / w, landH / 15 / h); // DXA -> px at 96 dpi = /15
+// reserve: DXA of page height kept free for a heading or caption on the same page
+const figure = (f, reserve = 0) => { const { d, w, h } = png(f); const k = Math.min(landW / 15 / w, (landH - reserve) / 15 / h); // DXA -> px at 96 dpi = /15
   return new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: d, transformation: { width: Math.round(w * k), height: Math.round(h * k) } })] }); };
 const pageBreak = () => new Paragraph({ pageBreakBefore: true, children: [] });
 const erSection = [
@@ -84,11 +86,16 @@ const assumptions = [
   ...ASSUMPTIONS.map(t => new Paragraph({ numbering: { reference: 'bullets', level: 0 }, spacing: { after: 40 }, children: [new TextRun({ text: t, font: FONT, size: 19 })] })),
 ];
 
-// 3b. Relational schema as tables in ERD+ (only when the screenshots exist)
+// 3b. Relational schema as tables drawn from SQL Server (only when the images exist), one per ER area
+const AREAS = ['Χρήστες και ρόλοι', 'Καταναλωτές και υποστατικά', 'Τιμολόγηση και πληρωμές', 'Τεχνικοί πεδίου και εργασίες',
+  'Μετρητές, εγκαταστάσεις και εντολές', 'Τηλεμετρία και VEE', 'Τοπολογία δικτύου και συγκεντρωτικά', 'Προμηθευτές και aggregators',
+  'GDPR, αρχείο ελέγχου και συμβάντα'];
+const caption = t => p(t, { alignment: AlignmentType.CENTER, run: { size: 18, italics: true } });
 const relSection = relShots.length ? [
-  h1('3. Σχεσιακό σχήμα: πίνακες στο ERD+'),
-  ...relShots.flatMap((f, i) => i ? [pageBreak(), figure(f)] : [figure(f)]),
-  p('Οι 62 πίνακες στο ERD+ (mdms-relational.erdplus): πρωτεύοντα κλειδιά υπογραμμισμένα, ξένα κλειδιά με βέλος προς τον πίνακα που αναφέρουν. Ο ορισμός με όλους τους περιορισμούς ακολουθεί σε T-SQL.', { alignment: AlignmentType.CENTER, run: { size: 18, italics: true } }),
+  h1('3. Σχεσιακό σχήμα: πίνακες στον SQL Server 2025'),
+  p('Τα διαγράμματα σχεδιάστηκαν από την ίδια τη βάση: το create.sql εκτελέστηκε σε Microsoft SQL Server 2025 (βάση mdms) και οι πίνακες, οι στήλες, οι τύποι, τα NULL, τα πρωτεύοντα και τα ξένα κλειδιά διαβάστηκαν από τον κατάλογο (sys.tables, sys.columns, sys.foreign_keys). Ένα διάγραμμα ανά περιοχή του ER, όπως το database diagram του SSMS: Key / Column Name / Data Type / Allow Nulls. Κάθε γραμμή είναι ένα ξένο κλειδί, με «πόδι κόρακα» στη μεριά «πολλά» και διπλή γραμμή στη μεριά «ένα»· οι γκρι πίνακες ανήκουν σε άλλη περιοχή. Ο πλήρης ορισμός με όλους τους περιορισμούς ακολουθεί σε T-SQL.', { run: { size: 19 } }),
+  ...relShots.flatMap((f, i) => [...(i ? [pageBreak()] : []), figure(f, i ? 700 : 3000),
+    caption(`Διάγραμμα ${i + 1}/${relShots.length}${relShots.length === AREAS.length ? ': ' + AREAS[i] : ''}`)]),
 ] : [];
 
 // 4. Schema: create.sql verbatim, monospace
@@ -115,4 +122,4 @@ const doc = new Document({
 });
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
-Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log(`wrote ${path.relative(ROOT, OUT)} (ER figure: ${finalFigure ? erShots.length + ' ERD+ image(s)' : 'TEMPORARY render of the .erdplus file'}, tables: ${relShots.length} ERD+ image(s))`); });
+Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log(`wrote ${path.relative(ROOT, OUT)} (ER figure: ${finalFigure ? erShots.length + ' ERD+ image(s)' : 'TEMPORARY render of the .erdplus file'}, tables: ${relShots.length} SQL Server diagram(s))`); });

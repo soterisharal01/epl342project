@@ -31,7 +31,7 @@
 2. ✓ Μοντέλο Chen ER (σημειογραφία Elmasri/Navathe, διαλέξεις 4-6): 53 οντότητες, 92 συσχετίσεις
 3. ✓ Σχεσιακό σχήμα T-SQL: 62 πίνακες, 76 έλεγχοι περιορισμών περνούν σε SQL Server 2025 (17/10/26)
    - ✓ Ολόκληρο το ER ως αρχείο ERD+ (`er-model/mdms-er.erdplus`), εισήχθη επιτυχώς στο ERD+ (10/10/26)
-   - ✱ **Το έγγραφο της Φάσης Α**: πρώτο σχέδιο στο `deliverables/phase-a/phase-a.docx` (από το `er-model/phase-a-doc.js`). Λείπουν η εικόνα από το ERD+, ο αριθμός ομάδας και τα ονόματα, και ο έλεγχος. Τι μένει και ποιος το κάνει: πίνακας στο `COLLABORATION.md`.
+   - ✱ **Το έγγραφο της Φάσης Α**: πρώτο σχέδιο στο `deliverables/phase-a/phase-a.docx` (από το `er-model/phase-a-doc.js`). Οι πίνακες είναι σχεδιασμένοι από τον SQL Server 2025 (`deliverables/phase-a/relational-diagram-1.png` … `-9.png`). Λείπουν η εικόνα του ER από το ERD+, ο αριθμός ομάδας και τα ονόματα, και ο έλεγχος. Τι μένει και ποιος το κάνει: πίνακας στο `COLLABORATION.md`.
 4. ○ Scripts create/drop + λίγα δεδομένα
 5. ○ Stored procedures και triggers (οι 21 κανόνες της Φάσης Β στο `DECISIONS.md`)
 6. ○ Μεγάλα συνθετικά δεδομένα + δείκτες/απόδοση
