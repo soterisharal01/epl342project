@@ -1,6 +1,7 @@
 // Builds the Phase A deliverable (spec V.A: ER diagram, relational schema, assumptions <= 1/2 page)
 // as deliverables/phase-a/phase-a.docx. Rename it to <team-number>.docx before uploading to Moodle.
-// The ER figure is deliverables/phase-a/er-diagram.png (exported from ERD+ with "Download image");
+// The ER figure is deliverables/phase-a/er-diagram.png or er-diagram-1.png, -2.png ... (ERD+ export or screenshots),
+// the tables relational-diagram.png or relational-diagram-1.png ... (mdms-relational.erdplus in ERD+);
 // until that file exists the script uses mdms-er-card.png (the same .erdplus file drawn with the (min,max)
 // labels by erdplus-preview.js --card and svg-to-png.js) and marks the figure as temporary.
 const fs = require('fs');
@@ -13,15 +14,18 @@ const {
 const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'deliverables', 'phase-a');
 const OUT = path.join(OUT_DIR, 'phase-a.docx');
-const ERD = path.join(OUT_DIR, 'er-diagram.png');
 const PREVIEW = path.join(__dirname, 'mdms-er-card.png');
 const TEAM = process.env.TEAM || '<team-number>';
 const MEMBERS = (process.env.MEMBERS || '<Ονοματεπώνυμο 1 (ID)>|<Ονοματεπώνυμο 2 (ID)>|<Ονοματεπώνυμο 3 (ID)>').split('|');
 
-const finalFigure = fs.existsSync(ERD);
-const img = fs.readFileSync(finalFigure ? ERD : PREVIEW);
+// ERD+ screenshots: er-diagram.png, or er-diagram-1.png, er-diagram-2.png, ... (one landscape page each);
+// relational-diagram*.png the same for the tables (mdms-relational.erdplus opened in ERD+)
+const shots = prefix => fs.existsSync(OUT_DIR) ? fs.readdirSync(OUT_DIR).filter(f => new RegExp(`^${prefix}(-\\d+)?\\.png$`).test(f))
+  .sort((a, b) => (+(a.match(/-(\d+)\./) || [0, 0])[1]) - (+(b.match(/-(\d+)\./) || [0, 0])[1])).map(f => path.join(OUT_DIR, f)) : [];
+const erShots = shots('er-diagram'), relShots = shots('relational-diagram');
+const finalFigure = erShots.length > 0;
 // PNG width/height live in the IHDR chunk
-const imgW = img.readUInt32BE(16), imgH = img.readUInt32BE(20);
+const png = f => { const d = fs.readFileSync(f); return { d, w: d.readUInt32BE(16), h: d.readUInt32BE(20) }; };
 
 // Assumptions: DECISIONS.md "Assumptions" in Greek, kept within half a page.
 const ASSUMPTIONS = [
@@ -57,15 +61,17 @@ const cover = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 600 }, children: [new TextRun({ text: `Ομάδα ${TEAM}`, font: FONT, size: 28 })] }),
   ...MEMBERS.map(m => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new TextRun({ text: m, font: FONT, size: 24 })] })),
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1200, after: 80 }, children: [new TextRun({ text: 'Περιεχόμενα', font: FONT, size: 24, bold: true })] }),
-  ...['1. Διάγραμμα Οντοτήτων Συσχετίσεων (Chen ER, ERD+)', '2. Παραδοχές', '3. Σχεσιακό σχήμα (T-SQL)'].map(t => p(t, { alignment: AlignmentType.CENTER })),
+  ...['1. Διάγραμμα Οντοτήτων Συσχετίσεων (Chen ER, ERD+)', '2. Παραδοχές', ...(relShots.length ? ['3. Σχεσιακό σχήμα: πίνακες στο ERD+', '4. Σχεσιακό σχήμα σε T-SQL'] : ['3. Σχεσιακό σχήμα (T-SQL)'])].map(t => p(t, { alignment: AlignmentType.CENTER })),
 ];
 
 // 2. ER diagram on a landscape page, scaled to the printable area
 const landW = A4.height - 1200, landH = A4.width - 2600; // DXA
-const scale = Math.min(landW / 15 / imgW, landH / 15 / imgH); // DXA -> px at 96 dpi = /15
+const figure = f => { const { d, w, h } = png(f); const k = Math.min(landW / 15 / w, landH / 15 / h); // DXA -> px at 96 dpi = /15
+  return new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: d, transformation: { width: Math.round(w * k), height: Math.round(h * k) } })] }); };
+const pageBreak = () => new Paragraph({ pageBreakBefore: true, children: [] });
 const erSection = [
   h1('1. Διάγραμμα Οντοτήτων Συσχετίσεων (Chen ER)'),
-  new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: 'png', data: img, transformation: { width: Math.round(imgW * scale), height: Math.round(imgH * scale) } })] }),
+  ...(finalFigure ? erShots : [PREVIEW]).flatMap((f, i) => i ? [pageBreak(), figure(f)] : [figure(f)]),
   p(finalFigure
     ? 'Ενιαίο διάγραμμα Chen ER σχεδιασμένο στο ERD+: 53 οντότητες (16 weak), 92 συσχετίσεις. Το ERD+ γράφει το (min,max) κάθε οντότητας στην απέναντι άκρη της γραμμής.'
     : 'ΠΡΟΣΩΡΙΝΗ ΕΙΚΟΝΑ: το αρχείο ERD+ (mdms-er.erdplus) σχεδιασμένο από δικό μας script, με τα (min,max) όπως τα τοποθετεί το ERD+ (στην απέναντι άκρη). Αντικαθίσταται από την εικόνα που εξάγει το ίδιο το ERD+ (Download image) ως deliverables/phase-a/er-diagram.png.',
@@ -78,11 +84,18 @@ const assumptions = [
   ...ASSUMPTIONS.map(t => new Paragraph({ numbering: { reference: 'bullets', level: 0 }, spacing: { after: 40 }, children: [new TextRun({ text: t, font: FONT, size: 19 })] })),
 ];
 
+// 3b. Relational schema as tables in ERD+ (only when the screenshots exist)
+const relSection = relShots.length ? [
+  h1('3. Σχεσιακό σχήμα: πίνακες στο ERD+'),
+  ...relShots.flatMap((f, i) => i ? [pageBreak(), figure(f)] : [figure(f)]),
+  p('Οι 62 πίνακες στο ERD+ (mdms-relational.erdplus): πρωτεύοντα κλειδιά υπογραμμισμένα, ξένα κλειδιά με βέλος προς τον πίνακα που αναφέρουν. Ο ορισμός με όλους τους περιορισμούς ακολουθεί σε T-SQL.', { alignment: AlignmentType.CENTER, run: { size: 18, italics: true } }),
+] : [];
+
 // 4. Schema: create.sql verbatim, monospace
 const sql = fs.readFileSync(path.join(__dirname, 'create.sql'), 'utf8').replace(/\r/g, '').split('\n');
 while (sql.length && sql[sql.length - 1] === '') sql.pop();
 const schema = [
-  h1('3. Σχεσιακό σχήμα (T-SQL)'),
+  h1(relShots.length ? '4. Σχεσιακό σχήμα σε T-SQL' : '3. Σχεσιακό σχήμα (T-SQL)'),
   p('Το σχήμα προκύπτει από το διάγραμμα ER με την αντιστοίχιση του βιβλίου (Elmasri & Navathe, κεφ. 9): 62 πίνακες με τύπους δεδομένων T-SQL, πρωτεύοντα και ξένα κλειδιά (101), περιορισμούς CHECK (108), UNIQUE (18 και 3 φιλτραρισμένοι) και DEFAULT. Κάθε περιορισμός έχει όνομα της μορφής PK_, FK_ΠΙΝΑΚΑΣ_ΣΥΣΧΕΤΙΣΗ, UQ_, CK_, DF_. Το σχήμα δοκιμάστηκε σε Microsoft SQL Server 2025 με 74 ελέγχους περιορισμών.', { run: { size: 19 } }),
   ...sql.map(line => new Paragraph({ spacing: { after: 0, line: 220 }, children: [new TextRun({ text: line === '' ? ' ' : line, font: 'Consolas', size: 14 })] })),
 ];
@@ -96,9 +109,10 @@ const doc = new Document({
     { properties: { page: { size: A4, margin } }, children: cover },
     { properties: { page: { size: { ...A4, orientation: PageOrientation.LANDSCAPE }, margin: { top: 600, bottom: 600, left: 600, right: 600 } } }, footers: { default: footer }, children: erSection },
     { properties: { page: { size: A4, margin } }, footers: { default: footer }, children: [...assumptions] },
+    ...(relSection.length ? [{ properties: { page: { size: { ...A4, orientation: PageOrientation.LANDSCAPE }, margin: { top: 600, bottom: 600, left: 600, right: 600 } } }, footers: { default: footer }, children: relSection }] : []),
     { properties: { page: { size: A4, margin: { ...margin, left: 800, right: 800 } } }, footers: { default: footer }, children: schema },
   ],
 });
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
-Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log(`wrote ${path.relative(ROOT, OUT)} (ER figure: ${finalFigure ? 'ERD+ export' : 'TEMPORARY render of the .erdplus file'})`); });
+Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log(`wrote ${path.relative(ROOT, OUT)} (ER figure: ${finalFigure ? erShots.length + ' ERD+ image(s)' : 'TEMPORARY render of the .erdplus file'}, tables: ${relShots.length} ERD+ image(s))`); });

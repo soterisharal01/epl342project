@@ -29,6 +29,7 @@ git log --all --oneline -15        # τι έκανε ο καθένας
    node build.js && node build-schema.js        # σελίδες HTML του ER και του σχήματος
    node erdplus-export.js && node erdplus-check.js   # αρχείο ERD+ και έλεγχος (errors: [])
    node erdplus-preview.js --card && node svg-to-png.js mdms-er-card.svg mdms-er-card.png 2   # προσωρινή εικόνα του ER με (min,max)
+   node relational-export.js                    # mdms-relational.erdplus: οι πίνακες ως σχεσιακό διάγραμμα ERD+
    node phase-a-doc.js                          # έγγραφο Φάσης Α
    ```
    Αρχεία που παράγονται από scripts δεν διορθώνονται με το χέρι. Το `DECISIONS.md` ενημερώνεται με το χέρι όταν αλλάζει μια απόφαση.
@@ -45,7 +46,7 @@ git log --all --oneline -15        # τι έκανε ο καθένας
 | A4 | Έγγραφο Φάσης Α (`deliverables/phase-a/phase-a.docx`, από το `er-model/phase-a-doc.js`) | Claude του project | ✓ πρώτο σχέδιο |
 | A5 | Έλεγχος ER σε σχέση με την εκφώνηση (κάθε απαίτηση S1-S79 καλύπτεται, σωστές cardinalities, weak entities) | Claude ελέγχου | ○ |
 | A6 | Έλεγχος σχήματος (τύποι, PK/FK, CHECK, αντιστοίχιση ER → πίνακες) και των παραδοχών (≤ 1/2 σελίδα) | Claude ελέγχου | ○ |
-| A7 | Εικόνα του διαγράμματος από το ERD+: Import `mdms-er.erdplus` στο erdplus.com, έλεγχος ότι φαίνεται καθαρά, Download image, αποθήκευση ως `deliverables/phase-a/er-diagram.png` | Soteris | ○ |
+| A7 | Εικόνες από το ERD+: (α) Import `er-model/mdms-er.erdplus` → Download image ή screenshots → `deliverables/phase-a/er-diagram.png` (ή `er-diagram-1.png`, `-2.png`…). (β) Import/Restore `er-model/mdms-relational.erdplus` (οι 62 πίνακες) → `deliverables/phase-a/relational-diagram.png` (ή `-1.png`…). Μετά `node er-model/phase-a-doc.js`. | Soteris | ○ |
 | A8 | Αριθμός ομάδας και ονόματα μελών στο έγγραφο: `TEAM=<αρ.> MEMBERS="Όνομα 1 (ID)\|Όνομα 2 (ID)\|Όνομα 3 (ID)" node phase-a-doc.js` | Soteris | ○ |
 | A9 | Διορθώσεις από τα σχόλια των A5/A6, ξαναπαραγωγή όλων των αρχείων | Claude του project | ○ |
 | A10 | Τελικό: μετονομασία σε `<team-number>.docx` (ή .pdf) και ανέβασμα στο Moodle | Soteris | ○ |
