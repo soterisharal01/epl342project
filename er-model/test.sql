@@ -92,8 +92,8 @@ EXEC dbo.t_run 22, N'UPDATE SUPPLY_CONTRACT SET EndDate = ''2026-05-31''; INSERT
 EXEC dbo.t_run 23, N'INSERT INTO PAYMENT (Amount, PaidAt, InvoiceID, BankAccountID) VALUES (0, SYSUTCDATETIME(), 1, 1);', N'CK_PAYMENT_Amount';
 EXEC dbo.t_run 24, N'INSERT INTO PAYMENT (Amount, PaidAt, InvoiceID, BankAccountID) VALUES (55.20, SYSUTCDATETIME(), 1, 1);', N'OK';
 EXEC dbo.t_run 25, N'INSERT INTO BANK_ACCOUNT (IBAN, HolderName) VALUES (''CY17-0020-0128'', N''Χ'');', N'CK_BANK_ACCOUNT_IBAN';
-EXEC dbo.t_run 26, N'INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, UserID, ServiceTypeID, PremiseID, InvoiceID) VALUES (''2026-03-15'', ''2026-04-01'', 5.00, 3, 1, 1, 1);', N'CK_SERVICE_PURCHASE_Months';
-EXEC dbo.t_run 27, N'INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, UserID, ServiceTypeID, PremiseID, InvoiceID) VALUES (''2026-03-01'', ''2026-04-01'', 5.00, 3, 1, 1, 1);', N'OK';
+EXEC dbo.t_run 26, N'INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, ServiceTypeID, PremiseID, InvoiceID) VALUES (''2026-03-15'', ''2026-04-01'', 5.00, 1, 1, 1);', N'CK_SERVICE_PURCHASE_Months';
+EXEC dbo.t_run 27, N'INSERT INTO SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, ServiceTypeID, PremiseID, InvoiceID) VALUES (''2026-03-01'', ''2026-04-01'', 5.00, 1, 1, 1);', N'OK';
 EXEC dbo.t_run 28, N'UPDATE FIELD_TASK SET Status = ''Done'', Result = N''OK'' WHERE TaskID = 1;', N'CK_FIELD_TASK_Done';
 EXEC dbo.t_run 29, N'INSERT INTO FIELD_TASK (TaskType, ScheduledFrom, ScheduledTo, TechnicianID, PremiseID) VALUES (''Replacement'', ''2026-03-01 08:00'', ''2026-03-01 10:00'', 4, 1);', N'CK_FIELD_TASK_Install';
 EXEC dbo.t_run 30, N'INSERT INTO FIELD_TASK (TaskType, ScheduledFrom, ScheduledTo, TechnicianID) VALUES (''Technical check'', ''2026-03-01 08:00'', ''2026-03-01 10:00'', 4);', N'CK_FIELD_TASK_Target';
