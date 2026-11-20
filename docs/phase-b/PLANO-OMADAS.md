@@ -99,7 +99,7 @@ GO
 
 ```
 sources/
-  config.example.php   πρότυπο: serverName, Database, Uid, PWD (το αληθινό config.php ΟΧΙ στο git)
+  config.example.php   πρότυπο: serverName = "mssql.cs.ucy.ac.cy\\SQL2025", Database, Uid, PWD (το αληθινό config.php ΟΧΙ στο git)
   db.php               σύνδεση + call_proc($name, $params) + print_table($stmt) + λάθη
   auth.php             session, require_role(), current_user()
   index.php            φόρμα login + σύνδεσμοι εγγραφής (Καταναλωτής, Τεχνικός)
