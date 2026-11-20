@@ -4,7 +4,7 @@
 Το `er-model/create.sql` μένει όπως ήταν, ως το σχήμα που υποβλήθηκε στη Φάση Α. Το `sql/create.sql` βγήκε από αυτό με το
 `sql/tools/step0-from-phase-a.py`. Από τώρα και πέρα όμως το διορθώνουμε με το χέρι.
 
-Αποτέλεσμα: **56 πίνακες** (62 − 7 πίνακες ρόλων − READING + RAW_READING + VALIDATED_READING), 96 FK, 105 CHECK και 4 triggers.
+Αποτέλεσμα: **56 πίνακες** (62 − 7 πίνακες ρόλων − READING + RAW_READING + VALIDATED_READING), 96 FK, 106 CHECK και 4 triggers.
 
 ## 1. Χρήστες: ένα username = ένας ρόλος
 - Στο `USER_ACCOUNT` προστέθηκε η στήλη `Role` με τιμές Admin, Operator, Consumer, Technician, DSO, TSO, Supplier ή Aggregator.
@@ -34,8 +34,11 @@
   των μετασχηματιστών. Αυτό είναι υπόθεση. Τα geofences που σχεδιάζονται ελεύθερα στον χάρτη είναι μελλοντική επέκταση.
 
 ## 4. Aggregates στους μετασχηματιστές
-- Ο `GEOFENCE_AGGREGATE` αντικαθίσταται από τον `TRANSFORMER_AGGREGATE`. Κρατά μηνιαία aggregates, με `PeriodStart` την 1η του μήνα, και μόνο για φύλλα,
-  κάτι που το ελέγχει το trigger `TR_TRANSFORMER_AGGREGATE_Leaf`. Από τους μήνες βγαίνει και το τρίμηνο.
+- Ο `GEOFENCE_AGGREGATE` αντικαθίσταται από τον `TRANSFORMER_AGGREGATE`, μόνο για φύλλα (το ελέγχει το trigger `TR_TRANSFORMER_AGGREGATE_Leaf`).
+  Έχει `PeriodType` = Day, Month ή Year, όπως και ο `METER_AGGREGATE`. Ο καθηγητής είπε να κρατάμε τη μικρότερη περίοδο που χρειαζόμαστε,
+  γιατί από τη μικρή βγαίνει η μεγάλη και όχι το αντίθετο: από τους μήνες βγαίνει το τρίμηνο. Η ημέρα χρειάζεται για τα Day-Ahead δεδομένα
+  των Suppliers/Aggregators (ΙΙΙ.5.2), ο μήνας και το έτος για τις αναφορές.
+  *(Διόρθωση 21/11: στην πρώτη έκδοση ο πίνακας ήταν μόνο μηνιαίος.)*
 - Ο `GEOFENCE_CURRENT_STATE` αντικαθίσταται από τον `TRANSFORMER_CURRENT_STATE`, πάλι για φύλλα.
 - Τα πάνω επίπεδα δεν αποθηκεύονται. Υπολογίζονται όταν ζητηθούν, με αναδρομικό CTE πάνω στο δέντρο. Παράδειγμα υπάρχει στο `test-step0.sql`, έλεγχος 4c.
 
@@ -45,4 +48,4 @@
 3. Για έλεγχο: τρέξε το `sql/test-step0.sql`. Πρέπει να βγάλει 17 γραμμές OK. Μετά ξανατρέξε `drop.sql` και `create.sql`, ώστε η βάση να μείνει άδεια.
 
 Δοκιμασμένο σε SQL Server 2025 (RTM-CU11): το create τρέχει, το drop αφήνει 0 πίνακες και ξανατρέχει, το drop πάνω στο παλιό σχήμα
-της Φάσης Α δουλεύει, και το test βγάζει 17/17 OK.
+της Φάσης Α δουλεύει, και το test βγάζει 17/17 OK (ξανά 21/11 μετά την προσθήκη του `PeriodType`).

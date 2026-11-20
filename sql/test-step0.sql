@@ -52,13 +52,13 @@ DELETE VALIDATED_READING WHERE IntervalStart = '2026-11-01 00:30';
 EXEC sp_set_session_context N'mdms_purge', 0;
 SELECT CASE WHEN COUNT(*) = 2 THEN N'OK  ' ELSE N'FAIL' END + N' 2d διαγραφή μόνο από διαδικασία διατήρησης' FROM VALIDATED_READING;
 
--- 4. Aggregates: μηνιαία στα φύλλα, πάνω επίπεδα με ερώτημα
+-- 4. Aggregates (ημέρα/μήνας/έτος) στα φύλλα, πάνω επίπεδα με ερώτημα
 INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
 SELECT MeterID, ObisCode, 'Month', '2026-11-01', SUM(Value), COUNT(*), SUM(CASE WHEN Quality = 'Estimated' THEN 1 ELSE 0 END) FROM VALIDATED_READING GROUP BY MeterID, ObisCode;
-INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodStart, SumValue, MeterCount)
-SELECT m.TransformerID, a.ObisCode, a.PeriodStart, SUM(a.SumValue), COUNT(*) FROM METER_AGGREGATE a JOIN METER m ON m.MeterID = a.MeterID WHERE a.PeriodType = 'Month' GROUP BY m.TransformerID, a.ObisCode, a.PeriodStart;
+INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodType, PeriodStart, SumValue, MeterCount)
+SELECT m.TransformerID, a.ObisCode, 'Month', a.PeriodStart, SUM(a.SumValue), COUNT(*) FROM METER_AGGREGATE a JOIN METER m ON m.MeterID = a.MeterID WHERE a.PeriodType = 'Month' GROUP BY m.TransformerID, a.ObisCode, a.PeriodStart;
 PRINT N'OK   4a μηνιαίο aggregate στο φύλλο';
-BEGIN TRY INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodStart, SumValue, MeterCount) VALUES (1, '1.8.0', '2026-11-01', 1, 1); PRINT N'FAIL 4b aggregate σε μη-φύλλο'; END TRY BEGIN CATCH PRINT N'OK   4b αποθηκευμένο aggregate μόνο σε φύλλα'; END CATCH;
+BEGIN TRY INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodType, PeriodStart, SumValue, MeterCount) VALUES (1, '1.8.0', 'Month', '2026-11-01', 1, 1); PRINT N'FAIL 4b aggregate σε μη-φύλλο'; END TRY BEGIN CATCH PRINT N'OK   4b αποθηκευμένο aggregate μόνο σε φύλλα'; END CATCH;
 -- άθροισμα για ΚΑΘΕ μετασχηματιστή (και τα πάνω επίπεδα) με αναδρομικό CTE
 WITH sub AS (
     SELECT TransformerID AS Top_, TransformerID AS Node FROM TRANSFORMER
@@ -66,6 +66,6 @@ WITH sub AS (
     SELECT sub.Top_, t.TransformerID FROM sub JOIN TRANSFORMER t ON t.ParentTransformerID = sub.Node)
 SELECT @ok = COUNT(*) FROM (
     SELECT sub.Top_, SUM(a.SumValue) AS Total FROM sub JOIN TRANSFORMER_AGGREGATE a ON a.TransformerID = sub.Node
-    WHERE a.PeriodStart = '2026-11-01' GROUP BY sub.Top_) x WHERE x.Total = 21.4;
+    WHERE a.PeriodType = 'Month' AND a.PeriodStart = '2026-11-01' GROUP BY sub.Top_) x WHERE x.Total = 21.4;
 SELECT CASE WHEN @ok = 3 THEN N'OK  ' ELSE N'FAIL' END + N' 4c ίδιο σύνολο 21.4 kWh σε φύλλο, γονέα και ρίζα (CTE)';
 

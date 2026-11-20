@@ -3,7 +3,7 @@
 --   1. ένας πίνακας χρηστών με Role (ένα username = ένας ρόλος), χωρίς πίνακες ανά ρόλο
 --   2. RAW_READING -> VEE -> VALIDATED_READING (αμετάβλητος)
 --   3. μετασχηματιστές = αυστηρό δέντρο, μετρητές μόνο στα φύλλα
---   4. μηνιαία aggregates στους μετασχηματιστές-φύλλα (όχι στα geofences)
+--   4. aggregates (ημέρα, μήνας, έτος) στους μετασχηματιστές-φύλλα (όχι στα geofences)
 -- 56 πίνακες, σε σειρά ώστε κάθε ξένο κλειδί να δείχνει σε πίνακα που υπάρχει ήδη. Τρέξτε το σε κενή βάση
 -- (ή πρώτα drop.sql). Οι φιλτραρισμένοι δείκτες UNIQUE θέλουν SET QUOTED_IDENTIFIER ON (SSMS και PHP το έχουν, στο sqlcmd δώστε -I).
 SET ANSI_NULLS ON;
@@ -745,13 +745,17 @@ GO
 CREATE TABLE TRANSFORMER_AGGREGATE (
     TransformerID INT NOT NULL,
     ObisCode VARCHAR(20) NOT NULL,
-    PeriodStart DATE NOT NULL CONSTRAINT CK_TRANSFORMER_AGGREGATE_PeriodStart CHECK (DAY(PeriodStart) = 1),
+    PeriodType VARCHAR(5) NOT NULL CONSTRAINT CK_TRANSFORMER_AGGREGATE_PeriodType CHECK (PeriodType IN ('Day', 'Month', 'Year')),
+    PeriodStart DATE NOT NULL,
     SumValue DECIMAL(18,4) NOT NULL,
     MeterCount INT NOT NULL CONSTRAINT CK_TRANSFORMER_AGGREGATE_MeterCount CHECK (MeterCount >= 0),
     ComputedAt DATETIME2(0) NOT NULL CONSTRAINT DF_TRANSFORMER_AGGREGATE_ComputedAt DEFAULT SYSUTCDATETIME(),
-    CONSTRAINT PK_TRANSFORMER_AGGREGATE PRIMARY KEY (TransformerID, ObisCode, PeriodStart),
+    CONSTRAINT PK_TRANSFORMER_AGGREGATE PRIMARY KEY (TransformerID, ObisCode, PeriodType, PeriodStart),
     CONSTRAINT FK_TRANSFORMER_AGGREGATE_TR_AGG FOREIGN KEY (TransformerID) REFERENCES TRANSFORMER (TransformerID),
-    CONSTRAINT FK_TRANSFORMER_AGGREGATE_TR_AGG_CODE FOREIGN KEY (ObisCode) REFERENCES OBIS_CODE (ObisCode)
+    CONSTRAINT FK_TRANSFORMER_AGGREGATE_TR_AGG_CODE FOREIGN KEY (ObisCode) REFERENCES OBIS_CODE (ObisCode),
+    CONSTRAINT CK_TRANSFORMER_AGGREGATE_Period CHECK ((PeriodType = 'Day')
+    OR (PeriodType = 'Month' AND DAY(PeriodStart) = 1)
+    OR (PeriodType = 'Year' AND DAY(PeriodStart) = 1 AND MONTH(PeriodStart) = 1))
 );
 GO
 
