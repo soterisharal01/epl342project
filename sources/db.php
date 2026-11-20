@@ -140,3 +140,27 @@ function print_table($rows, array $headers = []): void
     }
     echo '</table>';
 }
+
+// <option> για ένα <select> από γραμμές procedure (π.χ. sp_ref_list_parishes).
+function select_options($rows, string $valueCol, string $labelCol, $selected = null, string $empty = ''): string
+{
+    $out = $empty !== '' ? '<option value="">' . h($empty) . '</option>' : '';
+    foreach ($rows ?: [] as $r) {
+        $sel = ((string)$r[$valueCol] === (string)$selected) ? ' selected' : '';
+        $out .= '<option value="' . h($r[$valueCol]) . '"' . $sel . '>' . h($r[$labelCol]) . '</option>';
+    }
+    return $out;
+}
+
+// Τιμή από φόρμα: κενό -> null (για προαιρετικές παράμετρους procedures).
+function post_or_null(string $key)
+{
+    $v = trim((string)($_POST[$key] ?? ''));
+    return $v === '' ? null : $v;
+}
+
+// Ποσό σε ευρώ για εμφάνιση: 1234.5 -> "1.234,50" (ο driver δίνει π.χ. ".00" για το μηδέν).
+function money($v): string
+{
+    return number_format((float)$v, 2, ',', '.');
+}

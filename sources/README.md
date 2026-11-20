@@ -21,10 +21,15 @@
 | `home.php` | Η αρχική μετά το login, με κουμπιά για τις σελίδες του ρόλου. |
 | `profile.php` | Τα στοιχεία μου και αλλαγή κωδικού (για κάθε ρόλο). |
 | `register_consumer.php` | Εγγραφή νέου καταναλωτή, χωρίς έγκριση (ΙΙΙ.1.1). |
+| `consumer/10_premises.php` | Τα υποστατικά μου: λίστα, νέο υποστατικό (διεύθυνση, ΤΚ, WGS84, χρήση, ενορία), λήξη κατοχής (ΙΙΙ.1.1). |
+| `consumer/20_bank.php` | Τραπεζικοί λογαριασμοί, και για ποιο υποστατικό είναι ο καθένας (ΙΙΙ.1.1). |
+| `consumer/30_requests.php` | Αίτημα ελέγχου μετρητή ή αναφορά βλάβης, ιστορικό, ακύρωση, και η επίσκεψη τεχνικού όταν ανατεθεί (ΙΙΙ.1.3). |
+| `consumer/40_billing.php` | Τιμολόγια (ποσό, πληρωμένο, υπόλοιπο), πληρωμή ολική ή μερική, ιστορικό πληρωμών (ΙΙΙ.1.3). |
 | `_template.php` | Πρότυπο για νέα σελίδα. Το αντιγράφει όποιος φτιάχνει σελίδα στην περιοχή του. |
 | `css/style.css`, `images/` | Εμφάνιση. |
 | `admin/`, `operator/`, `consumer/`, `technician/`, `dso/`, `tso/`, `supplier/`, `aggregator/` | Οι σελίδες κάθε ρόλου. Ο καθένας γράφει μόνο στους δικούς του φακέλους. |
 
+Τα procedures των σελίδων καταναλωτή είναι στο `sql/procs_consumer.sql` (tests: `sql/tests/test_consumer.sql`).
 Τα procedures που χρησιμοποιεί ο σκελετός είναι στο `sql/procs_common.sql`:
 `sp_auth_get_login`, `sp_auth_log_login`, `sp_auth_register_consumer`, `sp_user_get_profile`, `sp_user_change_password`.
 

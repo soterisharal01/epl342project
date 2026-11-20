@@ -129,3 +129,26 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- ---------------------------------------------------------------------
+-- Λίστες επιλογής (για τα <select> των φορμών). Μόνο ανάγνωση, για κάθε ρόλο.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_ref_list_parishes
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT pa.ParishID, CONCAT(d.Name, N' / ', m.Name, N' / ', pa.Name) AS Label
+    FROM PARISH pa
+    JOIN MUNICIPALITY m ON m.MunicipalityID = pa.MunicipalityID
+    JOIN DISTRICT d ON d.DistrictID = m.DistrictID
+    ORDER BY d.Name, m.Name, pa.Name;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE sp_ref_list_schemes
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT SchemeID, Name AS Label FROM SUPPLY_SCHEME ORDER BY Name;
+END;
+GO

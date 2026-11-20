@@ -41,3 +41,6 @@ ul.tiles a:hover { border-color:var(--brand); }
   nav.side a { padding:6px 10px; }
   main { padding:14px 16px; }
 }
+form.inline-form { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0 0 10px; }
+form.inline-form button { padding:5px 10px; }
+td form { margin:0; }

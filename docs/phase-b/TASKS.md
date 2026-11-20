@@ -47,11 +47,11 @@
 | S1 | Εγγραφή καταναλωτή (procedure + σελίδα) | ΙΙΙ.1.1 | Δανάη | 24/11 | 👀 | #4 | Μαζί με το F3: `sp_auth_register_consumer`, `register_consumer.php` |
 | S2 | Admin: δημιουργία χρηστών (Operator, DSO, TSO, Supplier, Aggregator), αναστολή, προβολή log | Κοινές αρχές | Δανάη | 25/11 | ○ | | |
 | S3 | Operator: κατάλογοι (μοντέλα μετρητών, τύποι υπηρεσιών, τιμολόγια) | Κοινές αρχές | Δανάη | 25/11 | ○ | | |
-| S4 | Υποστατικά + τραπεζικοί λογαριασμοί | ΙΙΙ.1.1 | Δανάη | 24/11 | ○ | | |
+| S4 | Υποστατικά + τραπεζικοί λογαριασμοί | ΙΙΙ.1.1 | Δανάη | 24/11 | 👀 | #4 | `sp_consumer_add_premise`, `list_premises`, `end_holding`, `add_bank_account`, `list_bank_accounts` + `consumer/10_premises.php`, `20_bank.php`. test_consumer 26/26 OK |
 | S5 | Μετρήσεις καταναλωτή (τρέχων μήνας δωρεάν, ιστορικό με αγορά υπηρεσίας και retention) | ΙΙΙ.1.2 | Δανάη | 26/11 | ○ | | |
 | S6 | Thresholds, κανάλια ειδοποίησης, συμβάντα ποιότητας | ΙΙΙ.1.2 | Δανάη | 26/11 | ○ | | |
-| S7 | Αιτήματα ελέγχου/βλάβης + ιστορικό | ΙΙΙ.1.3 | Δανάη | 25/11 | ○ | | |
-| S8 | Τιμολόγια, πληρωμές, εξόφληση | ΙΙΙ.1.3 | Δανάη | 26/11 | ○ | | |
+| S7 | Αιτήματα ελέγχου/βλάβης + ιστορικό | ΙΙΙ.1.3 | Δανάη | 25/11 | 👀 | #4 | `sp_consumer_submit_request`, `list_requests`, `cancel_request`, `list_meters` + `consumer/30_requests.php`. test_consumer 26/26 OK |
+| S8 | Τιμολόγια, πληρωμές, εξόφληση | ΙΙΙ.1.3 | Δανάη | 26/11 | 👀 | #4 | `sp_consumer_list_invoices`, `list_payments`, `pay_invoice` (UPDLOCK) + `consumer/40_billing.php`. test_consumer 26/26 OK |
 | S9 | GDPR: υποβολή → προέγκριση (Operator) → απόφαση (Admin) → εφαρμογή | ΙΙΙ.1.4 | Δανάη | 27/11 | ○ | | |
 | S10 | Διατήρηση δεδομένων (3 χρόνια / 1 μήνας) | ΙΙΙ.1.4 | Δανάη | 27/11 | ○ | | |
 | S11 | Σελίδες PHP: Καταναλωτής, Admin, Operator (GDPR, κατάλογοι) | ΙV | Δανάη | 29/11 | ○ | | |
