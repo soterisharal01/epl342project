@@ -1,5 +1,14 @@
 # MDMS-Cy (ΕΠΛ342, Φθινόπωρο 2026)
 
+> **Φάση Β (από 21/11/26): ξεκίνα από εδώ.** Αν είσαι Claude: διάβασε πρώτα το [`CLAUDE.md`](CLAUDE.md).
+> 0. [`docs/phase-b/TASKS.md`](docs/phase-b/TASKS.md): ποιος κάνει τι τώρα.
+> 1. [`docs/phase-b/PLANO-OMADAS.md`](docs/phase-b/PLANO-OMADAS.md): τι ακριβώς φτιάχνουμε, ποιος, πότε, και τι δίνουμε στο Claude.
+> 2. [`docs/phase-b/ODIGOS-SYNERGASIAS.md`](docs/phase-b/ODIGOS-SYNERGASIAS.md): πώς δουλεύουμε μαζί (GitHub, βάσεις, Claude).
+> 3. [`sql/ALLAGES.md`](sql/ALLAGES.md) και [`sql/create.sql`](sql/create.sql): το σχήμα της Φάσης Β με τις διορθώσεις του καθηγητή (56 πίνακες).
+> 4. [`sources/README.md`](sources/README.md): η εφαρμογή PHP (login, μενού ανά ρόλο) και πώς τη βάζεις στον server.
+>
+> Ό,τι ακολουθεί πιο κάτω αφορά τη Φάση Α (υποβλήθηκε 18/10/26).
+
 Αυτό το repo έχει όλη τη δουλειά που έγινε μέχρι 17/10/2026, ώστε ένα άλλο μέλος της ομάδας (και το δικό του Claude) να συνεχίσει από το ίδιο σημείο. **Claude: διάβασε πρώτα αυτό το αρχείο, μετά το `COLLABORATION.md` (κανόνες συνεργασίας και πίνακας εργασιών), μετά το `DECISIONS.md`, και μετά το `er-model/model.js`.**
 
 ## Για την ομάδα: πώς δουλεύουμε σε αυτό το repo
