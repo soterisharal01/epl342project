@@ -46,6 +46,9 @@ def main():
     with open(out, 'w', encoding='utf-8', newline='\n') as o:
         o.write('-- Παράχθηκε από sql/tools/build_all.py. ΜΗΝ το διορθώνεις με το χέρι.\n')
         o.write('-- Αρχεία: ' + ', '.join(os.path.relpath(f, ROOT) for f in files) + '\n')
+        # Ασφάλεια: αν κατά λάθος είσαι στη master (ή άλλη βάση συστήματος), δεν τρέχει τίποτα.
+        o.write("IF DB_NAME() IN ('master', 'tempdb', 'model', 'msdb')\n"
+                "BEGIN RAISERROR(N'Λάθος βάση: διάλεξε τη δική σου βάση (π.χ. sharal01) πάνω αριστερά στο SSMS.', 16, 1); SET NOEXEC ON; END;\nGO\n")
         for f in files:
             rel = os.path.relpath(f, ROOT).replace(os.sep, '/')
             o.write(f"\nPRINT N'=== {rel} ===';\nGO\n")

@@ -37,7 +37,7 @@
 |---|---|---|---|---|---|---|---|
 | F1 | Σχήμα: `sql/create.sql`, `drop.sql`, `test-step0.sql`, `ALLAGES.md` (αλλαγές του καθηγητή) | Σωτήρης (Claude) | Δανάη, Αντρέας | 22/11 | 👀 | #4 | 56 πίνακες, 17/17 OK |
 | F2 | Κοινά δεδομένα βάσης `data/small/00_base.sql`: ένας χρήστης ανά ρόλο, γεωγραφία, OBIS, δέντρο μετασχηματιστών, premises, ενεργοί μετρητές, λίγες validated μετρήσεις και aggregates | Σωτήρης (Claude) | Δανάη, Αντρέας | 22/11 | 👀 | #4 | Ώστε κανείς να μην περιμένει άλλον. Φορτώνει χωρίς λάθος (10 χρήστες, 5 μετρητές, 1102 raw, 960 validated) |
-| F3 | Σκελετός PHP (`sources/`: config, db, auth, login, logout, προφίλ, αυτόματο μενού ανά ρόλο, `_template.php`) + `sql/procs_common.sql` + `sql/tools/test_local.sh` + `CLAUDE.md` | Σωτήρης (Claude) | Δανάη, Αντρέας | 22/11 | 👀 | #4 | Login δοκιμασμένο για όλους τους ρόλους, test_common 11/11 OK. Λείπει δοκιμή στον server του Τμήματος |
+| F3 | Σκελετός PHP (`sources/`: config, db, auth, login, logout, προφίλ, αυτόματο μενού ανά ρόλο, `_template.php`) + `sql/procs_common.sql` + `sql/tools/test_local.sh` + `CLAUDE.md` | Σωτήρης (Claude) | Δανάη, Αντρέας | 22/11 | 👀 | #4 | Login δοκιμασμένο για όλους τους ρόλους, test_common 11/11 OK. Στήθηκε στο sharal01 + `~sharal01/public_html/mdms` (21/11 01:50): σύνδεση βάσης και ελληνικά μηνύματα λάθους δουλεύουν |
 | F4 | Πλάνο, οδηγός, αυτός ο πίνακας | Σωτήρης (Claude) | Δανάη, Αντρέας | 21/11 | 👀 | #4 | |
 
 ## S. Σωτήρης: login, Admin, Operator (κατάλογοι), Καταναλωτές (ΙΙΙ.1), GDPR, ασφάλεια
