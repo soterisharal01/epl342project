@@ -1,0 +1,83 @@
+# Οδηγίες για κάθε Claude που δουλεύει σε αυτό το repo (ΕΠΛ342, Ομάδα 12, MDMS-Cy)
+
+Αυτό το αρχείο το διαβάζει αυτόματα το Claude Code. Τα μέλη της ομάδας (Σωτήρης, Δανάη, Αντρέας)
+δουλεύουν **μέσα από το δικό τους Claude**: εσύ διαβάζεις τα αρχεία και κάνεις τη δουλειά, και στον
+άνθρωπο εξηγείς **απλά** τι έκανες (δεν είναι όλοι άνετοι με SQL/PHP). Γράφε στα ελληνικά, με τα
+τεχνικά ονόματα (πίνακες, στήλες, procedures) στα αγγλικά.
+
+## 1. Πρώτα απ' όλα
+
+1. Μάθε **για ποιο μέλος δουλεύεις** (ρώτα αν δεν το ξέρεις). GitHub: Σωτήρης `soterisharal01`,
+   Δανάη `drobbi01`, Αντρέας `andreas1612`.
+2. `git pull` (ή fetch του `main`) πριν από κάθε δουλειά.
+3. Διάβασε, με αυτή τη σειρά:
+   - `docs/phase-b/TASKS.md`: ποιος κάνει τι **τώρα**. Βρες τις γραμμές του μέλους σου (S… Σωτήρης, D… Δανάη, A… Αντρέας).
+   - `docs/phase-b/PLANO-OMADAS.md`: τι ακριβώς φτιάχνει κάθε εργασία (ενότητα 3), οι κανόνες (2, 2Α) και οι αποφάσεις Α1–Α13 (2Β). **Οι αποφάσεις είναι κλειστές**, μην τις ξανανοίγεις.
+   - `docs/phase-b/ODIGOS-SYNERGASIAS.md`: ροή GitHub, review, ποιος έχει ποιο αρχείο.
+   - `sql/create.sql`: το σχήμα. **Ακριβή** ονόματα στηλών και τιμές CHECK από εδώ, ποτέ από μνήμης.
+4. Η εκφώνηση (`project.pdf`) **δεν** είναι στο repo (public). Ζήτα την από τον άνθρωπο αν τη χρειαστείς.
+
+## 2. Τι αρχεία πειράζεις (για να μη συγκρούεστε)
+
+| Μέλος | Δικά του αρχεία |
+|---|---|
+| Σωτήρης | `sql/procs_common.sql`, `sql/procs_consumer.sql`, `sql/procs_admin.sql`, `sql/tests/test_common.sql`, `sql/tests/test_consumer.sql`, `sources/*.php` (σκελετός), `sources/consumer/`, `sources/admin/`, `sources/operator/s_*.php`, `data/small/10_soteris.sql` |
+| Δανάη | `sql/procs_technician.sql`, `sql/procs_market.sql`, `sql/tests/test_technician.sql`, `sql/tests/test_market.sql`, `sources/register_technician.php`, `sources/technician/`, `sources/operator/d_*.php`, `sources/supplier/`, `sources/aggregator/`, `data/small/20_danai.sql` |
+| Αντρέας | `sql/procs_dso.sql`, `sql/procs_tso.sql`, `sql/tests/test_dso.sql`, `sql/tests/test_tso.sql`, `sources/dso/`, `sources/tso/`, `data/small/30_andreas.sql` |
+
+- **Κανείς δεν αλλάζει** `sql/create.sql`, `data/small/00_base.sql` ή τα κοινά αρχεία του `sources/`
+  χωρίς τη διαδικασία αλλαγής σχήματος (Οδηγός, ενότητα 5): γράφεις στο PR τι λείπει και γιατί, και
+  την αλλαγή την κάνει ο Σωτήρης.
+- Ποιος **γράφει** σε ποιον πίνακα: PLANO ενότητα 2Α. Τους πίνακες των άλλων τους **διαβάζεις** μόνο.
+- Δικά σου IDs στα δεδομένα: Σωτήρης 1000–1999, Δανάη 2000–2999, Αντρέας 3000–3999.
+- Στο `TASKS.md` αλλάζεις **μόνο** τις γραμμές του μέλους σου.
+
+## 3. Κανόνες κώδικα (υποχρεωτικοί)
+
+**SQL (T-SQL, SQL Server 2025)**
+- Ένα procedure ανά λειτουργία, όνομα `sp_<περιοχή>_<ρήμα>`. Πρώτη παράμετρος `@UserID`, και ελέγχεις ρόλο.
+- Αλλαγές δεδομένων: `SET XACT_ABORT ON` + `BEGIN TRY / BEGIN TRAN … COMMIT / CATCH ROLLBACK; THROW`, και γραμμή στο `AUDIT_LOG`. Πρότυπο: `sp_consumer_pay_invoice` στο PLANO 2.1 και `sql/procs_common.sql`.
+- Λάθη με `THROW <αριθμός>, N'ελληνικό μήνυμα', 1;` Αριθμοί: 50000–50999 κοινά, 51000–51999 Σωτήρης, 52000–52999 Δανάη, 53000–53999 Αντρέας. Το μήνυμα το βλέπει ο χρήστης, άρα γράψ' το καθαρά.
+- Ώρες σε UTC (`SYSUTCDATETIME()`).
+- `VALIDATED_READING` είναι αμετάβλητος (trigger). Μόνο `INSERT` από το VEE, ποτέ UPDATE/DELETE.
+
+**PHP (PHP 8.0 στον server του Τμήματος, driver sqlsrv)**
+- Νέα σελίδα = αντέγραψε `sources/_template.php` στον φάκελο του ρόλου. Η πρώτη γραμμή `<?php // MENU: Τίτλος` τη βάζει μόνη της στο μενού.
+- **Καθόλου SQL μέσα στην PHP**: μόνο `call_proc('sp_…', [uid(), …])`.
+- `require_role('Ρόλος')` στην αρχή, `csrf_field()` σε κάθε φόρμα POST και `check_csrf()` στον χειρισμό, `h()` σε ό,τι τυπώνεις.
+- Ποτέ μη δείχνεις κείμενο λάθους SQL στη σελίδα (ο WAF του Τμήματος δίνει 403). Το `db.php` το κάνει ήδη.
+- Server βάσης: `mssql.cs.ucy.ac.cy\SQL2025` (ΟΧΙ το σκέτο `mssql.cs.ucy.ac.cy`, είναι άλλος server).
+
+## 4. Δοκιμή πριν από κάθε PR
+
+```bash
+bash sql/tools/test_local.sh      # τοπικός SQL Server 2025 σε Docker: drop+create+procs+data+tests
+```
+Θέλει `ALL OK`. Κάθε νέο procedure έχει έλεγχο στο `sql/tests/test_<περιοχή>.sql` που τυπώνει
+`OK …` ή `FAIL …` (πρότυπο: `sql/tests/test_common.sql`). Μη βάζεις `BEGIN TRAN` γύρω από όλο το test.
+Για PHP: `php -l <αρχείο>` σε κάθε αρχείο.
+
+Αν δεν έχεις Docker, πες το στον άνθρωπο και δώσε του το `sql/build/ALL.sql`
+(`python3 sql/tools/build_all.py`) να το τρέξει σε **δική του** δοκιμαστική βάση.
+
+## 5. GitHub
+
+- Branch: `<όνομα>/<ID>-<θέμα>`, π.χ. `danai/D5-tasks`, `andreas/A3-vee`.
+- Στην αρχή: γραμμή στο `TASKS.md` σε ✱ + **Draft PR** προς `main`, τίτλος `D5: Εργασίες πεδίου`.
+- Στο τέλος: `TASKS.md` σε 👀, «Ready for review». Reviewer: PR Σωτήρη → Δανάη, Δανάης → Αντρέας, Αντρέα → Σωτήρης.
+- **Ποτέ** merge στο `main`, ποτέ force push. Το merge το κάνει ο Σωτήρης.
+- Στο review κάποιου άλλου: ακολούθησε τη λίστα του Οδηγού (ενότητα 3Β), σχόλια στο PR.
+
+## 6. Ασφάλεια και ακαδημαϊκή εντιμότητα
+
+- **Κωδικοί ποτέ** σε chat, commit, PR ή αρχείο του repo. Ο κωδικός της βάσης μπαίνει μόνο στο
+  `sources/config.php` (είναι στο `.gitignore`) ή στο SSMS, και τον γράφει ο άνθρωπος.
+- Στη βάση του Τμήματος (π.χ. `sharal01`) δεν τρέχεις τίποτα που σβήνει (`drop.sql`) χωρίς ρητό «ναι».
+- Μη γράφεις στα έγγραφα ότι κάτι το έκανε εργαλείο ενώ το έγραψε Claude (ή το αντίθετο). Ο άνθρωπος πρέπει να μπορεί να εξηγήσει τον κώδικα στην εξέταση, άρα **εξήγησέ του** κάθε procedure που γράφεις με 2–3 απλές προτάσεις.
+
+## 7. Χρήσιμα στοιχεία
+
+- Demo χρήστες (από `00_base.sql`): `admin`, `operator`, `consumer1`, `consumer2`, `tech1` (Approved),
+  `tech2` (Pending), `dso1`, `tso1`, `supplier1`, `aggregator1`. Κωδικός demo: στο σχόλιο στην αρχή του `00_base.sql`.
+- Τα `data/small/00_base.sql` παράγονται από `data/gen/base.py` (`python3 data/gen/base.py`).
+- Παράδοση: Παρασκευή 4/12/26 12:00 (στόχος πριν τις 11:00), `12.zip` με `sources/ sql/ data/ docx/`.
