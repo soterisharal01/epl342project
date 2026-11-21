@@ -305,8 +305,8 @@ INSERT @lch EXEC sp_consumer_list_channels 3;
 IF (SELECT COUNT(*) FROM @lch) = 2 PRINT 'OK   list_channels' ELSE PRINT 'FAIL list_channels';
 
 -- Δοκιμαστικός καταναλωτής ΧΩΡΙΣ τηλέφωνο (μένει στη βάση δοκιμών, όπως οι test_tec_*).
-INSERT USER_ACCOUNT (Username, PasswordHash, Role, Email, Phone, FirstName, LastName, AccountStatus)
-VALUES (N'test_con3_nophone', '$2y$10$abcdefghijklmnopqrstuv', 'Consumer', 'con3@test.cy', NULL, N'Δοκιμή', N'Χωρίς τηλέφωνο', 'Active');
+INSERT USER_ACCOUNT (Username, PasswordHash, Role, Email, Phone, FirstName, LastName, AccountStatus, RawRetentionMonths)
+VALUES (N'test_con3_nophone', '$2y$10$abcdefghijklmnopqrstuv', 'Consumer', 'con3@test.cy', NULL, N'Δοκιμή', N'Χωρίς τηλέφωνο', 'Active', 36);
 DECLARE @nophone INT = SCOPE_IDENTITY();
 BEGIN TRY EXEC sp_consumer_set_channels @nophone, 'SMS'; PRINT 'FAIL SMS without phone accepted'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51207 PRINT 'OK   SMS without phone -> 51207' ELSE PRINT 'FAIL sms no phone: ' + ERROR_MESSAGE(); END CATCH;
