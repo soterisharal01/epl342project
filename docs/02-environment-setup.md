@@ -33,6 +33,7 @@ The VPN uses split tunnel: only traffic to department systems goes through it.
 
 - Server: **`mssql.cs.ucy.ac.cy\SQL2025`**. Without `\SQL2025` you reach a different server where our tables don't exist.
 - Authentication: SQL Server Authentication. The login and database name are your department username; the password came by email in Lab 3.
+- In the connect dialog, tick **Trust Server Certificate** (Options → Connection Properties, or the checkbox on the main tab in newer SSMS). Without it the login fails. `config.example.php` already sets `'TrustServerCertificate' => true` for PHP.
 - Always check that **your own** database is selected (top left in SSMS) before you press Execute.
 - Never run `drop.sql` on someone else's database, including the team demo database `sharal01`.
 - First setup: run `sql/drop.sql`, then `sql/create.sql` (56 tables). Optional check: `sql/test-step0.sql` (17 `OK`), then drop + create again.
