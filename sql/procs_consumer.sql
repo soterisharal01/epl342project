@@ -22,17 +22,22 @@ END;
 GO
 
 -- Υποστατικά που ο χρήστης κρατά ΣΗΜΕΡΑ (το HOLDING δεν έχει λήξει).
-CREATE OR ALTER FUNCTION fn_consumer_holds (@UserID INT, @PremiseID INT)
-RETURNS BIT
+-- Inline table-valued function: επιστρέφει μία γραμμή αν το κρατά, καμία αν όχι.
+-- Χρήση:  IF NOT EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID)) ...
+-- Γιατί όχι scalar (RETURNS BIT): η T-SQL θέλει σχήμα μπροστά σε scalar function (dbo.f()),
+-- αλλά στον server του Τμήματος κάθε χρήστης έχει δικό του σχήμα (π.χ. apieri01), όχι dbo.
+-- Μια table-valued function καλείται χωρίς σχήμα. (CON-7)
+DROP FUNCTION IF EXISTS fn_consumer_holds;   -- η παλιά scalar έκδοση δεν αλλάζει με ALTER σε table-valued
+GO
+CREATE FUNCTION fn_consumer_holds (@UserID INT, @PremiseID INT)
+RETURNS TABLE
 AS
-BEGIN
-    RETURN CASE WHEN EXISTS (
-        SELECT 1 FROM HOLDING
-        WHERE UserID = @UserID AND PremiseID = @PremiseID
-          AND StartDate <= CAST(SYSUTCDATETIME() AS DATE)
-          AND (EndDate IS NULL OR EndDate >= CAST(SYSUTCDATETIME() AS DATE))
-    ) THEN 1 ELSE 0 END;
-END;
+RETURN (
+    SELECT 1 AS Holds FROM HOLDING
+    WHERE UserID = @UserID AND PremiseID = @PremiseID
+      AND StartDate <= CAST(SYSUTCDATETIME() AS DATE)
+      AND (EndDate IS NULL OR EndDate >= CAST(SYSUTCDATETIME() AS DATE))
+);
 GO
 
 -- =====================================================================
@@ -111,7 +116,7 @@ BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     EXEC sp_consumer_assert @UserID;
     SET @EndDate = ISNULL(@EndDate, CAST(SYSUTCDATETIME() AS DATE));
-    IF dbo.fn_consumer_holds(@UserID, @PremiseID) = 0
+    IF NOT EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID))
         THROW 51006, N'Δεν κρατάτε αυτό το υποστατικό.', 1;
     BEGIN TRY
         BEGIN TRAN;
@@ -145,7 +150,7 @@ BEGIN
         THROW 51010, N'Μη έγκυρο IBAN (π.χ. CY17 0020 0128 0000 0012 0052 7600).', 1;
     IF EXISTS (SELECT 1 FROM BANK_ACCOUNT WHERE IBAN = @IBAN)
         THROW 51011, N'Αυτό το IBAN είναι ήδη καταχωρημένο.', 1;
-    IF @PremiseID IS NOT NULL AND dbo.fn_consumer_holds(@UserID, @PremiseID) = 0
+    IF @PremiseID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID))
         THROW 51006, N'Δεν κρατάτε αυτό το υποστατικό.', 1;
     BEGIN TRY
         BEGIN TRAN;
@@ -197,7 +202,7 @@ BEGIN
     JOIN METER me ON me.MeterID = mi.MeterID
     JOIN PREMISE p ON p.PremiseID = mi.PremiseID
     WHERE mi.RemovedAt IS NULL AND mi.ConfirmationStatus = 'Confirmed'
-      AND dbo.fn_consumer_holds(@UserID, p.PremiseID) = 1
+      AND EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, p.PremiseID))
     ORDER BY p.PremiseID, me.MeterID;
 END;
 GO
@@ -211,7 +216,7 @@ BEGIN
     EXEC sp_consumer_assert @UserID;
     IF @RequestType NOT IN ('Meter check', 'Fault report')
         THROW 51020, N'Διαλέξτε «Έλεγχος μετρητή» ή «Αναφορά βλάβης».', 1;
-    IF dbo.fn_consumer_holds(@UserID, @PremiseID) = 0
+    IF NOT EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID))
         THROW 51006, N'Δεν κρατάτε αυτό το υποστατικό.', 1;
     IF @MeterID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM METER_INSTALLATION
             WHERE MeterID = @MeterID AND PremiseID = @PremiseID AND RemovedAt IS NULL)

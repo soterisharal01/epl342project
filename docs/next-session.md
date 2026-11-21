@@ -3,29 +3,26 @@
 > Written by `finish` at the end of every session and read first by `start`. The newest copy on any branch wins
 > (see [CLAUDE.md](../CLAUDE.md), section 1 step 2). Replace the whole file each time.
 
-**Written:** 2026-11-21 16:40 UTC
-**Branch:** `task/REL-0-docs-restructure` · **Open PRs:** #7 (REL-0, waiting for another member's review)
+**Written:** 2026-11-21 16:25 UTC
+**Branch:** `task/CON-7-no-dbo` (on top of REL-0) · **Open PRs:** #7 (REL-0) and the CON-7 PR, both waiting for another member's review
 
 ## What the last session did
 
 - Restructured the repo: no personal ownership, area-based tasks, `start` / `stop` / `finish` protocol, one doc per component.
 - Fixed the CS VPN on this machine (profile v5) and added terminal SQL access (`sql/tools/save_credential.ps1`, `run_sql.ps1`).
-- Built everything on the member's own database for the first time.
+- Built everything on the member's own database for the first time, found and fixed CON-7 (`dbo.` does not work on the department server).
 
 ## Database state (the member's own database on `mssql.cs.ucy.ac.cy\SQL2025`)
 
 - Last run: `build_all.py --drop --tests` → `run_sql.ps1 -File sql/build/ALL.sql -AllowDestructive`.
 - Loaded: 56 MDMS tables (+ one lab table `DEPARTMENT`), 20 procedures, 1 function, 4 triggers, base data (10 users, 5 meters, 1,102 raw, 960 validated).
-- `test_common.sql`: all OK. `test_consumer.sql`: **stopped with an error**. `dbo.fn_consumer_holds` is not found, because on the
-  department server objects are created in the user's own schema (for example `apieri01`), not `dbo`.
+- With the CON-7 branch: `test_common.sql` and `test_consumer.sql` **37/37 OK**, 0 FAIL. Objects live in the user's own schema (for example `apieri01`), not `dbo`.
 
 ## Next actions
 
-1. **CON-7:** remove `dbo.` from `sql/procs_consumer.sql` by turning the scalar function `fn_consumer_holds` into an inline
-   table-valued function (or `EXISTS` checks), rebuild, and get `test_consumer.sql` fully OK on the member's database. Same bug
-   would break these procedures on every member's database and on the demo database.
-2. Get PR #7 reviewed and merged by another member.
-3. Then the first free task in [tasks.md](tasks.md) order (currently ADM-2).
+1. Get PR #7 (REL-0) and then the CON-7 PR reviewed and merged by another member, in that order.
+2. Claim the first free task in [tasks.md](tasks.md) order: **ADM-2** (admin creates staff users, suspends/activates accounts, views the audit log).
+   New task branches should start from `task/CON-7-no-dbo` until #7 and CON-7 are merged, then from `main`.
 
 ## Warnings
 
