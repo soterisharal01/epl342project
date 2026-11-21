@@ -50,6 +50,13 @@ What `sp_gdpr_apply` does:
 
 `AUDIT_LOG` rows written by apply contain only counts and IDs. Older audit rows (for example `Add bank account`, which stores the last 4 IBAN digits) are not rewritten.
 No procedure here refuses to erase the base demo users; the tests never do it.
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] 1.4 GDPR is **not** an immediate deletion: submit → review → pre-approval → final approval, with a log row at every stage (the five `GDPR_REQUEST` stages and `CK_GDPR_REQUEST_Stage`: `'Rejected'` needs `PreApprovedAt`). After approval only the personal data that may be erased is erased **permanently**. Payment accounting stays (B17).
+- [ ] 1.4 Raw 15-minute readings: 3 years, then deleted; aggregates stay. With an approved GDPR request: 1 month, and older rows are deleted **automatically**. Transformer readings/aggregates are not affected and are kept forever.
+- [ ] 1.4 Statistics prefer aggregates; detailed data only for those entitled to it.
 
 ## What exists (GDP-2, `sql/procs_gdpr.sql`, tests in `sql/tests/test_gdpr.sql`, page `sources/admin/gdp_retention.php`)
 
