@@ -7,3 +7,5 @@ er-model/*-preview.svg
 er-model/untranslated*.json
 sources/config.php
 sql/build/
+12.zip
+build/
