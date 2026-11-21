@@ -173,3 +173,17 @@ IF EXISTS (SELECT 1 FROM INCLUDES WHERE PortfolioID = @newpf AND PremiseID = 5 A
     PRINT 'OK   removed premise can be added again' ELSE PRINT 'FAIL re-add premise';
 -- Η δοκιμή δεν αφήνει ανοιχτό υποστατικό στο δοκιμαστικό χαρτοφυλάκιο
 EXEC sp_aggregator_remove_premise 10, @newpf, 5;
+
+-- ---------- MKT-4: λίστες χαρτοφυλακίων ----------
+DECLARE @t4pf TABLE (PortfolioID INT, Name NVARCHAR(100), ActivePremises INT);
+INSERT @t4pf EXEC sp_aggregator_list_portfolios 10;
+IF EXISTS (SELECT 1 FROM @t4pf WHERE PortfolioID = 1) AND EXISTS (SELECT 1 FROM @t4pf WHERE PortfolioID = @newpf)
+    PRINT 'OK   list portfolios shows own portfolios' ELSE PRINT 'FAIL list portfolios';
+BEGIN TRY EXEC sp_aggregator_list_portfolios 9; PRINT 'FAIL supplier listed portfolios'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52510 PRINT 'OK   supplier list portfolios -> 52510' ELSE PRINT 'FAIL supplier list: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t4pr TABLE (PremiseID INT, Address NVARCHAR(200), PostalCode CHAR(4), UsageType VARCHAR(12), StartDate DATE, EndDate DATE, IsActive BIT);
+INSERT @t4pr EXEC sp_aggregator_list_portfolio_premises 10, @newpf;
+IF EXISTS (SELECT 1 FROM @t4pr WHERE PremiseID = 5 AND IsActive = 0)
+    PRINT 'OK   list portfolio premises shows the closed row' ELSE PRINT 'FAIL list portfolio premises';
+BEGIN TRY EXEC sp_aggregator_list_portfolio_premises 10, 99999; PRINT 'FAIL listed foreign portfolio'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52512 PRINT 'OK   list foreign portfolio -> 52512' ELSE PRINT 'FAIL foreign list: ' + ERROR_MESSAGE(); END CATCH;

@@ -44,8 +44,8 @@ change them only through the schema-change process or in the coordinating sessio
 |---|---|---|---|---|---|---|
 | ADM-1 | ★ Consumer self-registration (procedure + page) | III.1.1 | | 24/11 | ✓ | `sp_auth_register_consumer`, `register_consumer.php` (PR #4) |
 | ADM-2 | Admin: create Operator/DSO/TSO/Supplier/Aggregator users, suspend/activate, view the audit log | General | | 25/11 | 👀 | |
-| ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | ○ | |
-| ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | ○ | |
+| ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | 👀 | |
+| ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | 👀 | |
 
 ## CON: consumers ([06](06-consumers.md))
 
@@ -53,10 +53,10 @@ change them only through the schema-change process or in the coordinating sessio
 |---|---|---|---|---|---|---|
 | CON-1 | ★ Premises + bank accounts | III.1.1 | | 24/11 | ✓ | `sp_consumer_add_premise`, `list_premises`, `end_holding`, `add_bank_account`, `list_bank_accounts`, pages `10_premises`, `20_bank` (PR #4) |
 | CON-2 | ★ Readings: current month free, history through a purchased service, within retention | III.1.2 | | 26/11 | 👀 | |
-| CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | ○ | |
+| CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | 👀 | |
 | CON-4 | ★ Check/fault requests + history | III.1.3 | | 25/11 | ✓ | `sp_consumer_submit_request`, `list_requests`, `cancel_request`, `list_meters`, page `30_requests` (PR #4) |
 | CON-5 | ★ Invoices, payments, paying an invoice | III.1.3 | | 26/11 | ✓ | `sp_consumer_list_invoices`, `list_payments`, `pay_invoice`, page `40_billing` (PR #4) |
-| CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | ○ | |
+| CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | 👀 | |
 | CON-7 | Fix: consumer procedures call `dbo.fn_consumer_holds`, which fails on the department server (per-user schemas) | Bug | | 22/11 | 👀 | Now an inline table-valued function; 37/37 OK on a member database; PR #8 |
 
 ## GDP: GDPR and retention ([07](07-gdpr-and-retention.md))
@@ -64,7 +64,7 @@ change them only through the schema-change process or in the coordinating sessio
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
 | GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | 👀 | |
-| GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | ○ | Agreement X5 |
+| GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | 👀 | Agreement X5 |
 | GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | ○ | |
 
 ## TEC: technicians and meters ([08](08-technicians-and-meters.md))
@@ -89,7 +89,7 @@ change them only through the schema-change process or in the coordinating sessio
 | MKT-1 | ★ Supplier aggregates (Day-Ahead) | III.5.1–5.2 | | 27/11 | 👀 | Agreement X6 |
 | MKT-2 | Aggregator portfolio + aggregates | III.5.1 | | 27/11 | 👀 | |
 | MKT-3 | ★ Intraday provisional (from raw) | III.5.2 | | 27/11 | 👀 | |
-| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | ○ | |
+| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | 👀 | |
 
 ## DSO: ingestion and VEE ([09](09-dso-ingestion-vee.md))
 
