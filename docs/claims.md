@@ -9,3 +9,4 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 
 | Task | Branch | Claimed at (UTC) | Plan |
 |---|---|---|---|
+| PRF-4 | task/PRF-4-measurements | 2026-11-21 19:46 | Before/after numbers for PRF-1/2/3 + 10,000-request test on a local SQL Server, doc 14 |
