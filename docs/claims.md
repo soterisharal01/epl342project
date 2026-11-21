@@ -18,4 +18,6 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 | GDP-3 | task/GDP-3-pages | 2026-11-21 17:20 | GDPR pages: consumer, operator, admin |
 | PRF-1 | task/PRF-1-indexes | 2026-11-21 17:20 | PRF-1/2/3: 3 indexes + before/after case |
 | DOC-3 | task/DOC-3-dictionary | 2026-11-21 17:20 | Data dictionary + REL-5 select.sql |
+| DOC-4 | task/DOC-4-separate-doc | 2026-11-21 17:20 | Separate doc: contention (CCY-1), security (SEC-2), extension (EXT-1) |
 | DSO-4 | task/DSO-4-aggregates | 2026-11-21 17:21 | DSO-4 aggregates, DSO-5 analytics, DSO-6 pages |
+| DOC-3 | task/DOC-3-dictionary | 2026-11-21 17:20 | Data dictionary + REL-5 select.sql |
