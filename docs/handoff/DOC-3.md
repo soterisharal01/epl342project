@@ -1,15 +1,16 @@
 # Handoff: DOC-3 Data dictionary (and REL-5 select.sql)
 
-Lock: active since 2026-11-21 17:30 UTC
+Lock: free
 
 Branch: task/DOC-3-dictionary
 Doc: docs/20-data-dictionary.md
-Status: in progress
+Status: finished (in review)
 
 ## Next step
-Write sql/select.sql (REL-5), then free the lock.
+Coordinator: run sql/select.sql once on a loaded database to confirm it parses (it was written without a database).
 
 ## Done so far
+- 2026-11-21: REL-5 sql/select.sql, 27 queries (not in build_all.py).
 - 2026-11-21: sql/tools/dictionary.py generates docs/20-data-dictionary.md (56 tables) from sql/create.sql.
 
 ## Blockers / open questions
