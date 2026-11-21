@@ -18,4 +18,4 @@ Coordinator runs the tests (full build + run on a database) and reviews.
 - Not executed yet; expect possible small fixes after the first run.
 
 ## How to test
-python sql	oolsuild_all.py --drop --tests, then run_sql.ps1 -File sqluild\ALL.sql -AllowDestructive
+python sql\tools\build_all.py --drop --tests, then run_sql.ps1 -File sql\build\ALL.sql -AllowDestructive
