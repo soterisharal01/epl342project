@@ -2,29 +2,27 @@
 
 > Written by `finish` at the end of every session and read first by `start`. The newest copy on any branch wins.
 
-**Written:** 2026-11-21 (end of a long parallel session) · **Main:** all reviewed work merged, full suite 652 OK / 0 FAIL
+**Written:** 2026-11-21 18:35 UTC · **Branch:** `task/DOC-1-user-manual` (PR open, see below) · **Main:** unchanged by this session except the DOC-1 claim row
 
-## Done today (merged into main)
-Every area's procedures, tests and pages except the TEC-6..10 block: consumers, admin and catalogs, GDPR + retention + pages,
-technicians (registration, documents, availability, approval, field tasks), market (Day-Ahead, Intraday, portfolios, pages),
-DSO (ingestion, VEE, aggregates, analytics, pages), TSO (tree, state, aggregates, load shedding, Leaflet map), 3 indexes,
-data dictionary, `select.sql`, the separate document (contention, security, extension), claims + lanes rules.
+## What this session did
+- Short session (the human keeps usage for other study). Took **DOC-1** (the only free task whose needs were met) and wrote
+  `docs/21-user-manual.md`: per-role how-to from the real pages, design choices, extras, difficulties, ER/dictionary pointers,
+  limitations. No SQL or PHP changed, no database run.
+- Did **not** touch `task/TEC-6-install` (another member's open work).
 
-## In review (claimed, not merged)
+## Still open from the previous session (unchanged)
 | Task | Branch | State |
 |---|---|---|
-| TEC-6..10 meter install ★, confirm ★, commands, anti-tamper, pages | `task/TEC-6-install` | 746 OK / **3 FAIL** in test "doc foreign meter" (the installation was already decided by the Operator earlier in the test, so the check fires 52330-style instead of the expected error) — fix the test order or expected number, rerun, merge |
-| DAT-1..4 large data set (78,609 rows, ~7 MB) | `task/DAT-1-large-data` | earlier versions hit the 27 MB cap; Query Store was the real culprit and is now off. Load `sql/import.sql` after a build without tests, check counts, merge |
+| TEC-6..10 meter install ★, confirm ★, commands, anti-tamper, pages | `task/TEC-6-install` | 3 FAIL in test "doc foreign meter"; its author fixes and merges. Its branch also conflicts with main in `docs/tasks.md` and `docs/claims.md` (simple: keep main's rows, mark TEC-6..10 👀). |
+| DOC-1 user manual | `task/DOC-1-user-manual` | in review |
 
 ## Next actions
-1. Fix and merge TEC-6; load-test and merge DAT-1.
-2. PRF: run `sql/perf/before_after.sql` with the large set loaded, fill the numbers in docs/14 (with SSMS plan screenshots); PRF-4 10,000-request test.
-3. SEC-1: SQL-injection/access check of every page (run each page in the local demo).
-4. DOC-1 user manual (per role, screenshots from the local demo), DOC-2 final ER (ERD+), DAT-5 `select.sql` EXEC list if still needed.
-5. REL-1 integration on `sharal01` (Sotiris's account): build without tests + `sql/import.sql`; REL-2 clean rehearsal; REL-3 demo rehearsal; REL-4 zip.
+1. Review and merge the DOC-1 PR (a member who did not write it).
+2. Fix and merge TEC-6; then update manual sections 3.4, 3.5, 4.5 with the real TEC pages.
+3. PRF: run `sql/perf/before_after.sql` with the large set loaded, fill docs/14; PRF-4 10,000-request test.
+4. SEC-1 page-by-page injection/access check; DOC-1 screenshots from the local demo; DOC-2 final ER.
+5. REL-1 integration on `sharal01`; REL-2 clean rehearsal; REL-3 demo rehearsal; REL-4 zip.
+6. `docs/claims.md` on main still has stale rows (DSO-2, CON-3 twice, TEC-2 twice, MKT-4 twice, ADM-3, GDP-2) for merged tasks: delete them (`unclaim:` commit).
 
 ## Database state
-Member database `apieri01`: Query Store OFF; rebuilt for the local demo from main **without tests** + base data + the large set.
-
-## Local demo
-WSL Ubuntu has PHP 8.3 + msodbcsql18 + sqlsrv. Start: `wsl -d Ubuntu -- php -S 0.0.0.0:8000 -t /mnt/c/Users/apier/Desktop/342/epl342project/sources`, open http://localhost:8000. Needs `sources/config.php` with the member's own credentials (typed by the member) and the CS VPN.
+Not touched this session. Member database `apieri01` as described by the previous session (rebuilt without tests + base + large set).
