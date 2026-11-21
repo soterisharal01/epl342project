@@ -334,3 +334,21 @@ IF (SELECT COUNT(*) FROM @s_lst) = (SELECT COUNT(*) FROM LOAD_SHED_ORDER)
    AND (SELECT Commands FROM @s_lst WHERE ShedOrderID = @s_oid) = 3 AND (SELECT Sent FROM @s_lst WHERE ShedOrderID = @s_oid) = 3
    AND (SELECT TransformerName FROM @s_lst WHERE ShedOrderID = @s_oid) = (SELECT Name FROM TRANSFORMER WHERE TransformerID = 2)
     PRINT 'OK   list shed orders: transformer name and command counts by status' ELSE PRINT 'FAIL list shed orders';
+
+-- ---------- sp_tso_map_data (TSO-6) ----------
+DECLARE @m6_map TABLE (Kind VARCHAR(12), Id INT, Name NVARCHAR(50), SerialNumber VARCHAR(40), Latitude DECIMAL(9,6), Longitude DECIMAL(9,6),
+                       ParentId INT, Level INT, IsLeaf BIT, MinLat DECIMAL(9,6), MinLon DECIMAL(9,6), MaxLat DECIMAL(9,6), MaxLon DECIMAL(9,6),
+                       ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), Status VARCHAR(20), TransformerID INT);
+BEGIN TRY INSERT @m6_map EXEC sp_tso_map_data 3; PRINT 'FAIL consumer got the map data'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53800 PRINT 'OK   map data: Consumer -> 53800' ELSE PRINT 'FAIL map data role: ' + ERROR_MESSAGE(); END CATCH;
+INSERT @m6_map EXEC sp_tso_map_data 8;
+IF (SELECT COUNT(*) FROM @m6_map WHERE Kind = 'Transformer' AND Id BETWEEN 1 AND 6 AND Latitude IS NOT NULL AND MinLat < MaxLat AND MinLon < MaxLon) = 6
+   AND (SELECT Level FROM @m6_map WHERE Kind = 'Transformer' AND Id = 1) = 0
+   AND (SELECT IsLeaf FROM @m6_map WHERE Kind = 'Transformer' AND Id = 4) = 1
+   AND (SELECT IsLeaf FROM @m6_map WHERE Kind = 'Transformer' AND Id = 2) = 0
+    PRINT 'OK   map data: base transformers 1-6 with geofence, level and leaf flag' ELSE PRINT 'FAIL map data transformers';
+IF (SELECT COUNT(*) FROM @m6_map WHERE Kind = 'Meter' AND Id BETWEEN 1 AND 5 AND Latitude IS NOT NULL AND Longitude IS NOT NULL
+        AND TransformerID IS NOT NULL AND Status IS NOT NULL) = 5
+    PRINT 'OK   map data: meters 1-5 with coordinates, status and transformer' ELSE PRINT 'FAIL map data meters';
+INSERT @m6_map EXEC sp_tso_map_data 2;
+IF EXISTS (SELECT 1 FROM @m6_map WHERE Kind = 'Transformer' AND Id = 1) PRINT 'OK   map data: Operator may read it' ELSE PRINT 'FAIL map data operator';

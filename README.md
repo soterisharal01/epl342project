@@ -34,11 +34,12 @@ Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [
 | 12 | [PHP web app](docs/12-php-web-app.md) | Skeleton, automatic menu, calling procedures, deploying | Written |
 | 13 | [Data sets](docs/13-data-sets.md) | Base demo data, large data, `.dat` and import | Partly |
 | 14 | [Indexes and performance](docs/14-indexes-and-performance.md) | 3 indexes, before/after, 10,000-request test | Plan |
-| 15 | [Concurrency](docs/15-concurrency.md) | Transactions, isolation, VEE during ingestion | Plan |
-| 16 | [Security](docs/16-security.md) | Access control, SQL injection, XSS, CSRF, secrets | Plan |
-| 17 | [Extensibility](docs/17-extensibility.md) | New types, codes and rules as rows, not schema changes | Plan |
+| 15 | [Concurrency](docs/15-concurrency.md) | Transactions, isolation, VEE during ingestion | Written |
+| 16 | [Security](docs/16-security.md) | Access control, SQL injection, XSS, CSRF, secrets | Written |
+| 17 | [Extensibility](docs/17-extensibility.md) | New types, codes and rules as rows, not schema changes | Written |
 | 18 | [Deliverables and timeline](docs/18-deliverables-and-timeline.md) | The zip, documents, day plan, demo script, checklist | Written |
 | 19 | [Conventions and decisions](docs/19-conventions.md) | Areas, code rules, table ownership, agreements, decisions B1–B13 | Written |
+| 20 | [Data dictionary](docs/20-data-dictionary.md) | Every table and column explained | Written |
 | — | [Session note](docs/next-session.md) | Where the last session stopped, what to do next | Live |
 | — | [Task board](docs/tasks.md) | Every task, its status and dependencies | Live |
 | — | [Handoff notes](docs/handoff/) | One note per in-progress task (on its branch) | Live |
