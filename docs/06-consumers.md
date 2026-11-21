@@ -11,6 +11,22 @@
 - Thresholds with email/SMS notification. Under- and over-voltage events.
 - Check or fault requests, with status and history. Billing and payment history.
 
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] 1.1 Self-registration **without** approval: personal details, contact details, login details.
+- [ ] 1.1 A consumer has **many** premises (not 1:1). Each premise: unique Premise ID, address, WGS84, use (4 values), district, municipality, parish, postcode.
+- [ ] 1.1 Bank accounts belong to the consumer and/or to a specific premise.
+- [ ] 1.2 The consumer sees only **active** meters of **their own** premises, and only for the period they held the premise (B18).
+- [ ] 1.2 Plain consumer: import. Prosumer (Net Billing / Net Metering): import **and** export **separately**, so the balance shows.
+- [ ] 1.2 Notification of power-quality events (undervoltage, overvoltage) where voltage readings exist.
+- [ ] 1.2 Consumption thresholds and notification channels (email, SMS). Sending itself is outside the database (B19).
+- [ ] 1.2 Current month **free**. Earlier months only with a **paid** service, and **only** while the data still exists under retention.
+- [ ] 1.2 Monitoring screens show VEE-checked 15-minute values. Historical screens use the day/month/year aggregates, with the **same** access rules.
+- [ ] 1.3 Meter check or fault report for a premise/meter, with **status and history**, so it can be assigned to a technician (TEC-5) and followed to the end.
+- [ ] 1.3 Billing and payment history. A payment links consumer, supplier, invoice and the MDMS-Cy service fee. No dynamic-pricing algorithm is needed.
+
 ## What exists (`sql/procs_consumer.sql`, tests `sql/tests/test_consumer.sql` 26/26 OK)
 
 | Task | Procedures | Page |
