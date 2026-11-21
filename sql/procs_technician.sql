@@ -1301,3 +1301,362 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- =====================================================================
+-- TEC-8: εντολές εξ αποστάσεως (ΙΙΙ.2.4, απόφαση B15). Λάθη 52340-52359.
+-- 52340 είδος εντολής | 52341 κανένα Accepted έργο για τον μετρητή | 52342 μετρητής δεν υπάρχει/Retired
+-- 52343 Parameters όχι JSON | 52344 εντολή δεν υπάρχει | 52345 όχι Awaiting approval
+-- 52346 η απόρριψη θέλει σχόλιο | 52347 είδος αποτελέσματος | 52348 η εντολή δεν είναι Sent
+-- 52349 ρόλος/εντολή δεν είναι δική σας
+-- Ροή: τεχνικός ζητά -> 'Awaiting approval' -> Operator εγκρίνει -> 'Sent' -> προσπάθειες
+-- (Timeout/NAK/ACK) -> 'Acknowledged' στο πρώτο ACK ή 'Failed' μετά από 3 αποτυχίες.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- sp_tech_request_command: ο τεχνικός ζητά εντολή ΜΟΝΟ για μετρητή όπου έχει Accepted εργασία
+-- (στον μετρητή ή στο υποστατικό όπου είναι εγκατεστημένος). Είδη: Disconnect, Reconnect,
+-- Firmware upgrade ('Load shed' είναι μόνο του TSO, X3). Επιστρέφει: CommandID.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_request_command
+    @UserID INT, @MeterID INT, @CommandType VARCHAR(30), @Parameters NVARCHAR(1000) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert @UserID;
+    IF @CommandType IS NULL OR @CommandType NOT IN ('Disconnect', 'Reconnect', 'Firmware upgrade')
+        THROW 52340, N'Είδος εντολής: Disconnect, Reconnect ή Firmware upgrade.', 1;
+    SET @Parameters = NULLIF(LTRIM(RTRIM(@Parameters)), N'');
+    IF @Parameters IS NOT NULL AND ISJSON(@Parameters) <> 1
+        THROW 52343, N'Οι παράμετροι πρέπει να είναι έγκυρο JSON (π.χ. {"version":"2.1"}).', 1;
+    IF NOT EXISTS (SELECT 1 FROM METER WHERE MeterID = @MeterID AND Status <> 'Retired')
+        THROW 52342, N'Ο μετρητής δεν υπάρχει ή έχει αποσυρθεί.', 1;
+    IF NOT EXISTS (SELECT 1 FROM FIELD_TASK t
+                   WHERE t.TechnicianID = @UserID AND t.Status = 'Accepted'
+                     AND (t.MeterID = @MeterID
+                          OR t.PremiseID IN (SELECT mi.PremiseID FROM METER_INSTALLATION mi
+                                             WHERE mi.MeterID = @MeterID AND mi.RemovedAt IS NULL)))
+        THROW 52341, N'Δεν έχετε αποδεκτή εργασία για αυτόν τον μετρητή.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        INSERT REMOTE_COMMAND (CommandType, Parameters, Status, MeterID, RequestedBy)
+        VALUES (@CommandType, @Parameters, 'Awaiting approval', @MeterID, @UserID);
+        DECLARE @cid INT = SCOPE_IDENTITY();
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy, ResultComment)
+        VALUES ('REMOTE_COMMAND', @cid, 'Request command', 'Awaiting approval', @UserID,
+                CONCAT(@CommandType, N' για μετρητή ', @MeterID));
+        COMMIT;
+        SELECT @cid AS CommandID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_list_command_targets: οι μετρητές για τους οποίους μπορώ να ζητήσω εντολή.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_list_command_targets
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tech_assert @UserID;
+    SELECT m.MeterID, m.SerialNumber, m.Status
+    FROM METER m
+    WHERE m.Status <> 'Retired'
+      AND EXISTS (SELECT 1 FROM FIELD_TASK t
+                  WHERE t.TechnicianID = @UserID AND t.Status = 'Accepted'
+                    AND (t.MeterID = m.MeterID
+                         OR t.PremiseID IN (SELECT mi.PremiseID FROM METER_INSTALLATION mi
+                                            WHERE mi.MeterID = m.MeterID AND mi.RemovedAt IS NULL)))
+    ORDER BY m.MeterID;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_approve_command: 'Awaiting approval' -> 'Sent' (ApprovedBy) ή, με @Approve = 0
+-- και σχόλιο, -> 'Cancelled'. AUDIT_LOG.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_approve_command
+    @UserID INT, @CommandID INT, @Approve BIT = 1, @Comment NVARCHAR(500) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_operator_assert @UserID;
+    SET @Comment = NULLIF(LTRIM(RTRIM(@Comment)), N'');
+    IF ISNULL(@Approve, 1) = 0 AND @Comment IS NULL
+        THROW 52346, N'Η απόρριψη της εντολής θέλει σχόλιο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @st VARCHAR(17) = (SELECT Status FROM REMOTE_COMMAND WITH (UPDLOCK) WHERE CommandID = @CommandID);
+        IF @st IS NULL
+            THROW 52344, N'Η εντολή δεν υπάρχει.', 1;
+        IF @st <> 'Awaiting approval'
+            THROW 52345, N'Η εντολή δεν περιμένει έγκριση.', 1;
+        IF ISNULL(@Approve, 1) = 1
+        BEGIN
+            UPDATE REMOTE_COMMAND SET Status = 'Sent', ApprovedBy = @UserID WHERE CommandID = @CommandID;
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('REMOTE_COMMAND', @CommandID, 'Approve command', @st, 'Sent', @UserID, @Comment);
+        END
+        ELSE
+        BEGIN
+            UPDATE REMOTE_COMMAND SET Status = 'Cancelled' WHERE CommandID = @CommandID;
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('REMOTE_COMMAND', @CommandID, 'Reject command', @st, 'Cancelled', @UserID, @Comment);
+        END;
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_command_record_attempt: καταγράφει μια προσπάθεια (προσομοίωση συσκευής) για εντολή 'Sent'.
+-- Operator ή ο τεχνικός που τη ζήτησε. AttemptNo = επόμενος, υπολογίζεται κάτω από UPDLOCK στη γραμμή
+-- της εντολής. ACK -> 'Acknowledged'. NAK/Timeout -> μένει 'Sent', μετά την 3η αποτυχία -> 'Failed'.
+-- Επιστρέφει: AttemptNo, Status.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_command_record_attempt
+    @UserID INT, @CommandID INT, @Outcome VARCHAR(7)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    DECLARE @role VARCHAR(12) = (SELECT Role FROM USER_ACCOUNT WHERE UserID = @UserID AND AccountStatus = 'Active');
+    IF @role = 'Technician'
+        EXEC sp_tech_assert @UserID;
+    ELSE IF @role = 'Operator'
+        EXEC sp_operator_assert @UserID;
+    ELSE
+        THROW 52349, N'Δεν επιτρέπεται: μόνο Operator ή ο τεχνικός που ζήτησε την εντολή.', 1;
+    IF @Outcome IS NULL OR @Outcome NOT IN ('Timeout', 'NAK', 'ACK')
+        THROW 52347, N'Αποτέλεσμα προσπάθειας: Timeout, NAK ή ACK.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @st VARCHAR(17), @req INT;
+        SELECT @st = Status, @req = RequestedBy FROM REMOTE_COMMAND WITH (UPDLOCK) WHERE CommandID = @CommandID;
+        IF @st IS NULL
+            THROW 52344, N'Η εντολή δεν υπάρχει.', 1;
+        IF @role = 'Technician' AND @req <> @UserID
+            THROW 52349, N'Η εντολή δεν είναι δική σας.', 1;
+        IF @st <> 'Sent'
+            THROW 52348, N'Η εντολή δεν είναι σε κατάσταση Sent.', 1;
+        DECLARE @no SMALLINT = ISNULL((SELECT MAX(AttemptNo) FROM COMMAND_ATTEMPT WHERE CommandID = @CommandID), 0) + 1;
+        DECLARE @at DATETIME2(3) = SYSUTCDATETIME();
+        INSERT COMMAND_ATTEMPT (CommandID, AttemptNo, AttemptAt, RespondedAt, Outcome)
+        VALUES (@CommandID, @no, @at, CASE WHEN @Outcome = 'Timeout' THEN NULL ELSE @at END, @Outcome);
+        DECLARE @new VARCHAR(17) = @st;
+        IF @Outcome = 'ACK'
+            SET @new = 'Acknowledged';
+        ELSE IF (SELECT COUNT(*) FROM COMMAND_ATTEMPT WHERE CommandID = @CommandID AND Outcome IN ('Timeout', 'NAK')) >= 3
+            SET @new = 'Failed';
+        IF @new <> @st
+        BEGIN
+            UPDATE REMOTE_COMMAND SET Status = @new WHERE CommandID = @CommandID;
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('REMOTE_COMMAND', @CommandID, 'Command result', @st, @new, @UserID,
+                    CONCAT(N'Προσπάθεια ', @no, N': ', @Outcome));
+        END;
+        COMMIT;
+        SELECT @no AS AttemptNo, @new AS Status;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_command_list: Operator βλέπει όλες τις εντολές, ο τεχνικός μόνο όσες ζήτησε.
+-- Προαιρετικό φίλτρο μετρητή. Με πλήθος προσπαθειών και τελευταίο αποτέλεσμα.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_command_list
+    @UserID INT, @MeterID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @role VARCHAR(12) = (SELECT Role FROM USER_ACCOUNT WHERE UserID = @UserID AND AccountStatus = 'Active');
+    IF @role = 'Technician'
+        EXEC sp_tech_assert @UserID;
+    ELSE IF @role = 'Operator'
+        EXEC sp_operator_assert @UserID;
+    ELSE
+        THROW 52349, N'Δεν επιτρέπεται: μόνο Operator ή Τεχνικός.', 1;
+    SELECT c.CommandID, c.CommandType, c.Parameters, c.RequestedAt, c.Status, c.MeterID, m.SerialNumber,
+           u.Username AS RequestedByUsername, c.ApprovedBy,
+           (SELECT COUNT(*) FROM COMMAND_ATTEMPT a WHERE a.CommandID = c.CommandID) AS Attempts,
+           la.Outcome AS LastOutcome
+    FROM REMOTE_COMMAND c
+    JOIN METER m ON m.MeterID = c.MeterID
+    JOIN USER_ACCOUNT u ON u.UserID = c.RequestedBy
+    OUTER APPLY (SELECT TOP 1 a.Outcome FROM COMMAND_ATTEMPT a WHERE a.CommandID = c.CommandID ORDER BY a.AttemptNo DESC) la
+    WHERE (@MeterID IS NULL OR c.MeterID = @MeterID)
+      AND (@role = 'Operator' OR c.RequestedBy = @UserID)
+    ORDER BY c.RequestedAt DESC, c.CommandID DESC;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_command_list_attempts: οι προσπάθειες μιας εντολής (ίδιος κανόνας πρόσβασης με το sp_command_list).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_command_list_attempts
+    @UserID INT, @CommandID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @role VARCHAR(12) = (SELECT Role FROM USER_ACCOUNT WHERE UserID = @UserID AND AccountStatus = 'Active');
+    IF @role = 'Technician'
+        EXEC sp_tech_assert @UserID;
+    ELSE IF @role = 'Operator'
+        EXEC sp_operator_assert @UserID;
+    ELSE
+        THROW 52349, N'Δεν επιτρέπεται: μόνο Operator ή Τεχνικός.', 1;
+    SELECT a.AttemptNo, a.AttemptAt, a.RespondedAt, a.Outcome
+    FROM COMMAND_ATTEMPT a JOIN REMOTE_COMMAND c ON c.CommandID = a.CommandID
+    WHERE a.CommandID = @CommandID AND (@role = 'Operator' OR c.RequestedBy = @UserID)
+    ORDER BY a.AttemptNo;
+END;
+GO
+
+-- =====================================================================
+-- TEC-9: έλεγχοι anti-tamper, συμβάν -> εργασία (ΙΙΙ.2.4, X4, X8). Λάθη 52360-52379.
+-- 52360 η εργασία δεν είναι Anti-tamper check | 52361 η εργασία δεν είναι Accepted
+-- 52362 συμβάν δεν υπάρχει | 52363 συμβάν όχι Open | 52364 συμβάν χωρίς μετρητή
+-- (επαναχρησιμοποιούνται: 52126 κενά ευρήματα, 52113 άγνωστος χρήστης ειδοποίησης,
+--  52103 τεχνικός μη εγκεκριμένος, 52102 χρονοδιάγραμμα, 52112 εκτός διαθεσιμότητας)
+-- B14: το είδος συμβάντος είναι 'Tamper finding' (όχι 'Tamper').
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- sp_tech_record_tamper_check: δική μου Accepted εργασία 'Anti-tamper check'.
+-- TASK_NOTE 'Finding' (NoteNo κάτω από UPDLOCK στην εργασία), NOTIFIES για τη λίστα
+-- @NotifyUserIDs ('3,4'), και αν @Critical = 1 νέο EVENT 'Tamper finding' (Critical, Open, X8).
+-- Επιστρέφει: NoteNo, EventID (NULL αν δεν είναι critical).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_record_tamper_check
+    @UserID INT, @TaskID INT, @Findings NVARCHAR(2000), @Critical BIT, @NotifyUserIDs VARCHAR(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert @UserID;
+    SET @Findings = LTRIM(RTRIM(@Findings));
+    IF ISNULL(@Findings, N'') = N''
+        THROW 52126, N'Τα ευρήματα είναι υποχρεωτικά.', 1;
+    DECLARE @n TABLE (UserID INT NULL);
+    INSERT @n (UserID)
+    SELECT DISTINCT TRY_CAST(LTRIM(RTRIM(value)) AS INT) FROM STRING_SPLIT(ISNULL(@NotifyUserIDs, ''), ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+    IF EXISTS (SELECT 1 FROM @n n WHERE n.UserID IS NULL
+               OR NOT EXISTS (SELECT 1 FROM USER_ACCOUNT u WHERE u.UserID = n.UserID AND u.AccountStatus = 'Active'))
+        THROW 52113, N'Κάποιος χρήστης ειδοποίησης δεν υπάρχει ή δεν είναι ενεργός.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @type VARCHAR(17), @status VARCHAR(9), @premise INT, @meter INT;
+        SELECT @type = TaskType, @status = Status, @premise = PremiseID, @meter = MeterID
+        FROM FIELD_TASK WITH (UPDLOCK) WHERE TaskID = @TaskID AND TechnicianID = @UserID;
+        IF @type IS NULL
+            THROW 52120, N'Η εργασία δεν υπάρχει ή δεν είναι δική σας.', 1;
+        IF @type <> 'Anti-tamper check'
+            THROW 52360, N'Η εργασία δεν είναι έλεγχος anti-tamper.', 1;
+        IF @status <> 'Accepted'
+            THROW 52361, N'Η εργασία πρέπει να είναι αποδεκτή (Accepted).', 1;
+        IF @meter IS NULL
+            SELECT TOP 1 @meter = MeterID FROM METER_INSTALLATION
+            WHERE PremiseID = @premise AND RemovedAt IS NULL ORDER BY InstalledAt DESC;
+        DECLARE @no SMALLINT = ISNULL((SELECT MAX(NoteNo) FROM TASK_NOTE WHERE TaskID = @TaskID), 0) + 1;
+        INSERT TASK_NOTE (TaskID, NoteNo, NoteKind, Text, WrittenBy) VALUES (@TaskID, @no, 'Finding', @Findings, @UserID);
+        INSERT NOTIFIES (TaskID, UserID)
+        SELECT @TaskID, n.UserID FROM @n n
+        WHERE NOT EXISTS (SELECT 1 FROM NOTIFIES x WHERE x.TaskID = @TaskID AND x.UserID = n.UserID);
+        DECLARE @eid BIGINT = NULL;
+        IF ISNULL(@Critical, 0) = 1
+        BEGIN
+            INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID, TaskID)
+            VALUES ('Tamper finding', 'Critical', LEFT(@Findings, 1000), SYSUTCDATETIME(), 'Open', @meter, @TaskID);
+            SET @eid = SCOPE_IDENTITY();
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy, ResultComment)
+            VALUES ('EVENT', @eid, 'Tamper finding', 'Open', @UserID, CONCAT(N'Κρίσιμο εύρημα στην εργασία ', @TaskID));
+        END;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy, ResultComment)
+        VALUES ('FIELD_TASK', @TaskID, 'Tamper check', @status, @UserID,
+                CONCAT(N'Σημείωση ', @no, CASE WHEN ISNULL(@Critical, 0) = 1 THEN N', κρίσιμο' ELSE N', μη κρίσιμο' END));
+        COMMIT;
+        SELECT @no AS NoteNo, @eid AS EventID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_list_open_events: συμβάντα με Status 'Open' (X4), νεότερα πρώτα.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_list_open_events
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_operator_assert @UserID;
+    SELECT TOP (500) e.EventID, e.EventType, e.Severity, e.Description, e.OccurredAt, e.MeterID, m.SerialNumber, e.TaskID AS SourceTaskID
+    FROM EVENT e LEFT JOIN METER m ON m.MeterID = e.MeterID
+    WHERE e.Status = 'Open'
+    ORDER BY e.OccurredAt DESC, e.EventID DESC;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_event_create_task (X4): Operator, συμβάν 'Open' με μετρητή -> FIELD_TASK 'Anti-tamper check'
+-- (μετρητής του συμβάντος + υποστατικό της ανοιχτής εγκατάστασής του) + LEADS_TO, και το
+-- συμβάν γίνεται 'In progress' (η μόνη αλλαγή του TEC στο EVENT). Επιστρέφει: TaskID.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_event_create_task
+    @UserID INT, @EventID BIGINT, @TechnicianID INT, @ScheduledFrom DATETIME2(0), @ScheduledTo DATETIME2(0)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_operator_assert @UserID;
+    IF @ScheduledFrom IS NULL OR @ScheduledTo IS NULL OR @ScheduledTo <= @ScheduledFrom
+        THROW 52102, N'Το χρονικό παράθυρο είναι άκυρο (η λήξη πρέπει να είναι μετά την έναρξη).', 1;
+    IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @TechnicianID AND Role = 'Technician'
+                   AND AccountStatus = 'Active' AND ApprovalStatus = 'Approved')
+        THROW 52103, N'Ο τεχνικός πρέπει να είναι ενεργός και εγκεκριμένος.', 1;
+    IF NOT EXISTS (SELECT 1 FROM fn_task_slot_ok(@TechnicianID, @ScheduledFrom, @ScheduledTo))
+        THROW 52112, N'Το χρονικό παράθυρο είναι εκτός της δηλωμένης διαθεσιμότητας του τεχνικού.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @st VARCHAR(11), @meter INT, @found BIT = 0;
+        SELECT @st = Status, @meter = MeterID, @found = 1 FROM EVENT WITH (UPDLOCK) WHERE EventID = @EventID;
+        IF @found = 0
+            THROW 52362, N'Το συμβάν δεν υπάρχει.', 1;
+        IF @st <> 'Open'
+            THROW 52363, N'Το συμβάν δεν είναι Open.', 1;
+        IF @meter IS NULL
+            THROW 52364, N'Το συμβάν δεν έχει μετρητή: δεν μπορεί να δημιουργηθεί εργασία πεδίου.', 1;
+        DECLARE @premise INT =
+            (SELECT TOP 1 PremiseID FROM METER_INSTALLATION WHERE MeterID = @meter AND RemovedAt IS NULL ORDER BY InstalledAt DESC);
+        INSERT FIELD_TASK (TaskType, ScheduledFrom, ScheduledTo, Status, TechnicianID, PremiseID, MeterID)
+        VALUES ('Anti-tamper check', @ScheduledFrom, @ScheduledTo, 'Assigned', @TechnicianID, @premise, @meter);
+        DECLARE @tid INT = SCOPE_IDENTITY();
+        INSERT LEADS_TO (EventID, TaskID) VALUES (@EventID, @tid);
+        UPDATE EVENT SET Status = 'In progress' WHERE EventID = @EventID;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+        VALUES ('EVENT', @EventID, 'Create task from event', @st, 'In progress', @UserID, CONCAT(N'Εργασία ', @tid));
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy, ResultComment)
+        VALUES ('FIELD_TASK', @tid, 'Create task', 'Assigned', @UserID, CONCAT(N'Anti-tamper check από συμβάν ', @EventID));
+        COMMIT;
+        SELECT @tid AS TaskID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
