@@ -126,6 +126,9 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 | REL-2 | Clean-database rehearsal: drop → create → procs → indexes → data | REL-1 | 3/12 | ○ | |
 | REL-3 | 30-minute demo rehearsal (everyone presents and explains an area they did not build) | REL-2 | 3/12 | ○ | |
 | REL-4 | `12.zip` + printed `docx/` + Moodle upload before 11:00 | REL-3 | 4/12 | ○ | |
+| REL-5 | `sql/select.sql` (demo queries) + `data/import.sql` runs clean (from the plan audit, old E7) | DAT-4 | 2/12 | ○ | |
+| DOC-4 | One separate document covering (a) contention, (b) security, (c) future extension (old E8) | SEC-2, CCY-1, EXT-1 | 2/12 | ○ | |
+| DOC-5 | Fold docs/plan-audit.md into the component docs (checklists), conventions (X7–X8, B14–B19) and this board | | 23/11 | ○ | |
 
 ## Old IDs
 
