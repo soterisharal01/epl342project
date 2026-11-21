@@ -317,3 +317,220 @@ IF EXISTS (SELECT 1 FROM @vlr WHERE RunID = @vrun AND Validated = @vval AND Esti
    AND (SELECT TOP 1 RunID FROM @vlr ORDER BY RunID DESC) > @vrun
    AND EXISTS (SELECT 1 FROM @vlr WHERE PeriodFrom = '2026-11-22 00:00:00' AND Estimated = 1 AND Edited = 1)
     PRINT 'OK   list runs: counts per run, newest first' ELSE PRINT 'FAIL list runs';
+
+
+-- =====================================================================
+-- DSO-4: aggregates. Χρησιμοποιεί τα επικυρωμένα δεδομένα των 20/11 και 22/11 παραπάνω.
+-- Μεταβλητές με πρόθεμα @d4_ (το αρχείο είναι ένα batch). Τρέχει μία φορά ανά καθαρή βάση.
+-- =====================================================================
+DECLARE @d4_agg TABLE (Day DATE, MeterRows INT, TransformerRows INT, MonthRows INT, YearRows INT);
+DECLARE @d4_pend TABLE (DaysBuilt INT, MeterRows INT, TransformerRows INT, MonthRows INT, YearRows INT);
+DECLARE @d4_sum DECIMAL(18,4), @d4_cnt INT, @d4_est INT, @d4_msum DECIMAL(18,4), @d4_mcnt INT, @d4_at DATETIME2(0);
+
+-- ---------- Ρόλος ----------
+BEGIN TRY EXEC sp_dso_build_aggregates 3, '2026-11-22'; PRINT 'FAIL consumer built aggregates'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot build aggregates -> 53000' ELSE PRINT 'FAIL build role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_build_aggregates_pending 3; PRINT 'FAIL consumer built pending aggregates'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot build pending aggregates -> 53000' ELSE PRINT 'FAIL pending role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_aggregates 3; PRINT 'FAIL consumer listed aggregates'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot list aggregates -> 53000' ELSE PRINT 'FAIL list agg role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_transformer_aggregates 3; PRINT 'FAIL consumer listed transformer aggregates'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot list transformer aggregates -> 53000' ELSE PRINT 'FAIL list tr agg role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_build_aggregates 7, NULL; PRINT 'FAIL NULL day accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53300 PRINT 'OK   NULL day -> 53300' ELSE PRINT 'FAIL null day: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Ημέρα 22/11 (μετρητής 2, 1.8.0, φύλλο 5) ----------
+SELECT @d4_sum = SUM(Value), @d4_cnt = COUNT(*), @d4_est = SUM(CASE WHEN Quality = 'Estimated' THEN 1 ELSE 0 END)
+  FROM VALIDATED_READING WHERE MeterID = 2 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-22' AND IntervalStart < '2026-11-23';
+INSERT @d4_agg EXEC sp_dso_build_aggregates 7, '2026-11-22';
+IF EXISTS (SELECT 1 FROM @d4_agg WHERE Day = '2026-11-22' AND MeterRows = 1 AND TransformerRows = 1 AND MonthRows = 0 AND YearRows = 0)
+    PRINT 'OK   build 22/11: 1 meter row, 1 transformer row, no month/year' ELSE PRINT 'FAIL build 22/11 counts';
+IF EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-22'
+              AND SumValue = @d4_sum AND ReadingCount = @d4_cnt AND EstimatedCount = @d4_est AND @d4_est = 1 AND @d4_cnt > 5)
+    PRINT 'OK   meter aggregate = sum of validated values, counts match (1 estimated)' ELSE PRINT 'FAIL meter aggregate values';
+IF EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 5 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-22'
+              AND SumValue = @d4_sum AND MeterCount = 1)
+    PRINT 'OK   leaf transformer aggregate = sum of its meters' ELSE PRINT 'FAIL leaf aggregate';
+IF NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a JOIN TRANSFORMER c ON c.ParentTransformerID = a.TransformerID WHERE a.PeriodStart = '2026-11-22')
+    PRINT 'OK   no aggregate on a non-leaf transformer' ELSE PRINT 'FAIL non-leaf aggregate';
+IF NOT EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE PeriodType IN ('Month', 'Year') AND PeriodStart >= '2026-01-01')
+    PRINT 'OK   no month/year rows while the month is still open' ELSE PRINT 'FAIL premature month';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'AGGREGATE' AND ObjectID = '2026-11-22' AND Action = 'Build aggregates' AND PerformedBy = 7)
+    PRINT 'OK   audit row written' ELSE PRINT 'FAIL aggregate audit';
+
+-- ---------- Τελικό: δεύτερη κλήση δεν γράφει τίποτα ----------
+SELECT @d4_at = ComputedAt FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 5 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-22';
+DELETE @d4_agg;
+INSERT @d4_agg EXEC sp_dso_build_aggregates 7, '2026-11-22';
+IF EXISTS (SELECT 1 FROM @d4_agg WHERE MeterRows = 0 AND TransformerRows = 0 AND MonthRows = 0 AND YearRows = 0)
+   AND (SELECT COUNT(*) FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-22') = 1
+   AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 5 AND PeriodType = 'Day' AND PeriodStart = '2026-11-22' AND SumValue = @d4_sum AND ComputedAt = @d4_at)
+    PRINT 'OK   second build inserts nothing (aggregates are final)' ELSE PRINT 'FAIL aggregates not final';
+
+-- ---------- Μήνας και έτος με force ----------
+SELECT @d4_msum = SUM(SumValue), @d4_mcnt = SUM(ReadingCount) FROM METER_AGGREGATE
+ WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart >= '2026-11-01' AND PeriodStart <= '2026-11-22';
+DELETE @d4_agg;
+INSERT @d4_agg EXEC sp_dso_build_aggregates 7, '2026-11-22', 1, 1;
+IF EXISTS (SELECT 1 FROM @d4_agg WHERE MonthRows >= 2 AND YearRows >= 2)
+    PRINT 'OK   force month/year writes meter and transformer rows' ELSE PRINT 'FAIL force counts';
+IF EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Month' AND PeriodStart = '2026-11-01'
+              AND SumValue = @d4_msum AND ReadingCount = @d4_mcnt)
+   AND EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Year' AND PeriodStart = '2026-01-01' AND SumValue = @d4_msum)
+    PRINT 'OK   month row = sum of the month''s day rows, year row starts 2026-01-01' ELSE PRINT 'FAIL month/year values';
+IF EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 5 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Month' AND t.PeriodStart = '2026-11-01'
+              AND t.SumValue = (SELECT SUM(SumValue) FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 5 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart >= '2026-11-01' AND PeriodStart <= '2026-11-22'))
+   AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a JOIN TRANSFORMER c ON c.ParentTransformerID = a.TransformerID WHERE a.PeriodType IN ('Month', 'Year'))
+    PRINT 'OK   leaf month row = sum of its day rows, no month/year row on a non-leaf' ELSE PRINT 'FAIL transformer month';
+DELETE @d4_agg;
+INSERT @d4_agg EXEC sp_dso_build_aggregates 7, '2026-11-22', 1, 1;
+IF EXISTS (SELECT 1 FROM @d4_agg WHERE MonthRows = 0 AND YearRows = 0)
+    PRINT 'OK   month/year rows are final too (second force writes nothing)' ELSE PRINT 'FAIL month not final';
+
+-- ---------- Λίστες ----------
+DECLARE @d4_la TABLE (MeterID INT, SerialNumber NVARCHAR(100), ObisCode VARCHAR(20), PeriodType VARCHAR(5), PeriodStart DATE,
+                      SumValue DECIMAL(18,4), ReadingCount INT, EstimatedCount INT, TransformerID INT);
+DECLARE @d4_lt TABLE (TransformerID INT, Name NVARCHAR(100), ObisCode VARCHAR(20), PeriodType VARCHAR(5), PeriodStart DATE,
+                      SumValue DECIMAL(18,4), MeterCount INT, ComputedAt DATETIME2(0));
+INSERT @d4_la EXEC sp_dso_list_aggregates 7, 2, 'Day', '2026-11-22', '2026-11-22';
+IF (SELECT COUNT(*) FROM @d4_la) = 1 AND EXISTS (SELECT 1 FROM @d4_la WHERE SumValue = @d4_sum AND TransformerID = 5)
+    PRINT 'OK   list aggregates for one meter and one day' ELSE PRINT 'FAIL list aggregates';
+DELETE @d4_la;
+INSERT @d4_la EXEC sp_dso_list_aggregates 7, NULL, 'Month';
+IF EXISTS (SELECT 1 FROM @d4_la WHERE MeterID = 2 AND PeriodType = 'Month') PRINT 'OK   list aggregates Month for all meters' ELSE PRINT 'FAIL list month';
+INSERT @d4_lt EXEC sp_dso_list_transformer_aggregates 7, 5, 'Day', '2026-11-22', '2026-11-22';
+IF EXISTS (SELECT 1 FROM @d4_lt WHERE SumValue = @d4_sum AND MeterCount = 1) PRINT 'OK   list transformer aggregates' ELSE PRINT 'FAIL list transformer aggregates';
+BEGIN TRY EXEC sp_dso_list_aggregates 7, NULL, 'Week'; PRINT 'FAIL bad period type accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53302 PRINT 'OK   bad period type -> 53302' ELSE PRINT 'FAIL period type: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_aggregates 7, 999; PRINT 'FAIL unknown meter accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53303 PRINT 'OK   unknown meter -> 53303' ELSE PRINT 'FAIL agg meter: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_aggregates 7, NULL, 'Day', '2026-11-23', '2026-11-22'; PRINT 'FAIL reversed period accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53304 PRINT 'OK   reversed period -> 53304' ELSE PRINT 'FAIL agg period: ' + ERROR_MESSAGE(); END CATCH;
+
+-- =====================================================================
+-- DSO-5: αναλυτικά. Σενάριο 23/11: μετρητής 4 (μετασχηματιστής 4) με χαμηλή τάση 08:15, υψηλή 08:30,
+-- ανισορροπία ρευμάτων 08:45. Μετρητής 1 (ίδιος μετασχηματιστής) με σταθερό μετρητή: 9 διαστήματα
+-- μηδενικής κατανάλωσης 08:15-10:15, ενώ ο μετρητής 4 καταναλώνει 0.5 kWh ανά διάστημα.
+-- =====================================================================
+DECLARE @d4_ev TABLE (Undervoltage INT, Overvoltage INT, PhaseUnbalance INT, SuspectedTheft INT, Total INT);
+DECLARE @d4_r2 TABLE (PacketID BIGINT, IngestStatus VARCHAR(18), ReadingsStored INT, ErrorMessage NVARCHAR(1000));
+DECLARE @d4_vr TABLE (RunID INT, Validated INT, Estimated INT, Suspect INT, Events INT);
+DECLARE @d4_i INT = 0, @d4_p NVARCHAR(MAX), @d4_ts VARCHAR(30), @d4_extra NVARCHAR(500), @d4_n INT;
+
+BEGIN TRY EXEC sp_dso_detect_events 3, '2026-11-23', '2026-11-24'; PRINT 'FAIL consumer detected events'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot detect events -> 53000' ELSE PRINT 'FAIL detect role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_events 3; PRINT 'FAIL consumer listed events'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot list events -> 53000' ELSE PRINT 'FAIL list events role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_losses_report 3, '2026-11-22', '2026-11-23'; PRINT 'FAIL consumer ran losses report'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot run losses report -> 53000' ELSE PRINT 'FAIL losses role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_detect_events 7, '2026-11-24', '2026-11-23'; PRINT 'FAIL reversed detect period accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53310 PRINT 'OK   reversed detect period -> 53310' ELSE PRINT 'FAIL detect period: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_detect_events 7, '2026-11-01', '2026-12-15'; PRINT 'FAIL 44-day period accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53311 PRINT 'OK   period over 31 days -> 53311' ELSE PRINT 'FAIL detect long: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_losses_report 7, '2026-11-23', '2026-11-22'; PRINT 'FAIL reversed losses period accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53312 PRINT 'OK   reversed losses period -> 53312' ELSE PRINT 'FAIL losses period: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_events 7, 'Done'; PRINT 'FAIL bad event status accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53320 PRINT 'OK   bad event status -> 53320' ELSE PRINT 'FAIL event status: ' + ERROR_MESSAGE(); END CATCH;
+
+-- Δεδομένα σεναρίου: 10 πακέτα ανά μετρητή (08:00-10:15)
+WHILE @d4_i < 10
+BEGIN
+    SET @d4_ts = CONVERT(VARCHAR(19), DATEADD(MINUTE, 15 * @d4_i, CAST('2026-11-23T08:00:00' AS DATETIME2(0))), 126) + 'Z';
+    -- μετρητής 1: σταθερός μετρητής 14500.0
+    SET @d4_p = CONCAT(N'{"Meter_Network_ID": "EAC-NIC-1001", "Transmission_Timestamp": "', @d4_ts,
+                       N'", "Network_Type": "NB-IoT", "Telemetry_Payload": [{"obis": "1.8.0", "value": 14500.0, "unit": "kWh"}]}');
+    INSERT @d4_r2 EXEC sp_dso_ingest_packet 7, @d4_p;
+    -- μετρητής 4: +0.5 kWh ανά διάστημα, και ειδικές τιμές στα 08:15, 08:30, 08:45
+    SET @d4_extra = CASE @d4_i
+        WHEN 1 THEN N', {"obis": "32.7.0", "value": 190.0, "unit": "V"}'
+        WHEN 2 THEN N', {"obis": "52.7.0", "value": 260.0, "unit": "V"}'
+        WHEN 3 THEN N', {"obis": "31.7.0", "value": 30.0, "unit": "A"}, {"obis": "51.7.0", "value": 10.0, "unit": "A"}, {"obis": "71.7.0", "value": 20.0, "unit": "A"}'
+        ELSE N'' END;
+    SET @d4_p = CONCAT(N'{"Meter_Network_ID": "EAC-NIC-1003", "Transmission_Timestamp": "', @d4_ts,
+                       N'", "Network_Type": "NB-IoT", "Telemetry_Payload": [{"obis": "1.8.0", "value": ',
+                       CONVERT(NVARCHAR(20), 5000.0 + 0.5 * @d4_i), N', "unit": "kWh"}', @d4_extra, N']}');
+    INSERT @d4_r2 EXEC sp_dso_ingest_packet 7, @d4_p;
+    SET @d4_i += 1;
+END;
+IF (SELECT COUNT(*) FROM @d4_r2 WHERE IngestStatus = 'Accepted') = 20
+    PRINT 'OK   analytics scenario: 20 packets accepted' ELSE PRINT 'FAIL analytics scenario ingest';
+INSERT @d4_vr EXEC sp_dso_run_vee 7, '2026-11-23 00:00:00', '2026-11-24 00:00:00';
+IF NOT EXISTS (SELECT 1 FROM RAW_READING WHERE IntervalStart >= '2026-11-23' AND IntervalStart < '2026-11-24' AND VeeStatus = 'Pending')
+   AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID = 1 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-23' AND IntervalStart < '2026-11-24' AND Value = 0) = 9
+   AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID = 4 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-23' AND IntervalStart < '2026-11-24' AND Value = 0.5) = 9
+    PRINT 'OK   scenario validated: meter 1 nine zero intervals, meter 4 nine intervals of 0.5' ELSE PRINT 'FAIL scenario VEE';
+
+-- Πρώτη ανίχνευση: ανισορροπία και κλοπή είναι καινούργια. Η τάση μπορεί να την έγραψε ήδη το VEE.
+INSERT @d4_ev EXEC sp_dso_detect_events 7, '2026-11-23 00:00:00', '2026-11-24 00:00:00';
+IF EXISTS (SELECT 1 FROM @d4_ev WHERE PhaseUnbalance = 1 AND SuspectedTheft = 1)
+    PRINT 'OK   detect: 1 phase unbalance, 1 suspected theft' ELSE PRINT 'FAIL detect first run';
+IF (SELECT COUNT(*) FROM EVENT WHERE EventType = 'Undervoltage' AND MeterID = 4 AND OccurredAt = '2026-11-23 08:15:00') = 1
+   AND (SELECT COUNT(*) FROM EVENT WHERE EventType = 'Overvoltage' AND MeterID = 4 AND OccurredAt = '2026-11-23 08:30:00') = 1
+    PRINT 'OK   under/over-voltage: exactly one event each, no duplicate of the VEE ones' ELSE PRINT 'FAIL voltage events after first detect';
+IF EXISTS (SELECT 1 FROM EVENT WHERE EventType = 'Phase unbalance' AND MeterID = 4 AND OccurredAt = '2026-11-23 08:45:00' AND Severity = 'Warning' AND Status = 'Open')
+   AND EXISTS (SELECT 1 FROM EVENT WHERE EventType = 'Suspected theft' AND MeterID = 1 AND OccurredAt = '2026-11-23 08:15:00' AND Severity = 'Critical' AND Status = 'Open')
+    PRINT 'OK   unbalance on meter 4 at 08:45, theft on meter 1 from 08:15' ELSE PRINT 'FAIL unbalance/theft events';
+IF NOT EXISTS (SELECT 1 FROM EVENT WHERE EventType = 'Suspected theft' AND MeterID = 4)
+    PRINT 'OK   the normal meter is not flagged for theft' ELSE PRINT 'FAIL theft false positive';
+
+-- Δεύτερη ανίχνευση, αφού σβήσουμε τα συμβάντα τάσης (του VEE ή δικά μας): τα ξαναγράφει ο κανόνας.
+DELETE EVENT WHERE EventType IN ('Undervoltage', 'Overvoltage') AND MeterID = 4 AND OccurredAt >= '2026-11-23' AND OccurredAt < '2026-11-24';
+DELETE @d4_ev;
+INSERT @d4_ev EXEC sp_dso_detect_events 7, '2026-11-23 00:00:00', '2026-11-24 00:00:00';
+IF EXISTS (SELECT 1 FROM @d4_ev WHERE Undervoltage = 1 AND Overvoltage = 1 AND PhaseUnbalance = 0 AND SuspectedTheft = 0 AND Total = 2)
+   AND EXISTS (SELECT 1 FROM EVENT WHERE EventType = 'Undervoltage' AND MeterID = 4 AND OccurredAt = '2026-11-23 08:15:00' AND Description LIKE N'%190%')
+   AND EXISTS (SELECT 1 FROM EVENT WHERE EventType = 'Overvoltage' AND MeterID = 4 AND OccurredAt = '2026-11-23 08:30:00' AND Description LIKE N'%260%')
+    PRINT 'OK   rerun: 1 undervoltage (190 V) and 1 overvoltage (260 V) created, nothing else duplicated' ELSE PRINT 'FAIL detect second run';
+
+-- Τρίτη ανίχνευση: τίποτα νέο
+SELECT @d4_n = COUNT(*) FROM EVENT;
+DELETE @d4_ev;
+INSERT @d4_ev EXEC sp_dso_detect_events 7, '2026-11-23 00:00:00', '2026-11-24 00:00:00';
+IF EXISTS (SELECT 1 FROM @d4_ev WHERE Total = 0) AND (SELECT COUNT(*) FROM EVENT) = @d4_n
+    PRINT 'OK   third run: 0 new events (no duplicates)' ELSE PRINT 'FAIL detect duplicates';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'EVENT' AND Action = 'Detect events' AND PerformedBy = 7)
+    PRINT 'OK   detect audit row written' ELSE PRINT 'FAIL detect audit';
+
+-- Λίστα συμβάντων
+DECLARE @d4_le TABLE (EventID BIGINT, EventType VARCHAR(30), Severity VARCHAR(8), Description NVARCHAR(1000), OccurredAt DATETIME2(0),
+                      Status VARCHAR(11), MeterID INT, SerialNumber NVARCHAR(100), PacketID BIGINT, TaskID INT);
+INSERT @d4_le EXEC sp_dso_list_events 7, 'Open', 'Suspected theft';
+IF EXISTS (SELECT 1 FROM @d4_le WHERE MeterID = 1 AND SerialNumber = 'SN-0001') AND NOT EXISTS (SELECT 1 FROM @d4_le WHERE EventType <> 'Suspected theft' OR Status <> 'Open')
+    PRINT 'OK   list events filtered by status and type' ELSE PRINT 'FAIL list events';
+DELETE @d4_le;
+INSERT @d4_le EXEC sp_dso_list_events 7;
+IF EXISTS (SELECT 1 FROM @d4_le WHERE EventType = 'Unmatched packet') AND EXISTS (SELECT 1 FROM @d4_le WHERE EventType = 'Phase unbalance')
+    PRINT 'OK   list events without filter shows all types' ELSE PRINT 'FAIL list events all';
+
+-- ---------- Αναμονή: aggregates για ό,τι λείπει (20/11 και 23/11), έως 24/11 ----------
+SELECT @d4_msum = SumValue FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Month' AND PeriodStart = '2026-11-01';
+BEGIN TRY EXEC sp_dso_build_aggregates_pending 7, '2026-11-24', '2026-11-20'; PRINT 'FAIL reversed pending period accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53301 PRINT 'OK   reversed pending period -> 53301' ELSE PRINT 'FAIL pending period: ' + ERROR_MESSAGE(); END CATCH;
+INSERT @d4_pend EXEC sp_dso_build_aggregates_pending 7, '2026-11-20', '2026-11-24';
+IF EXISTS (SELECT 1 FROM @d4_pend WHERE DaysBuilt = 2 AND MeterRows >= 3 AND TransformerRows >= 2)
+    PRINT 'OK   pending built the 2 missing days (20/11 and 23/11)' ELSE PRINT 'FAIL pending counts';
+IF EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 4 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-23'
+              AND a.SumValue = 4.5 AND a.ReadingCount = 9 AND a.EstimatedCount = 0)
+   AND EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 1 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-23' AND a.SumValue = 0 AND a.ReadingCount = 9)
+   AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 4 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Day' AND t.PeriodStart = '2026-11-23' AND t.SumValue = 4.5 AND t.MeterCount = 2)
+    PRINT 'OK   23/11 aggregates: meter 4 = 4.5 (9 readings), meter 1 = 0, transformer 4 = 4.5 from 2 meters' ELSE PRINT 'FAIL 23/11 aggregates';
+IF EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 1 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-20'
+              AND a.SumValue = (SELECT SUM(Value) FROM VALIDATED_READING WHERE MeterID = 1 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-20' AND IntervalStart < '2026-11-21'))
+   AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 4 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Day' AND t.PeriodStart = '2026-11-20'
+              AND t.SumValue = (SELECT SUM(v.Value) FROM VALIDATED_READING v JOIN METER m ON m.MeterID = v.MeterID
+                                 WHERE m.TransformerID = 4 AND v.ObisCode = '1.8.0' AND v.IntervalStart >= '2026-11-20' AND v.IntervalStart < '2026-11-21'))
+    PRINT 'OK   20/11 aggregates equal the validated sums (meter 1 and transformer 4)' ELSE PRINT 'FAIL 20/11 aggregates';
+DELETE @d4_pend;
+INSERT @d4_pend EXEC sp_dso_build_aggregates_pending 7, '2026-11-20', '2026-11-24';
+IF EXISTS (SELECT 1 FROM @d4_pend WHERE DaysBuilt = 0 AND MeterRows = 0 AND TransformerRows = 0)
+   AND EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Month' AND PeriodStart = '2026-11-01' AND SumValue = @d4_msum)
+    PRINT 'OK   pending again: nothing to do, the month row was not recomputed' ELSE PRINT 'FAIL pending rerun';
+
+-- ---------- Αναφορά απωλειών ----------
+DECLARE @d4_ls TABLE (TransformerID INT, Name NVARCHAR(100), ObisCode VARCHAR(20), PeriodStart DATE, TransformerSum DECIMAL(18,4), MetersSum DECIMAL(18,4),
+                      Difference DECIMAL(18,4), DifferencePct DECIMAL(9,2), MeterCount INT, MetersWithData INT, ActiveMeters INT);
+INSERT @d4_ls EXEC sp_dso_losses_report 7, '2026-11-22', '2026-11-23';
+IF EXISTS (SELECT 1 FROM @d4_ls WHERE TransformerID = 5 AND PeriodStart = '2026-11-22' AND ObisCode = '1.8.0' AND Difference = 0 AND TransformerSum = MetersSum AND MetersWithData = 1)
+   AND EXISTS (SELECT 1 FROM @d4_ls WHERE TransformerID = 4 AND PeriodStart = '2026-11-23' AND TransformerSum = 4.5 AND Difference = 0 AND MeterCount = 2 AND ActiveMeters = 2)
+   AND NOT EXISTS (SELECT 1 FROM @d4_ls WHERE PeriodStart < '2026-11-22' OR PeriodStart > '2026-11-23')
+    PRINT 'OK   losses report: leaf aggregates match their meters (difference 0) inside the period' ELSE PRINT 'FAIL losses report';
