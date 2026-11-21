@@ -36,10 +36,20 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 Pages: `index.php` (login form), `login.php`, `logout.php`, `home.php`, `profile.php`, `register_consumer.php`.
 A Pending technician who logs in sees only "waiting for approval". Tests: `sql/tests/test_common.sql` (11 checks).
 
+| Procedure (`sql/procs_admin.sql`, ADM-2, errors 51500-51999) | What it does |
+|---|---|
+| `sp_admin_assert(@UserID)` | Helper: THROW 51500 unless the user is an Active Admin. |
+| `sp_admin_create_user(@UserID, @Role, @Username, @PasswordHash, @Email, @Phone, @FirstName, @LastName, @SupplierID, @AggregatorID)` | Creates an Operator (`CreatedBy` = admin), DSO, TSO, Supplier (needs `SupplierID`) or Aggregator (needs `AggregatorID`). Refuses Admin, Consumer, Technician and duplicate usernames (51505). Audit row. Returns `UserID`. |
+| `sp_admin_list_users(@UserID, @Role)` | All users (never the hash), optional role filter, with company name. |
+| `sp_admin_set_account_status(@UserID, @TargetUserID, @Status)` | `Active` or `Suspended`; an admin cannot suspend himself (51522). Audit row with OldState/NewState. |
+| `sp_admin_audit_log(@UserID, @ObjectType, @From, @To)` | Newest first, top 500, with the performer's username; dates are inclusive days. |
+| `sp_admin_list_companies(@UserID)` | Suppliers and aggregators, for drop-downs. |
+
+Tests: `sql/tests/test_admin.sql` (43 checks).
+
 ## Planned
 
 | Task | Procedures | Tables | Page |
 |---|---|---|---|
-| ADM-2 | `sp_admin_create_user(@UserID, @Role, …)` for Operator, DSO, TSO, Supplier, Aggregator; `sp_admin_set_account_status`; `sp_admin_audit_log(@UserID, @ObjectType, @From, @To)` | `USER_ACCOUNT`, `SUPPLIER`, `AGGREGATOR`, `AUDIT_LOG` | `admin/users.php`, `admin/log.php` |
 | ADM-3 | `sp_operator_save_meter_model`, `sp_operator_save_service_type`, `sp_operator_save_tariff_type` | `METER_MODEL`, `SERVICE_TYPE`, `TARIFF_TYPE` | `operator/adm_catalogs.php` |
-| ADM-4 | Pages for ADM-2 and ADM-3 | | |
+| ADM-4 | Pages for ADM-2 (`admin/users.php`, `admin/log.php`) and ADM-3 | | |
