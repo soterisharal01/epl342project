@@ -1,129 +1,111 @@
-# Οδηγίες για κάθε Claude που δουλεύει σε αυτό το repo (ΕΠΛ342, Ομάδα 12, MDMS-Cy)
+# Instructions for every AI session in this repo (EPL342 Team 12, MDMS-Cy)
 
-Αυτό το αρχείο το διαβάζει αυτόματα το Claude Code. Τα μέλη της ομάδας (Σωτήρης, Δανάη, Αντρέας)
-δουλεύουν **μέσα από το δικό τους Claude**: εσύ διαβάζεις τα αρχεία και κάνεις τη δουλειά, και στον
-άνθρωπο εξηγείς **απλά** τι έκανες (δεν είναι όλοι άνετοι με SQL/PHP). Γράφε στα ελληνικά, με τα
-τεχνικά ονόματα (πίνακες, στήλες, procedures) στα αγγλικά.
+Claude Code reads this file automatically. **No work belongs to one person.** Any team member can open a
+session, type **`start`**, and the AI picks up where the team last stopped. All state lives in the repo:
+the docs, the task board, the per-task handoff notes and git history. Nothing lives in anyone's head or chat.
 
-## 0. Οι εντολές του ανθρώπου
+Write docs in English. UI text and `THROW` messages are in Greek (decision B5 in
+[docs/19-conventions.md](docs/19-conventions.md)). Explain what you built to the human in plain words: every
+member must be able to explain every part at the exam.
 
-Ο άνθρωπος συνήθως γράφει **μία λέξη**: `start`, `finish` ή `review`. Οι κανόνες των ενοτήτων 5 και 6 (merge, βάσεις του Τμήματος, κωδικοί) ισχύουν πάντα, και για ό,τι από αυτά ρωτάς τον άνθρωπο.
+## 1. When the human types `start` (or "continue", "resume")
 
-### `start`: δούλεψε μόνος σου, εργασία μετά από εργασία
+Do all of this before writing any code. Do not ask the human what to do unless step 5 finds nothing.
 
-1. Βρες για ποιο μέλος δουλεύεις (ενότητα 1). `git fetch origin` και διάβασε τα αρχεία της ενότητας 1.3 από το `origin/main`.
-2. **Αν το μέλος έχει εργασία ✱** στο `docs/phase-b/TASKS.md` (στήλη «Πήρε»), συνέχισε αυτήν: πήγαινε στο branch της και διάβασε τη «Σημείωση» και την ενότητα «Συνέχεια» του PR της.
-3. Αλλιώς **διάλεξε την επόμενη ελεύθερη**: την πρώτη **○** με τη σειρά του πίνακα που (α) έχει ικανοποιημένη τη στήλη «Χρειάζεται», (β) δεν έχει ανοιχτό PR με τίτλο `<ID>: …` και (γ) δεν έχει branch `origin/task/<ID>`. Αν το μέλος έχει ήδη 2 εργασίες και καμία από τις ενότητες IV/V (δεδομένα, index, κείμενο), προτίμησε μία ελεύθερη από εκεί.
-4. **Κράτησέ τη** (TASKS.md, βήμα 1): branch `task/<ID>` από το `origin/main`, η γραμμή σε **✱** με «Πήρε: <όνομα>, <ημερομηνία>», commit, push, **Draft PR** `<ID>: <τίτλος>`. Αν το push απορριφθεί επειδή το branch υπάρχει ήδη, ή αν δεις άλλο ανοιχτό PR για το ίδιο ID με μικρότερο αριθμό, την πήρε άλλος: άφησε τη δική σου κράτηση (κλείσε το Draft PR σου) και ξαναπήγαινε στο βήμα 3. Αν το περιβάλλον σου επιτρέπει push μόνο σε ένα συγκεκριμένο branch, χρησιμοποίησε αυτό και κάνε μία εργασία τη φορά.
-5. **Κάνε την εργασία ολόκληρη**: η γραμμή της στο PLANO §3, η λίστα 3.0 και η λίστα «Απαιτήσεις εκφώνησης» της ενότητας. Procedures, δοκιμές, σελίδα PHP, μικρά δεδομένα αν χρειάζονται, στα αρχεία της ενότητας 2, και το `docs/phase-b/tasks/<ID>.md`.
-6. Για λεπτομέρειες υλοποίησης που είναι ασαφείς: ακολουθείς τις αποφάσεις Α1–Α19 και τις «προεπιλογές» του PLANO §7. Αν ακόμη δεν φτάνει, διαλέγεις την πιο απλή λύση που καλύπτει την εκφώνηση και τη γράφεις στο PR, στην ενότητα «Υποθέσεις», ώστε να τη δει ο reviewer. Έτσι η δουλειά δεν σταματά για μικρές ερωτήσεις.
-7. Δοκιμή (ενότητα 4) μέχρι `ALL OK`. Μετά: γραμμή σε **👀**, στο PR η λίστα απαιτήσεων με ✓, «Ready for review».
-8. Γράψε στον άνθρωπο **3–5 απλές γραμμές**: τι έφτιαξες, πώς το δείχνει στο demo, το link του PR. Αυτό τον βοηθά να το εξηγήσει στην εξέταση.
-9. Πήγαινε στο βήμα 3 για την επόμενη. Συνεχίζεις μέχρι να τελειώσει το usage, να μη μείνει ελεύθερη εργασία, ή να γράψει ο άνθρωπος `finish`.
-10. Αν κολλήσεις σε κάτι που δεν λύνεται μέσα στην εργασία (π.χ. χρειάζεται αλλαγή σχήματος): **⛔** + γιατί στη «Σημείωση», το γράφεις στο PR και στον άνθρωπο, και πας στην επόμενη.
+1. **Sync:** `git fetch --all --prune`, `git checkout main`, `git pull`.
+2. **Read the newest session note first.** It may sit on `main` or on any task branch, so take the most recent one:
+   `git log --all -1 --format="%H %cr %D" -- docs/next-session.md`, then `git show <hash>:docs/next-session.md`.
+   It says where the last session stopped, what state the databases are in, and what to do next.
+   Then read, in this order:
+   [README.md](README.md) → [docs/03-workflow.md](docs/03-workflow.md) → [docs/19-conventions.md](docs/19-conventions.md)
+   → [docs/tasks.md](docs/tasks.md).
+3. **Recent history:** `git log --oneline -30 main`, then the open task branches with their last commit:
+   `git for-each-ref --sort=-committerdate refs/remotes/origin/task --format="%(refname:short) | %(committerdate:relative) | %(subject)"`
+4. **Handoff notes:** for each open task branch, read its note without checking it out:
+   `git show origin/task/<branch>:docs/handoff/<TASK-ID>.md`.
+5. **Pick the work**, first match wins:
+   1. The human named a task → that task.
+   2. The session note's **Next actions** name a task or fix that is still open → that.
+   3. An open task branch whose handoff says `Lock: free`, or whose lock is older than 12 hours → **resume it**:
+      `git checkout <branch>` and continue from its **Next step**.
+   4. The first `○` task in [docs/tasks.md](docs/tasks.md), in table order, whose **Needs** are all `✓` and that has **no**
+      `origin/task/<ID>-*` branch → **claim it** (section 2).
+   5. Nothing fits → say so and list the options.
+6. **Load context for that task:** its component doc (the **Doc** column of the task board), the exact
+   tables and columns in [sql/create.sql](sql/create.sql) (never from memory), and the existing code it touches.
+7. **Tell the human in 3–6 lines:** which task, where it stood, what you will do now. Then do it.
 
-Κάθε εργασία ξεκινά από το `origin/main`, όχι από το branch της προηγούμενης. Οι εργασίες είναι φτιαγμένες ώστε να μη χρειάζεται η μία τον κώδικα της άλλης.
+## 2. Claiming a new task
 
-### `finish`: σταμάτα και άφησέ τα έτοιμα για τον επόμενο
+1. `git checkout -b task/<ID>-<short-slug> main`, for example `task/DSO-1-ingest`.
+2. Create `docs/handoff/<ID>.md` from [docs/handoff/TEMPLATE.md](docs/handoff/TEMPLATE.md) and set `Lock: active since <UTC time>`.
+3. Commit (`<ID>: claim`) and **push at once** (`git push -u origin <branch>`). The pushed branch *is* the claim;
+   other sessions see it in step 1.3.
 
-1. Commit και push ό,τι έχεις, ακόμη και μισό.
-2. Αν η εργασία τελείωσε: **👀** και «Ready for review», όπως στο `start` βήμα 7.
-3. Αν δεν τελείωσε: μένει **✱**, και στη «Σημείωση» `Σταμάτησε: <τι μένει>`. Στην περιγραφή του PR γράφεις ενότητα **«Συνέχεια»**: τι έγινε, τι μένει, ποιο είναι το επόμενο ακριβές βήμα, και τι δεν δοκιμάστηκε ακόμη.
-4. Ενημέρωσε το `docs/phase-b/tasks/<ID>.md` για όσα έγιναν. Αν άλλαξε κάτι στο πλάνο (νέα απόφαση, νέα εργασία), μία γραμμή στο «Ιστορικό αλλαγών» του TASKS.md και η αλλαγή στο PLANO, στο ίδιο PR.
-5. Πες στον άνθρωπο σε λίγες γραμμές: τι έγινε σε αυτό το session, τι μένει, τα links των PR.
+## 3. While working
 
-### `review`: έλεγξε τη δουλειά άλλου
+- Commit small and push often. A half-done branch with a clear handoff note is fine; unpushed work is not.
+- Follow [docs/19-conventions.md](docs/19-conventions.md): `sp_<area>_<verb>`, `@UserID` first with a role check,
+  `SET XACT_ABORT ON` + TRY/CATCH transaction, an `AUDIT_LOG` row per state change, `THROW` numbers of the area,
+  PHP only via `call_proc` with `?`, `require_role`, `csrf_field`/`check_csrf`, `h()`.
+- Write only to the tables your task's area owns (conventions, section 3), or through the cross-area agreements X1–X6.
+- **Never change** `sql/create.sql` or `data/small/00_base.sql` on your own. Follow the schema-change process
+  (conventions, section 6) and tell the human.
+- Every new procedure gets tests in `sql/tests/test_<area>.sql` that print `OK …` or `FAIL …`: one call that
+  succeeds and one that must be refused.
+- Update the task's component doc with what now exists (procedures, pages, how to use it). Docs are part of the task.
 
-Πάρε το παλαιότερο PR που είναι «Ready for review» και **δεν** το έφτιαξε το μέλος σου. Τρέξε τη δοκιμή της ενότητας 4 στο branch του, έλεγξε τη λίστα του Οδηγού (ενότητα 3Β) και τις «Απαιτήσεις εκφώνησης» της εργασίας, και γράψε σχόλια στο PR: Approve ή Request changes. Μετά εξήγησε στον άνθρωπο σε 3 γραμμές τι κάνει αυτός ο κώδικας, γιατί στην εξέταση μπορεί να ερωτηθεί για οτιδήποτε. Αν δεν υπάρχει τέτοιο PR, πες το.
+## 4. Testing
 
-## 1. Πρώτα απ' όλα
+- If Docker is available: `bash sql/tools/test_local.sh` must end with `ALL OK`.
+- Windows with the CS VPN on: if `%USERPROFILE%\.mdms_sql.xml` exists (the human ran `sql/tools/save_credential.ps1`),
+  run SQL on the human's **own** database from the terminal:
+  `python sql/tools/build_all.py --tests` then
+  `powershell -ExecutionPolicy Bypass -File sql/tools/run_sql.ps1 -File sql/build/ALL.sql`.
+  `-AllowDestructive` (needed for `drop.sql`) only after the human says yes. Never print or pass the password.
+- Otherwise: build `sql/build/ALL.sql` and ask the human to run it in SSMS on **their own** database and paste the `OK`/`FAIL` lines.
+- PHP: `php -l <file>` where PHP exists; otherwise the human checks the page on their department web space.
 
-1. Μάθε **για ποιο μέλος δουλεύεις**: από το μήνυμα του ανθρώπου, το GitHub login του session ή το `git config user.name`. GitHub: Σωτήρης `soterisharal01`, Δανάη `drobbi01`, Αντρέας `andreas1612`. Αν δεν μπορείς να το βρεις, ρώτα μία φορά.
-2. `git fetch origin` πριν από κάθε δουλειά. Η αλήθεια είναι πάντα το `origin/main`.
-3. Διάβασε, με αυτή τη σειρά:
-   - `docs/phase-b/TASKS.md`: τι είναι ελεύθερο, τι είναι σε εξέλιξη, τι έγινε.
-   - `docs/phase-b/PLANO-OMADAS.md`: τι ακριβώς φτιάχνει κάθε εργασία (ενότητα 3), οι κανόνες (2, 2Α, συμφωνίες Σ1–Σ8) και οι αποφάσεις Α1–Α19 (2Β). **Οι αποφάσεις είναι κλειστές**, μην τις ξανανοίγεις. Στην ενότητα 3 διάβασε **ολόκληρη** τη λίστα 3.0 και τη λίστα «Απαιτήσεις εκφώνησης» της ενότητας της εργασίας σου.
-   - `docs/phase-b/ODIGOS-SYNERGASIAS.md`: ροή GitHub, review, βάσεις.
-   - `sql/create.sql`: το σχήμα. **Ακριβή** ονόματα στηλών και τιμές CHECK από εδώ, ποτέ από μνήμης.
-4. Η εκφώνηση (`project.pdf`) **δεν** είναι στο repo (public). Την έχει μεταφέρει όλη, πρόταση προς πρόταση, η ενότητα 3 του PLANO, και αυτή ακολουθείς. Αν κάτι λείπει ή φαίνεται αντιφατικό, ζήτα το pdf από τον άνθρωπο. Ό,τι θέλει απάντηση από τον καθηγητή είναι στο PLANO §7, και μέχρι να απαντήσει ισχύει η «προεπιλογή» που γράφει εκεί.
+## 5. When the human types `stop` (a quick save point)
 
-## 2. Πώς χωρίζεται η δουλειά, και ποια αρχεία γράφεις
+1. Update `docs/handoff/<ID>.md`: what was done, the exact **Next step**, blockers, how to test.
+   Set `Lock: free`.
+2. If the task is finished: set its row in `docs/tasks.md` to `👀` **on the branch**, and fill in its component doc.
+3. Commit and push.
+4. If finished: open a PR to `main` titled `<ID>: <task name>`. Use `gh pr create` (on Windows it may only be at
+   `C:\Program Files\GitHub CLI\gh.exe`); without `gh`, give the human the compare link
+   `https://github.com/soterisharal01/epl342project/compare/<branch>?expand=1`.
+5. Explain to the human in 3–5 plain sentences what you built, so they can present it.
 
-**Καμία εργασία δεν ανήκει σε άτομο.** Οι εργασίες στο `TASKS.md` είναι χωρισμένες ανά ενότητα της εκφώνησης, και όποιος ξεκινά παίρνει την επόμενη ελεύθερη (εντολή `start`). **Κανείς δεν περιμένει κανέναν**: το σχήμα, τα κοινά δεδομένα (`00_base.sql`: ένας χρήστης ανά ρόλο, ενεργοί μετρητές, validated μετρήσεις, aggregates, τιμολόγια κ.λπ.) και ο σκελετός PHP υπάρχουν ήδη στο `main`, και κάθε εργασία τελειώνει μόνη της πάνω σε αυτά. Τα λίγα σημεία επαφής είναι οι «συμφωνίες» Σ1–Σ8 (PLANO 2Α). Μόνο οι τελικές E… θέλουν όλα τα άλλα.
+## 6. When the human types `finish` (end of the session: bring everything up to date)
 
-Τα γράμματα των ID είναι απλώς **κωδικοί περιοχής**: **S** = κοινές αρχές (Admin, Operator) και ΙΙΙ.1 Καταναλωτές, **D** = ΙΙΙ.2 Τεχνικοί/μετρητές και ΙΙΙ.5 Suppliers/Aggregators, **A** = ΙΙΙ.3 DSO και ΙΙΙ.4 TSO. Δεν σημαίνουν πρόσωπο.
+Do everything in section 5, then make **every Markdown file tell the truth** about the repo as it is now:
 
-**Κάθε εργασία γράφει στα δικά της, νέα αρχεία**, ώστε δύο άνθρωποι που δουλεύουν ταυτόχρονα να μη γράφουν ποτέ στο ίδιο αρχείο:
+1. **Component docs** (`docs/04`–`17`) of every area touched this session: the "What exists" tables list every procedure,
+   page and test that now exists, with one line on what each does; "Planned" rows that are now done are moved or removed;
+   the `Status:` line at the top is correct.
+2. **[docs/tasks.md](docs/tasks.md):** rows of tasks worked on this session are correct on this branch (`👀` with PR number when a PR is open).
+3. **[README.md](README.md):** the Status column of the menu matches each doc (Plan / Partly / Written).
+4. **[docs/01-project-overview.md](docs/01-project-overview.md):** "Where the team is now" matches what is merged and what is open.
+5. **[docs/02-environment-setup.md](docs/02-environment-setup.md)** and **[docs/19-conventions.md](docs/19-conventions.md):** updated if a tool,
+   setup step or rule changed (and a line in the conventions change log).
+6. **Check links:** every relative Markdown link resolves (for example with a short Python script over `**/*.md`).
+7. **Write [docs/next-session.md](docs/next-session.md)** (replace the whole file) with: date and time (UTC); the branch and the open PRs;
+   what this session did (short); the state of the human's database (what is deployed, what was last run, test results);
+   **Next actions**, ordered, each one concrete; warnings and open questions. No names: say "the session", not who.
+8. Commit (`<ID>: finish session`) and push. The session note travels with the branch; section 1 step 2 finds the newest one.
+9. Tell the human in a few lines what was updated and what the next session will do first.
 
-| Τι | Αρχείο | Παράδειγμα |
-|---|---|---|
-| Procedures | `sql/procs_<περιοχή>_<ID>.sql` | `sql/procs_consumer_S5.sql`, `sql/procs_tso_A6.sql` |
-| Δοκιμές | `sql/tests/test_<περιοχή>_<ID>.sql` | `sql/tests/test_tso_A6.sql` |
-| Μικρά δεδομένα (αν χρειάζονται) | `data/small/50_<ID>.sql` | `data/small/50_A3.sql` |
-| Σελίδες | `sources/<ρόλος>/<NN>_<ID>_<θέμα>.php` | `sources/tso/60_A6_tree.php` |
-| Απλή εξήγηση | `docs/phase-b/tasks/<ID>.md` | τι φτιάχτηκε, κάθε procedure σε 2–3 απλές προτάσεις, πώς φαίνεται στο demo, υποθέσεις |
-| Μεγάλα δεδομένα | `data/gen/large_<ID>.py` → `data/large/<ΠΙΝΑΚΑΣ>.dat` | απόφαση Α8 |
+## 7. Hard rules
 
-`<περιοχή>`: `admin`, `operator`, `consumer`, `gdpr`, `tech`, `market`, `dso`, `tso`. Το `build_all.py` βρίσκει μόνο του όλα τα `procs_*.sql`, τα `tests/*.sql` και τα `data/small/NN_*.sql`. Τα παλιά `procs_common.sql` και `procs_consumer.sql` (F3, S1, S4, S7, S8) μένουν ως έχουν: τα καλείς (π.χ. `fn_consumer_holds`), αλλά δεν τα αλλάζεις χωρίς λόγο.
-
-- **IDs στα δεδομένα** της εργασίας: S=1, D=2, A=3, και IDs από `γράμμα×10000 + αριθμός×100` έως +99. Π.χ. S5 → 10500–10599, D12 → 21200–21299, A3 → 30300–30399. Μεγάλα δεδομένα (Α8): S 1.000.000–1.999.999, D 2.000.000–2.999.999, A 3.000.000–3.999.999. Έτσι δεν συγκρούονται ποτέ.
-- **Αριθμοί λαθών (THROW)**: S 51000–51999, D 52000–52999, A 53000–53999, και μέσα σε αυτά ξεκινάς από `βάση + αριθμός×50` (π.χ. S5 → 51250, D12 → 52600, A6 → 53300). Κοινά: 50000–50999.
-- **Ποιος γράφει σε ποιον πίνακα** ακολουθεί την **περιοχή** της εργασίας (PLANO 2Α). Τους άλλους πίνακες τους **διαβάζεις** μόνο, εκτός από τις συμφωνίες Σ1–Σ8.
-- **Κανείς δεν αλλάζει** `sql/create.sql`, `data/small/00_base.sql` ή τα κοινά αρχεία του `sources/` (`db.php`, `auth.php`, `layout.php`, `index.php`, `login.php` κ.λπ.) χωρίς τη διαδικασία αλλαγής σχήματος (Οδηγός, ενότητα 5): γράφεις στο PR τι λείπει και γιατί, βάζεις ⛔ αν σε σταματά, και την αλλαγή την κάνει ο Σωτήρης.
-- Στο `TASKS.md` αλλάζεις **μόνο** τη γραμμή της εργασίας σου.
-
-## 3. Κανόνες κώδικα (υποχρεωτικοί)
-
-**SQL (T-SQL, SQL Server 2025)**
-- Ένα procedure ανά λειτουργία, όνομα `sp_<περιοχή>_<ρήμα>`, με `CREATE OR ALTER`. Πρώτη παράμετρος `@UserID`, και ελέγχεις ρόλο και `AccountStatus = 'Active'`.
-- Αλλαγές δεδομένων: `SET XACT_ABORT ON` + `BEGIN TRY / BEGIN TRAN … COMMIT / CATCH ROLLBACK; THROW`, και γραμμή στο `AUDIT_LOG`. Πρότυπο: `sp_consumer_pay_invoice` στο `sql/procs_consumer.sql`.
-- Λάθη με `THROW <αριθμός>, N'ελληνικό μήνυμα', 1;` (αριθμοί: ενότητα 2). Το μήνυμα το βλέπει ο χρήστης, άρα γράψ' το καθαρά.
-- Ώρες σε UTC (`SYSUTCDATETIME()`).
-- `VALIDATED_READING` είναι αμετάβλητος (trigger). Μόνο `INSERT` από το VEE, ποτέ UPDATE/DELETE.
-
-**PHP (PHP 8.0 στον server του Τμήματος, driver sqlsrv)**
-- Νέα σελίδα = αντέγραψε `sources/_template.php` στον φάκελο του ρόλου. Η πρώτη γραμμή `<?php // MENU: Τίτλος` τη βάζει μόνη της στο μενού.
-- **Καθόλου SQL μέσα στην PHP**: μόνο `call_proc('sp_…', [uid(), …])`.
-- `require_role('Ρόλος')` στην αρχή, `csrf_field()` σε κάθε φόρμα POST και `check_csrf()` στον χειρισμό, `h()` σε ό,τι τυπώνεις.
-- Ποτέ μη δείχνεις κείμενο λάθους SQL στη σελίδα (ο WAF του Τμήματος δίνει 403). Το `db.php` το κάνει ήδη.
-- Server βάσης: `mssql.cs.ucy.ac.cy\SQL2025` (ΟΧΙ το σκέτο `mssql.cs.ucy.ac.cy`, είναι άλλος server).
-
-## 4. Δοκιμή πριν από κάθε PR, και ποια βάση χρησιμοποιεί ο καθένας
-
-**Ο καθένας δοκιμάζει στο δικό του αντίγραφο της βάσης. Δεν υπάρχει κοινή βάση για δοκιμές**, οπότε η παράλληλη δουλειά δεν συγκρούεται ποτέ:
-
-| Βάση | Ποιος | Για τι |
-|---|---|---|
-| Τοπικός SQL Server 2025 σε Docker, μέσα στο Claude Code | Κάθε Claude, για κάθε εργασία | Οι αυτόματες δοκιμές: `bash sql/tools/test_local.sh` στήνει τη βάση από την αρχή και τρέχει όλα τα tests |
-| Η βάση του **δικού του** λογαριασμού στο Τμήμα (`mssql.cs.ucy.ac.cy\SQL2025`, login και βάση = το username του Τμήματος) | Κάθε μέλος, με τον δικό του κωδικό | Για να δει τις σελίδες στο δικό του `~/public_html/mdms/`. Το script για το SSMS: `python3 sql/tools/build_all.py --drop` → `sql/build/ALL.sql` |
-| `sharal01` ως **κοινή βάση του demo** | Μόνο ο Σωτήρης, από τις **30/11** (E1) | Η τελική εφαρμογή στο `~sharal01/mdms/`. Κανείς άλλος δεν γράφει εκεί |
-
-```bash
-bash sql/tools/test_local.sh      # τοπικός SQL Server 2025 σε Docker: drop+create+procs+data+tests
-```
-Θέλει `ALL OK`. Κάθε νέο procedure έχει έλεγχο στο `sql/tests/test_<περιοχή>_<ID>.sql` που τυπώνει `OK …` ή `FAIL …` (πρότυπο: `sql/tests/test_consumer.sql`), με μία επιτυχία και μία αποτυχία. Μη βάζεις `BEGIN TRAN` γύρω από όλο το test. Για PHP: `php -l <αρχείο>` σε κάθε αρχείο. Στην περιγραφή του PR βάζεις τη λίστα «Απαιτήσεις εκφώνησης» της εργασίας (PLANO §3) με ✓ σε όσα καλύπτει.
-
-Αν δεν έχεις Docker, το λες στον άνθρωπο και του δίνεις το `sql/build/ALL.sql` να το τρέξει στη **δική του** βάση.
-
-## 5. GitHub
-
-- Branch: `task/<ID>` (π.χ. `task/D5`), πάντα από το `origin/main`.
-- Στην αρχή: γραμμή στο `TASKS.md` σε ✱ + **Draft PR** προς `main`, τίτλος `<ID>: <τίτλος>` (π.χ. `D5: Εργασίες πεδίου`).
-- Στο τέλος: `TASKS.md` σε 👀, «Ready for review». Review από **οποιοδήποτε άλλο μέλος** (εντολή `review`).
-- **Ποτέ** merge στο `main` και ποτέ force push, εκτός αν ο Σωτήρης σού το ζητήσει ρητά για συγκεκριμένο PR. Το merge το κάνει ο Σωτήρης.
-- Στο review: η λίστα του Οδηγού (ενότητα 3Β), σχόλια στο PR.
-
-## 6. Ασφάλεια και ακαδημαϊκή εντιμότητα
-
-- **Κωδικοί ποτέ** σε chat, commit, PR ή αρχείο του repo. Ο κωδικός της βάσης μπαίνει μόνο στο
-  `sources/config.php` (είναι στο `.gitignore`) ή στο SSMS, και τον γράφει ο άνθρωπος.
-- Σε βάση του Τμήματος δεν τρέχεις τίποτα που σβήνει (`drop.sql`, `--drop`) χωρίς ρητό «ναι» του ανθρώπου που την έχει. Στη βάση άλλου μέλους δεν τρέχεις τίποτα.
-- Μη γράφεις στα έγγραφα ότι κάτι το έκανε εργαλείο ενώ το έγραψε Claude (ή το αντίθετο). Ο άνθρωπος πρέπει να μπορεί να εξηγήσει τον κώδικα στην εξέταση, άρα **εξήγησέ του** κάθε procedure που γράφεις με 2–3 απλές προτάσεις (και γράψ' τες στο `docs/phase-b/tasks/<ID>.md`).
-- Η εκφώνηση θέλει **όλα τα μέλη σε όλα τα στάδια** και ισομερή συμβολή, και στην εξέταση παρουσιάζουν όλοι (όποιος λείπει παίρνει μηδέν). Γι' αυτό κάθε εργασία έχει SQL, PHP και δεδομένα, και γι' αυτό εξηγείς στον άνθρωπό σου και ό,τι διαβάζεις στο review.
-
-## 7. Χρήσιμα στοιχεία
-
-- Demo χρήστες (από `00_base.sql`): `admin`, `operator`, `consumer1`, `consumer2`, `tech1` (Approved),
-  `tech2` (Pending), `dso1`, `tso1`, `supplier1`, `aggregator1`. Κωδικός demo: στο σχόλιο στην αρχή του `00_base.sql`.
-- Τα `data/small/00_base.sql` παράγονται από `data/gen/base.py` (`python3 data/gen/base.py`).
-- Παράδοση: Παρασκευή 4/12/26 12:00 (στόχος πριν τις 11:00), `12.zip` με `sources/ sql/ data/ docx/`.
+- **Never** push to `main`, force-push, or merge, unless the human explicitly asks for that specific PR.
+  A PR is merged by a member who did not author it, after approving it.
+- **Never** ask for, type or commit passwords. The database password lives only in `sources/config.php`
+  (git-ignored), in SSMS, or in the encrypted `%USERPROFILE%\.mdms_sql.xml`, always entered by the human.
+- **Never write `dbo.`** in SQL. On the department server each member's objects live in their own schema
+  (for example `apieri01`), so `dbo.x` is not found. Call objects unqualified; scalar functions, which T-SQL cannot call
+  unqualified, are replaced by inline table-valued functions or `EXISTS` checks.
+- **Never** run anything destructive (`drop.sql`, `DELETE`) on a department database without an explicit "yes".
+  Test databases are the human's own.
+- Do not claim in documents that something was produced by a tool when it was written by an AI, or the reverse.
+- The assignment PDF is not in the repo because the repo is public. Ask the human for it if needed.
