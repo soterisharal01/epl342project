@@ -1,16 +1,16 @@
 # Handoff: PRF-1/2/3 Indexes + before/after case
 
-Lock: active since 2026-11-21 17:30 UTC
+Lock: free
 
 Branch: task/PRF-1-indexes
 Doc: docs/14-indexes-and-performance.md
-Status: in progress
+Status: finished (in review)
 
 ## Next step
-Write sql/indexes.sql, sql/perf/before_after.sql, sql/tests/test_indexes.sql, the doc.
+Coordinator: run sql/indexes.sql, sql/tests/test_indexes.sql, then sql/perf/before_after.sql on the large data set and fill the table in docs/14.
 
 ## Done so far
-- 2026-11-21: claim.
+- 2026-11-21: indexes.sql, perf/before_after.sql, tests/test_indexes.sql, doc 14 written; NOT run on a database.
 
 ## Blockers / open questions
 No database in this lane: the coordinator runs the scripts.

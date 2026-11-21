@@ -127,9 +127,9 @@ change them only through the schema-change process or in the coordinating sessio
 
 | ID | Task | Doc | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | ○ | |
-| PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | ○ | |
-| PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | ○ | |
+| PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | 👀 | |
+| PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | 👀 | |
+| PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | 👀 | |
 | PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | ○ | |
 | SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | ○ | |
 | SEC-2 | Security document | [16](16-security.md) | | 2/12 | ○ | Chapter (b) of DOC-4 |
