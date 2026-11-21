@@ -30,6 +30,6 @@ range ([19-conventions.md](19-conventions.md), section 1).
 
 - Thousands of rows. Size is graded. For example 2,000 premises and meters. 30 days × 96 intervals × 2 codes × 2,000 meters ≈ 11 million rows is too many;
   the target is **about 200,000–500,000 readings**.
-- Python generators in `data/gen/` write each table as `.dat` (CSV, UTF-8) **and** `.sql` with the same INSERTs, plus `data/import.sql` (decision B8).
-- Import = run `data/import.sql` in SSMS, because `BULK INSERT` on the department server cannot see our files.
+- Python generators in `data/gen/` write each table as `.dat` (CSV, UTF-8) **and** `.sql` with the same INSERTs, plus `sql/import.sql` (decision B8).
+- Import = run `sql/import.sql` in SSMS, because `BULK INSERT` on the department server cannot see our files.
 - Run order: decision B9.
