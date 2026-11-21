@@ -131,7 +131,7 @@ change them only through the schema-change process or in the coordinating sessio
 | PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | ✓ | |
 | PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | ✓ | |
 | PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | 👀 | |
-| SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | ○ | |
+| SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | 👀 | `sql/tools/check_pages.py` (6 rules, 0 FAIL on main and on PR #36) + `sql/tests/test_security.sql` (18 OK); doc 16 section 7 |
 | SEC-2 | Security document | [16](16-security.md) | | 2/12 | ✓ | Chapter (b) of DOC-4 |
 | CCY-1 | Concurrency / contention document | [15](15-concurrency.md) | DSO-2 | 2/12 | ✓ | Chapter (a) of DOC-4 |
 | EXT-1 | Extensibility document | [17](17-extensibility.md) | | 2/12 | ✓ | Chapter (c) of DOC-4 |

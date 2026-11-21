@@ -9,4 +9,3 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 
 | Task | Branch | Claimed at (UTC) | Plan |
 |---|---|---|---|
-| SEC-1 | task/SEC-1-page-check | 2026-11-21 18:37 | Page-by-page security check of every PHP page: automatic checker script + fixes + doc 16 |

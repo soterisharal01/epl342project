@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: SEC-1, SEC-2 in [tasks.md](tasks.md) · Part of docx (b), chapter (b)
 
-> **Status: written.** What the web skeleton does is described in [12-php-web-app.md](12-php-web-app.md). SEC-1 (the page-by-page review) is a separate task; section 6 says what it still has to confirm.
+> **Status: written, including the SEC-1 page-by-page review (section 7).** What the web skeleton does is described in [12-php-web-app.md](12-php-web-app.md).
 
 ## 1. Approach in one paragraph
 
@@ -60,4 +60,40 @@ The test scripts `sql/tests/test_<area>.sql` print `OK` or `FAIL` for each case.
 - **No session timeout** beyond the PHP default, and no Content-Security-Policy header.
 - **Login timing:** for an unknown username `password_verify` is not run, so the response is slightly faster. The message is identical.
 - **The recommended least-privilege login** (section 3) is not used on the department server.
-- **SEC-1** (a page-by-page review that no page takes a user id from the request) is still to be completed. It should confirm that no page takes a user id from the request. All 96 `uid()` uses we counted read the session.
+- **Static checks have limits.** `check_pages.py` (section 7) reads the code with regular expressions; it does not run the pages. A page written in an unusual style could slip past it, so the horizontal tests in `test_security.sql` check the procedures themselves.
+
+## 7. Page-by-page review (SEC-1)
+
+**Automatic check of every page.** `python sql/tools/check_pages.py` reads every PHP file in `sources/` (no database needed)
+and prints `OK` or `FAIL` per page for six rules. It exits with code 1 if anything fails, so it can be rerun after every change.
+
+| Rule | What it checks |
+|---|---|
+| R1 | Every role page (`sources/<role>/*.php`) calls `require_role()` with the role of its folder |
+| R2 | No SQL text and no direct `sqlsrv_query/prepare/execute` outside `db.php`: pages only use `call_proc` with `?` |
+| R3 | Every procedure whose first parameter is `@UserID` receives `uid()` (the session) as its first value, never a request value. The list of such procedures is read from `sql/procs_*.sql` |
+| R4 | Every POST form prints `csrf_field()`, and every page that reads `$_POST` calls `check_csrf()` |
+| R5 | No request value (`$_GET`, `$_POST`, `$_REQUEST`) is printed without `h()` |
+| R6 | Every `<?= ... ?>` goes through `h()` or a helper that escapes. Ten outputs that print only fixed text, an integer or values already inside `h()` were reviewed by hand and are listed with the reason in the script (`REVIEWED`) |
+
+**Result (21/11):** `main`: 41 pages, **0 FAIL**. The TEC-6..10 branch (PR #36, four more pages and their procedures): 45 pages, **0 FAIL**.
+A deliberately bad page (request value as user id, SQL text, form without token, unescaped `$_GET`) gives 7 FAIL, so the
+check does detect each rule.
+
+**Horizontal access tests.** R3 proves the user id comes from the session, but a page also passes ids of objects
+(premise, request, threshold, meter, task, portfolio) from the form. A forged form can change those, so the procedure must
+check that the object belongs to the caller. `sql/tests/test_security.sql` attacks another user's objects through the
+procedures, exactly as a forged form would, and checks the objects stay unchanged:
+
+| Role | Forged call on another user's object | Refused with |
+|---|---|---|
+| Consumer | end holding, file a request, set a threshold on a premise of another consumer | 51006, 51006, 51200 |
+| Consumer | cancel request, remove threshold of another consumer | 51023, 51203 |
+| Consumer | read 15-minute readings or history of another consumer's meter | 51100, 51100 |
+| Technician | open, read notes of, add a note to, accept, complete another technician's task | 52120 (all five) |
+| Aggregator | list, rename, add a premise to another company's portfolio | 52512 (all three) |
+
+The staff roles (Operator, Admin, DSO, TSO) act on every object by design, so for them only the role check applies
+(R1 and the area asserts, section 2). Supplier pages take no object ids: they read only sums over their own customers.
+
+**Result:** full build + all tests (`bash sql/tools/test_local.sh`): **ALL OK**, 18 of them from `test_security.sql`.
