@@ -9,5 +9,4 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 
 | Task | Branch | Claimed at (UTC) | Plan |
 |---|---|---|---|
-| TEC-6 | task/TEC-6-install | 2026-11-21 17:20 | TEC-6/7 install + confirm, TEC-8 commands, TEC-9 anti-tamper, TEC-10 pages |
 | DAT-5 | task/DAT-5-select-exec | 2026-11-21 18:29 | select.sql part 2: one EXEC per main read function of every role + analytics, run-tested locally |
