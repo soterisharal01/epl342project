@@ -348,4 +348,22 @@ IF EXISTS (SELECT 1 FROM @p2 WHERE RawDeleted = 0 AND ValidatedDeleted = 0 AND E
 -- ---------- Trigger ακόμα ενεργό ----------
 BEGIN TRY DELETE VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-12-01'; PRINT 'FAIL validated delete after purge'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 50006 PRINT 'OK   DELETE VALIDATED_READING after purge still refused -> 50006' ELSE PRINT 'FAIL trigger after purge: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Cleanup: remove the 3 test meters so later test files (TSO counts, load shed) see only the base meters ----------
+EXEC sp_set_session_context N'mdms_purge', 1;
+DELETE READING_EDIT WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE VALIDATED_READING WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE RAW_READING WHERE MeterID IN (SELECT MeterID FROM @m);
+EXEC sp_set_session_context N'mdms_purge', 0;
+DELETE EVENT WHERE MeterID IN (SELECT MeterID FROM @m) OR PacketID IN (SELECT PacketID FROM TELEMETRY_PACKET WHERE MeterID IN (SELECT MeterID FROM @m));
+DELETE TELEMETRY_PACKET WHERE MeterID IN (SELECT MeterID FROM @m);
+DECLARE @gdp2tasks TABLE (TaskID INT);
+INSERT @gdp2tasks SELECT TaskID FROM METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE FIELD_TASK WHERE TaskID IN (SELECT TaskID FROM @gdp2tasks);
+DELETE METER_AGGREGATE WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE DOCUMENT WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE METER_CONNECTED_PHASE WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE METER WHERE MeterID IN (SELECT MeterID FROM @m);
+IF NOT EXISTS (SELECT 1 FROM METER WHERE SerialNumber LIKE 'SN-GDP2-%') PRINT 'OK   GDP-2 test meters removed' ELSE PRINT 'FAIL GDP-2 cleanup';
 GO
