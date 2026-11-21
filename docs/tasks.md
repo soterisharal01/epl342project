@@ -36,7 +36,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 | CON-4 | ★ Check/fault requests + history | III.1.3 | | 25/11 | ✓ | `sp_consumer_submit_request`, `list_requests`, `cancel_request`, `list_meters`, page `30_requests` (PR #4) |
 | CON-5 | ★ Invoices, payments, paying an invoice | III.1.3 | | 26/11 | ✓ | `sp_consumer_list_invoices`, `list_payments`, `pay_invoice`, page `40_billing` (PR #4) |
 | CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | ○ | |
-| CON-7 | Fix: consumer procedures call `dbo.fn_consumer_holds`, which fails on the department server (per-user schemas) | Bug | | 22/11 | ○ | Found 21/11 when building on a member database |
+| CON-7 | Fix: consumer procedures call `dbo.fn_consumer_holds`, which fails on the department server (per-user schemas) | Bug | | 22/11 | 👀 | Now an inline table-valued function; 37/37 OK on a member database; PR #8 |
 
 ## GDP: GDPR and retention ([07](07-gdpr-and-retention.md))
 

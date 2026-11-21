@@ -31,7 +31,7 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 
 | Task | Procedures | Page |
 |---|---|---|
-| CON-1 | `sp_consumer_assert` (role check, `THROW 51000`), `fn_consumer_holds`, `sp_consumer_add_premise` (PREMISE + HOLDING in one transaction), `sp_consumer_list_premises`, `sp_consumer_end_holding`, `sp_consumer_add_bank_account` (+ `ACCOUNT_FOR`), `sp_consumer_list_bank_accounts` | `consumer/10_premises.php`, `consumer/20_bank.php` |
+| CON-1 | `sp_consumer_assert` (role check, `THROW 51000`), `fn_consumer_holds` (inline table-valued: one row if the user holds the premise today; used as `EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID))`), `sp_consumer_add_premise` (PREMISE + HOLDING in one transaction), `sp_consumer_list_premises`, `sp_consumer_end_holding`, `sp_consumer_add_bank_account` (+ `ACCOUNT_FOR`), `sp_consumer_list_bank_accounts` | `consumer/10_premises.php`, `consumer/20_bank.php` |
 | CON-4 | `sp_consumer_submit_request`, `sp_consumer_list_requests` (with the resulting field task), `sp_consumer_cancel_request`, `sp_consumer_list_meters` | `consumer/30_requests.php` |
 | CON-5 | `sp_consumer_list_invoices`, `sp_consumer_list_payments`, `sp_consumer_pay_invoice` (UPDLOCK; full or partial) | `consumer/40_billing.php` |
 
