@@ -41,6 +41,7 @@ Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [
 | 19 | [Conventions and decisions](docs/19-conventions.md) | Areas, code rules, table ownership, agreements, decisions B1–B13 | Written |
 | 20 | [Data dictionary](docs/20-data-dictionary.md) | Every table and column explained | Written |
 | 22 | [ER and relational diagrams](docs/22-er-diagram.md) | Final Chen ER and relational diagram, generated from create.sql | Written |
+| 21 | [User manual](docs/21-user-manual.md) | How to use every role's screens, design choices, extras, limits (with screenshots) | Written |
 | — | [Session note](docs/next-session.md) | Where the last session stopped, what to do next | Live |
 | — | [Task board](docs/tasks.md) | Every task, its status and dependencies | Live |
 | — | [Handoff notes](docs/handoff/) | One note per in-progress task (on its branch) | Live |
