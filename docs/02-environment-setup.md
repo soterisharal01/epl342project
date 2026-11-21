@@ -51,6 +51,16 @@ The VPN uses split tunnel: only traffic to department systems goes through it.
 3. It uses the .NET SqlClient built into Windows (no `sqlcmd` needed), splits on `GO` like SSMS, prints `PRINT` output and
    result sets, and stops at the first error.
 
+### Database size cap (27 MB) and Query Store
+
+- Each student database is capped at **27 MB of data and 20 MB of log**. SQL Server's own system objects take about 5 MB.
+- **Query Store** (query history) silently grew to 14 MB from repeated test runs and filled the cap. `build_all.py` now turns it off at the start of every build. If a database is already full: run `drop.sql` first, then `ALTER DATABASE CURRENT SET QUERY_STORE = OFF; ALTER DATABASE CURRENT SET QUERY_STORE CLEAR;`.
+- The large data set (`sql/import.sql`) is sized to fit (about 7 MB). The demo database `sharal01` has the same cap: load base data and the large set only, not the test files.
+
+### Local demo (Windows 11 with Smart App Control)
+
+Windows PHP builds are unsigned and Smart App Control blocks them (error `0xC0E90002`). Run PHP in **WSL Ubuntu** instead: as root install `php-cli php-dev php-pear unixodbc-dev`, Microsoft `msodbcsql18` and `pecl install sqlsrv`. Then from the repo: `php -S 0.0.0.0:8000 -t sources` and open `http://localhost:8000`. `sources/config.php` (git-ignored) needs your database username and password; the CS VPN must be on.
+
 ## 3. Hosting the PHP app
 
 See [12-php-web-app.md](12-php-web-app.md), "Deploying". In short: copy `sources/` to `~/public_html/mdms/` through a lab
