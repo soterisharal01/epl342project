@@ -1025,3 +1025,279 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- =====================================================================
+-- TEC-6: εγκατάσταση / αντικατάσταση μετρητή (ΙΙΙ.2.3). Λάθη 52131-52199.
+-- 52131 εργασία όχι Accepted | 52132 τύπος εργασίας | 52133 η εργασία έχει ήδη εγκατάσταση
+-- 52134 serial/network ID υπάρχει | 52135 φάσεις | 52136 κανένα φύλλο μετασχηματιστή (X7)
+-- 52137 άκυρα στοιχεία μετρητή | 52138 μοντέλο/επικοινωνία δεν υπάρχει | 52139 τύπος εγγράφου μετρητή
+-- 52140 ο μετρητής δεν είναι δική σας εγκατάσταση | 52141 η εγκατάσταση δεν είναι Pending
+-- (επαναχρησιμοποιούνται: 52302-52304 έγγραφο, 52126 κενό κείμενο, 52120 εργασία δεν είναι δική σας)
+-- Συμφωνία X7: ο μετασχηματιστής του μετρητή = το ΦΥΛΛΟ που περιέχει τις συντεταγμένες του.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- sp_tech_install_meter: δική μου Accepted εργασία Installation/Replacement.
+-- Μία συναλλαγή: METER (Pending confirmation, TransformerID από συντεταγμένες),
+-- METER_CONNECTED_PHASE, METER_INSTALLATION (Pending). Replacement: κλείνει την ανοιχτή
+-- εγκατάσταση του παλιού μετρητή (RemovedAt) και τον κάνει Retired. Οι μετρήσεις του
+-- παλιού μετρητή ΔΕΝ πειράζονται. @Phases = 'L1' ή 'L1,L2,L3'.
+-- Επιστρέφει: MeterID, InstallationID, TransformerID.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_install_meter
+    @UserID INT, @TaskID INT, @SerialNumber VARCHAR(40), @NetworkID VARCHAR(40), @Firmware VARCHAR(30),
+    @MaxLoadAmps DECIMAL(6,1), @Latitude DECIMAL(9,6), @Longitude DECIMAL(9,6),
+    @ModelID INT, @CommTypeID INT, @Phases VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert @UserID;
+    SET @SerialNumber = LTRIM(RTRIM(@SerialNumber));
+    SET @NetworkID = LTRIM(RTRIM(@NetworkID));
+    SET @Firmware = LTRIM(RTRIM(@Firmware));
+    IF ISNULL(@SerialNumber, '') = '' OR ISNULL(@NetworkID, '') = '' OR ISNULL(@Firmware, '') = ''
+       OR @MaxLoadAmps IS NULL OR @MaxLoadAmps <= 0
+       OR @Latitude IS NULL OR @Longitude IS NULL OR @Latitude NOT BETWEEN -90 AND 90 OR @Longitude NOT BETWEEN -180 AND 180
+        THROW 52137, N'Συμπληρώστε serial, network ID, firmware, Amps (> 0) και έγκυρες συντεταγμένες.', 1;
+    DECLARE @phCount TINYINT = (SELECT PhaseCount FROM METER_MODEL WHERE ModelID = @ModelID);
+    IF @phCount IS NULL OR NOT EXISTS (SELECT 1 FROM COMM_TYPE WHERE CommTypeID = @CommTypeID)
+        THROW 52138, N'Το μοντέλο ή ο τύπος επικοινωνίας δεν υπάρχει.', 1;
+    DECLARE @ph TABLE (Ph VARCHAR(20));
+    INSERT @ph (Ph)
+    SELECT DISTINCT UPPER(LTRIM(RTRIM(value))) FROM STRING_SPLIT(ISNULL(@Phases, ''), ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+    IF EXISTS (SELECT 1 FROM @ph WHERE Ph NOT IN ('L1', 'L2', 'L3')) OR (SELECT COUNT(*) FROM @ph) <> @phCount
+        THROW 52135, N'Οι φάσεις (L1, L2, L3) πρέπει να είναι τόσες όσες το μοντέλο του μετρητή.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @type VARCHAR(17), @status VARCHAR(9), @premise INT, @oldMeter INT;
+        SELECT @type = TaskType, @status = Status, @premise = PremiseID, @oldMeter = MeterID
+        FROM FIELD_TASK WITH (UPDLOCK) WHERE TaskID = @TaskID AND TechnicianID = @UserID;
+        IF @type IS NULL
+            THROW 52120, N'Η εργασία δεν υπάρχει ή δεν είναι δική σας.', 1;
+        IF @type NOT IN ('Installation', 'Replacement')
+            THROW 52132, N'Η εργασία δεν είναι εγκατάσταση ή αντικατάσταση.', 1;
+        IF @status <> 'Accepted'
+            THROW 52131, N'Η εργασία πρέπει πρώτα να γίνει αποδεκτή (Accepted).', 1;
+        IF EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE TaskID = @TaskID)
+            THROW 52133, N'Η εργασία έχει ήδη καταγράψει εγκατάσταση.', 1;
+        IF EXISTS (SELECT 1 FROM METER WITH (UPDLOCK, HOLDLOCK) WHERE SerialNumber = @SerialNumber OR NetworkID = @NetworkID)
+            THROW 52134, N'Το serial ή το network ID υπάρχει ήδη σε άλλον μετρητή.', 1;
+
+        -- X7: φύλλο μετασχηματιστή από τις συντεταγμένες (ο μικρότερος γεωφράκτης πρώτος, όπως το sp_tso_locate).
+        DECLARE @tr INT;
+        SELECT TOP 1 @tr = t.TransformerID
+        FROM TRANSFORMER t JOIN GEOFENCE g ON g.GeofenceID = t.GeofenceID
+        WHERE @Latitude BETWEEN g.MinLat AND g.MaxLat AND @Longitude BETWEEN g.MinLon AND g.MaxLon
+          AND NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = t.TransformerID)
+        ORDER BY (g.MaxLat - g.MinLat) * (g.MaxLon - g.MinLon), t.TransformerID;
+        IF @tr IS NULL
+            THROW 52136, N'Οι συντεταγμένες δεν ανήκουν σε κανέναν μετασχηματιστή-φύλλο.', 1;
+
+        DECLARE @now DATETIME2(0) = SYSUTCDATETIME();
+        INSERT METER (SerialNumber, NetworkID, Firmware, MaxLoadAmps, Latitude, Longitude, Status, ModelID, CommTypeID, TransformerID)
+        VALUES (@SerialNumber, @NetworkID, @Firmware, @MaxLoadAmps, @Latitude, @Longitude, 'Pending confirmation', @ModelID, @CommTypeID, @tr);
+        DECLARE @mid INT = SCOPE_IDENTITY();
+        INSERT METER_CONNECTED_PHASE (MeterID, ConnectedPhase) SELECT @mid, Ph FROM @ph;
+
+        IF @type = 'Replacement'
+        BEGIN
+            -- Κλείνει η ανοιχτή εγκατάσταση του παλιού μετρητή, ο μετρητής γίνεται Retired. Μετρήσεις: αμετάβλητες.
+            UPDATE METER_INSTALLATION SET RemovedAt = CASE WHEN InstalledAt < @now THEN @now ELSE DATEADD(SECOND, 1, InstalledAt) END
+            WHERE MeterID = @oldMeter AND RemovedAt IS NULL;
+            DECLARE @oldStatus VARCHAR(20) = (SELECT Status FROM METER WITH (UPDLOCK) WHERE MeterID = @oldMeter);
+            UPDATE METER SET Status = 'Retired' WHERE MeterID = @oldMeter;
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('METER', @oldMeter, 'Retire meter', @oldStatus, 'Retired', @UserID,
+                    CONCAT(N'Αντικαταστάθηκε από τον μετρητή ', @mid, N' (εργασία ', @TaskID, N')'));
+        END;
+
+        INSERT METER_INSTALLATION (InstalledAt, ConfirmationStatus, MeterID, PremiseID, TaskID)
+        VALUES (@now, 'Pending', @mid, @premise, @TaskID);
+        DECLARE @iid INT = SCOPE_IDENTITY();
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy, ResultComment)
+        VALUES ('METER_INSTALLATION', @iid, 'Install meter', 'Pending', @UserID,
+                CONCAT(N'Μετρητής ', @mid, N' (', @SerialNumber, N') σε υποστατικό ', @premise, N', μετασχηματιστής ', @tr));
+        COMMIT;
+        SELECT @mid AS MeterID, @iid AS InstallationID, @tr AS TransformerID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_add_meter_document: έγγραφο εξοπλισμού του μετρητή που εγκατέστησα
+-- (Calibration certificate, CE and protocol declaration, Encryption certificate),
+-- όσο η εγκατάσταση είναι Pending. ReviewStatus 'Pending'. Επιστρέφει: DocumentID.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_add_meter_document
+    @UserID INT, @MeterID INT, @DocType VARCHAR(27), @DocNumber NVARCHAR(50),
+    @IssueDate DATE, @ExpiryDate DATE = NULL, @FilePath NVARCHAR(400)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert @UserID;
+    IF @DocType IS NULL OR @DocType NOT IN ('Calibration certificate', 'CE and protocol declaration', 'Encryption certificate')
+        THROW 52139, N'Τύπος εγγράφου μετρητή: Calibration certificate, CE and protocol declaration ή Encryption certificate.', 1;
+    IF @DocNumber IS NULL OR LTRIM(RTRIM(@DocNumber)) = N''
+        THROW 52302, N'Ο κωδικός του εγγράφου είναι υποχρεωτικός.', 1;
+    IF @IssueDate IS NULL OR (@ExpiryDate IS NOT NULL AND @ExpiryDate <= @IssueDate)
+        THROW 52303, N'Η ημερομηνία έκδοσης είναι υποχρεωτική και η λήξη πρέπει να είναι μετά την έκδοση.', 1;
+    IF @FilePath IS NULL OR LTRIM(RTRIM(@FilePath)) = N''
+        THROW 52304, N'Η διαδρομή του αρχείου είναι υποχρεωτική.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @iid INT, @cs VARCHAR(9);
+        SELECT TOP 1 @iid = mi.InstallationID, @cs = mi.ConfirmationStatus
+        FROM METER_INSTALLATION mi WITH (UPDLOCK) JOIN FIELD_TASK t ON t.TaskID = mi.TaskID
+        WHERE mi.MeterID = @MeterID AND t.TechnicianID = @UserID
+        ORDER BY mi.InstalledAt DESC, mi.InstallationID DESC;
+        IF @iid IS NULL
+            THROW 52140, N'Ο μετρητής δεν είναι δική σας εγκατάσταση.', 1;
+        IF @cs <> 'Pending'
+            THROW 52141, N'Η εγκατάσταση έχει ήδη κριθεί από τον Operator.', 1;
+        INSERT DOCUMENT (DocType, DocNumber, IssueDate, ExpiryDate, FilePath, ReviewStatus, MeterID)
+        VALUES (@DocType, LTRIM(RTRIM(@DocNumber)), @IssueDate, @ExpiryDate, LTRIM(RTRIM(@FilePath)), 'Pending', @MeterID);
+        DECLARE @did INT = SCOPE_IDENTITY();
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy, ResultComment)
+        VALUES ('DOCUMENT', @did, 'Add meter document', 'Pending', @UserID, CONCAT(@DocType, N' για μετρητή ', @MeterID));
+        COMMIT;
+        SELECT @did AS DocumentID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_list_installs: οι εγκαταστάσεις μου (μετρητής, κατάσταση επιβεβαίωσης, πόσοι από τους 3 τύπους εγγράφων υπάρχουν).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_list_installs
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tech_assert @UserID;
+    SELECT mi.InstallationID, mi.TaskID, mi.MeterID, m.SerialNumber, m.Status AS MeterStatus, mi.PremiseID,
+           mi.InstalledAt, mi.ConfirmationStatus, mi.ConfirmComment,
+           (SELECT COUNT(DISTINCT d.DocType) FROM DOCUMENT d WHERE d.MeterID = mi.MeterID AND d.ReviewStatus <> 'Rejected') AS DocTypesPresent
+    FROM METER_INSTALLATION mi
+    JOIN FIELD_TASK t ON t.TaskID = mi.TaskID
+    JOIN METER m ON m.MeterID = mi.MeterID
+    WHERE t.TechnicianID = @UserID
+    ORDER BY mi.InstalledAt DESC, mi.InstallationID DESC;
+END;
+GO
+
+-- =====================================================================
+-- TEC-7: ο Operator επιβεβαιώνει τον μετρητή (ΙΙΙ.2.3). Λάθη 52330-52339.
+-- 52330 εγκατάσταση δεν υπάρχει | 52331 δεν είναι Pending | 52332 λείπουν έγγραφα
+-- 52333 η απόρριψη θέλει σχόλιο | 52334 άκυρη απόφαση
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- sp_operator_list_pending_meters: εγκαταστάσεις σε αναμονή επιβεβαίωσης.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_list_pending_meters
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_operator_assert @UserID;
+    SELECT mi.InstallationID, mi.MeterID, m.SerialNumber, m.NetworkID, m.Firmware, m.MaxLoadAmps,
+           m.Latitude, m.Longitude, m.TransformerID, mi.PremiseID, p.Address,
+           t.TaskType, t.TechnicianID, u.Username AS TechnicianUsername, mi.InstalledAt,
+           (SELECT COUNT(DISTINCT d.DocType) FROM DOCUMENT d
+             WHERE d.MeterID = mi.MeterID AND d.ReviewStatus <> 'Rejected'
+               AND (d.ExpiryDate IS NULL OR d.ExpiryDate > CAST(SYSUTCDATETIME() AS DATE))) AS DocTypesPresent,
+           (SELECT COUNT(*) FROM ATTACHMENT a WHERE a.TaskID = mi.TaskID) AS Photos
+    FROM METER_INSTALLATION mi
+    JOIN METER m ON m.MeterID = mi.MeterID
+    JOIN PREMISE p ON p.PremiseID = mi.PremiseID
+    JOIN FIELD_TASK t ON t.TaskID = mi.TaskID
+    JOIN USER_ACCOUNT u ON u.UserID = t.TechnicianID
+    WHERE mi.ConfirmationStatus = 'Pending'
+    ORDER BY mi.InstalledAt, mi.InstallationID;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_list_meter_documents: τα έγγραφα εξοπλισμού ενός μετρητή.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_list_meter_documents
+    @UserID INT, @MeterID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_operator_assert @UserID;
+    SELECT DocumentID, DocType, DocNumber, IssueDate, ExpiryDate, FilePath, ReviewStatus, ReviewComment, ReviewedAt
+    FROM DOCUMENT WHERE MeterID = @MeterID ORDER BY DocType, DocumentID;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_confirm_meter: ο Operator κρίνει μια Pending εγκατάσταση.
+-- Έγκριση: απαιτούνται και οι 3 τύποι εγγράφων (όχι Rejected, όχι ληγμένα). Τότε
+-- ConfirmationStatus 'Confirmed', τα Pending έγγραφα γίνονται Accepted και ο μετρητής 'Active'.
+-- Απόρριψη (σχόλιο υποχρεωτικό): 'Rejected', ο μετρητής μένει 'Pending confirmation' (ΔΕΝ γίνεται Active).
+-- AUDIT_LOG για κάθε αλλαγή.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_confirm_meter
+    @UserID INT, @InstallationID INT, @Approve BIT, @Comment NVARCHAR(500) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_operator_assert @UserID;
+    IF @Approve IS NULL
+        THROW 52334, N'Δώστε απόφαση: έγκριση ή απόρριψη.', 1;
+    SET @Comment = NULLIF(LTRIM(RTRIM(@Comment)), N'');
+    IF @Approve = 0 AND @Comment IS NULL
+        THROW 52333, N'Η απόρριψη θέλει σχόλιο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @mid INT, @cs VARCHAR(9);
+        SELECT @mid = MeterID, @cs = ConfirmationStatus
+        FROM METER_INSTALLATION WITH (UPDLOCK) WHERE InstallationID = @InstallationID;
+        IF @mid IS NULL
+            THROW 52330, N'Η εγκατάσταση δεν υπάρχει.', 1;
+        IF @cs <> 'Pending'
+            THROW 52331, N'Η εγκατάσταση έχει ήδη κριθεί.', 1;
+        DECLARE @now DATETIME2(0) = SYSUTCDATETIME();
+        IF @Approve = 1
+        BEGIN
+            IF (SELECT COUNT(DISTINCT DocType) FROM DOCUMENT WITH (UPDLOCK)
+                WHERE MeterID = @mid AND ReviewStatus <> 'Rejected'
+                  AND DocType IN ('Calibration certificate', 'CE and protocol declaration', 'Encryption certificate')
+                  AND (ExpiryDate IS NULL OR ExpiryDate > CAST(@now AS DATE))) < 3
+                THROW 52332, N'Λείπουν έγγραφα: χρειάζονται πιστοποιητικό βαθμονόμησης, δήλωση CE και πρωτοκόλλου, πιστοποιητικό κρυπτογράφησης (έγκυρα).', 1;
+            UPDATE DOCUMENT SET ReviewStatus = 'Accepted', ReviewedBy = @UserID, ReviewedAt = @now
+            WHERE MeterID = @mid AND ReviewStatus = 'Pending' AND (ExpiryDate IS NULL OR ExpiryDate > CAST(@now AS DATE));
+            UPDATE METER_INSTALLATION SET ConfirmationStatus = 'Confirmed', ConfirmedBy = @UserID, ConfirmedAt = @now, ConfirmComment = @Comment
+            WHERE InstallationID = @InstallationID;
+            DECLARE @oldMs VARCHAR(20) = (SELECT Status FROM METER WITH (UPDLOCK) WHERE MeterID = @mid);
+            UPDATE METER SET Status = 'Active' WHERE MeterID = @mid;
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('METER_INSTALLATION', @InstallationID, 'Confirm meter', 'Pending', 'Confirmed', @UserID, @Comment);
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('METER', @mid, 'Activate meter', @oldMs, 'Active', @UserID, @Comment);
+        END
+        ELSE
+        BEGIN
+            UPDATE METER_INSTALLATION SET ConfirmationStatus = 'Rejected', ConfirmedBy = @UserID, ConfirmedAt = @now, ConfirmComment = @Comment
+            WHERE InstallationID = @InstallationID;
+            INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy, ResultComment)
+            VALUES ('METER_INSTALLATION', @InstallationID, 'Reject meter', 'Pending', 'Rejected', @UserID, @Comment);
+        END;
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
