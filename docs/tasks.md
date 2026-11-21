@@ -89,7 +89,7 @@ change them only through the schema-change process or in the coordinating sessio
 | MKT-1 | ★ Supplier aggregates (Day-Ahead) | III.5.1–5.2 | | 27/11 | 👀 | Agreement X6 |
 | MKT-2 | Aggregator portfolio + aggregates | III.5.1 | | 27/11 | 👀 | |
 | MKT-3 | ★ Intraday provisional (from raw) | III.5.2 | | 27/11 | 👀 | |
-| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | ○ | |
+| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | 👀 | |
 
 ## DSO: ingestion and VEE ([09](09-dso-ingestion-vee.md))
 
