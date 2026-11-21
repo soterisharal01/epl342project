@@ -10,6 +10,14 @@
 - Applying erases or anonymises the personal data that may go, but **keeps** invoices and payments.
 - Raw readings are kept 3 years (`RawRetentionMonths = 36`), or 1 month after a GDPR request. Aggregates stay. Transformer readings stay forever.
 
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] 1.4 GDPR is **not** an immediate deletion: submit → review → pre-approval → final approval, with a log row at every stage (the five `GDPR_REQUEST` stages and `CK_GDPR_REQUEST_Stage`: `'Rejected'` needs `PreApprovedAt`). After approval only the personal data that may be erased is erased **permanently**. Payment accounting stays (B17).
+- [ ] 1.4 Raw 15-minute readings: 3 years, then deleted; aggregates stay. With an approved GDPR request: 1 month, and older rows are deleted **automatically**. Transformer readings/aggregates are not affected and are kept forever.
+- [ ] 1.4 Statistics prefer aggregates; detailed data only for those entitled to it.
+
 ## Planned
 
 | Task | Procedures | Tables | Page |
