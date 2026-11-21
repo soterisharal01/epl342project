@@ -40,6 +40,7 @@ Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [
 | 18 | [Deliverables and timeline](docs/18-deliverables-and-timeline.md) | The zip, documents, day plan, demo script, checklist | Written |
 | 19 | [Conventions and decisions](docs/19-conventions.md) | Areas, code rules, table ownership, agreements, decisions B1–B13 | Written |
 | 20 | [Data dictionary](docs/20-data-dictionary.md) | Every table and column explained | Written |
+| 21 | [User manual](docs/21-user-manual.md) | How to use every role's screens, design choices, extras, limits (with screenshots) | In review |
 | — | [Session note](docs/next-session.md) | Where the last session stopped, what to do next | Live |
 | — | [Task board](docs/tasks.md) | Every task, its status and dependencies | Live |
 | — | [Handoff notes](docs/handoff/) | One note per in-progress task (on its branch) | Live |
