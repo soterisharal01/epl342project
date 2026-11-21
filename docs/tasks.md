@@ -132,9 +132,9 @@ change them only through the schema-change process or in the coordinating sessio
 | PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | ○ | |
 | PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | ○ | |
 | SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | ○ | |
-| SEC-2 | Security document | [16](16-security.md) | | 2/12 | ○ | Chapter (b) of DOC-4 |
-| CCY-1 | Concurrency / contention document | [15](15-concurrency.md) | DSO-2 | 2/12 | ○ | Chapter (a) of DOC-4 |
-| EXT-1 | Extensibility document | [17](17-extensibility.md) | | 2/12 | ○ | Chapter (c) of DOC-4 |
+| SEC-2 | Security document | [16](16-security.md) | | 2/12 | 👀 | Chapter (b) of DOC-4 |
+| CCY-1 | Concurrency / contention document | [15](15-concurrency.md) | DSO-2 | 2/12 | 👀 | Chapter (a) of DOC-4 |
+| EXT-1 | Extensibility document | [17](17-extensibility.md) | | 2/12 | 👀 | Chapter (c) of DOC-4 |
 
 ## DOC, REL: final deliverables ([18](18-deliverables-and-timeline.md))
 
@@ -145,7 +145,7 @@ change them only through the schema-change process or in the coordinating sessio
 | DOC-1 | User manual (with every component's section) | | 2/12 | ○ | docx: the user manual |
 | DOC-2 | New ER diagram (Chen, ERD+) + relational diagram matching the final `create.sql` | REL-1 | 2/12 | ○ | Decision B13 |
 | DOC-3 | Data dictionary (every table and column explained) | | 2/12 | ○ | |
-| DOC-4 | **One** separate document with (a) contention, (b) security, (c) extension (+ indexes, before/after, 10,000-request test) | SEC-2, CCY-1, EXT-1 | 2/12 | ○ | docx: the separate document |
+| DOC-4 | **One** separate document with (a) contention, (b) security, (c) extension (+ indexes, before/after, 10,000-request test) | SEC-2, CCY-1, EXT-1 | 2/12 | 👀 | docx: the separate document |
 | REL-2 | Clean-database rehearsal: drop → create → procs → indexes → data | REL-1 | 3/12 | ○ | |
 | REL-3 | 30-minute demo rehearsal (everyone presents and explains an area they did not build) | REL-2 | 3/12 | ○ | |
 | REL-4 | `12.zip` + printed `docx/` + Moodle upload before 11:00 | REL-3 | 4/12 | ○ | |
