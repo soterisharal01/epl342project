@@ -49,6 +49,8 @@ def main():
         # Ασφάλεια: αν κατά λάθος είσαι στη master (ή άλλη βάση συστήματος), δεν τρέχει τίποτα.
         o.write("IF DB_NAME() IN ('master', 'tempdb', 'model', 'msdb')\n"
                 "BEGIN RAISERROR(N'Λάθος βάση: διάλεξε τη δική σου βάση (το username σου στο Τμήμα) πάνω αριστερά στο SSMS.', 16, 1); SET NOEXEC ON; END;\nGO\n")
+        # Query Store fills the 27 MB student-database cap with plans from repeated test runs: keep it off.
+        o.write("IF EXISTS (SELECT 1 FROM sys.database_query_store_options WHERE actual_state_desc <> 'OFF') ALTER DATABASE CURRENT SET QUERY_STORE = OFF;\nGO\n")
         for f in files:
             rel = os.path.relpath(f, ROOT).replace(os.sep, '/')
             o.write(f"\nPRINT N'=== {rel} ===';\nGO\n")

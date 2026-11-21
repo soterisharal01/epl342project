@@ -24,16 +24,16 @@ Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [
 | 02 | [Environment setup](docs/02-environment-setup.md) | CS VPN, SSMS, SQL Server, hosting, local tools | Written |
 | 03 | [Workflow](docs/03-workflow.md) | `start` / `stop`, task life cycle, handoff notes, reviews | Written |
 | 04 | [Database schema](docs/04-database-schema.md) | 56 tables, triggers, the professor's 4 changes | Partly |
-| 05 | [Users, roles and login](docs/05-users-roles-login.md) | One username per role, hashing, sessions, admin and catalogs | Plan + existing |
-| 06 | [Consumers](docs/06-consumers.md) | Premises, bank accounts, readings, requests, invoices (III.1) | Plan + existing |
-| 07 | [GDPR and data retention](docs/07-gdpr-and-retention.md) | Right to be forgotten, 3-year / 1-month retention | Plan |
-| 08 | [Technicians and meters](docs/08-technicians-and-meters.md) | Registration, approval, tasks, installation, commands (III.2) | Plan |
-| 09 | [DSO: ingestion and VEE](docs/09-dso-ingestion-vee.md) | Packets, validation, estimation, editing, aggregates (III.3) | Plan |
-| 10 | [TSO: transformer tree](docs/10-tso-transformers.md) | Tree, geofences, current state, load shedding (III.4) | Plan |
-| 11 | [Suppliers and aggregators](docs/11-suppliers-aggregators.md) | Customer aggregates, Day-Ahead, Intraday (III.5) | Plan |
+| 05 | [Users, roles and login](docs/05-users-roles-login.md) | One username per role, hashing, sessions, admin and catalogs | Written |
+| 06 | [Consumers](docs/06-consumers.md) | Premises, bank accounts, readings, requests, invoices (III.1) | Written |
+| 07 | [GDPR and data retention](docs/07-gdpr-and-retention.md) | Right to be forgotten, 3-year / 1-month retention | Written |
+| 08 | [Technicians and meters](docs/08-technicians-and-meters.md) | Registration, approval, tasks, installation, commands (III.2) | Partly (TEC-6..10 in review) |
+| 09 | [DSO: ingestion and VEE](docs/09-dso-ingestion-vee.md) | Packets, validation, estimation, editing, aggregates (III.3) | Written |
+| 10 | [TSO: transformer tree](docs/10-tso-transformers.md) | Tree, geofences, current state, load shedding (III.4) | Written |
+| 11 | [Suppliers and aggregators](docs/11-suppliers-aggregators.md) | Customer aggregates, Day-Ahead, Intraday (III.5) | Written |
 | 12 | [PHP web app](docs/12-php-web-app.md) | Skeleton, automatic menu, calling procedures, deploying | Written |
-| 13 | [Data sets](docs/13-data-sets.md) | Base demo data, large data, `.dat` and import | Partly |
-| 14 | [Indexes and performance](docs/14-indexes-and-performance.md) | 3 indexes, before/after, 10,000-request test | Plan |
+| 13 | [Data sets](docs/13-data-sets.md) | Base demo data, large data, `.dat` and import | Partly (large set in review) |
+| 14 | [Indexes and performance](docs/14-indexes-and-performance.md) | 3 indexes, before/after, 10,000-request test | Partly (numbers to measure) |
 | 15 | [Concurrency](docs/15-concurrency.md) | Transactions, isolation, VEE during ingestion | Written |
 | 16 | [Security](docs/16-security.md) | Access control, SQL injection, XSS, CSRF, secrets | Written |
 | 17 | [Extensibility](docs/17-extensibility.md) | New types, codes and rules as rows, not schema changes | Written |
