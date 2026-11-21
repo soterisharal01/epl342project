@@ -4,7 +4,7 @@ Lock: free
 
 Branch: task/PRF-4-measurements
 Doc: docs/14-indexes-and-performance.md
-Status: finished (in review)
+Status: finished (merged)
 
 ## Next step
 For the printed report: rerun `sql/perf/before_after.sql` in SSMS with Ctrl+M on the demo database (after REL-1) and take
