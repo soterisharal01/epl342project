@@ -40,6 +40,7 @@ Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [
 | 18 | [Deliverables and timeline](docs/18-deliverables-and-timeline.md) | The zip, documents, day plan, demo script, checklist | Written |
 | 19 | [Conventions and decisions](docs/19-conventions.md) | Areas, code rules, table ownership, agreements, decisions B1–B13 | Written |
 | 20 | [Data dictionary](docs/20-data-dictionary.md) | Every table and column explained | Written |
+| 22 | [ER and relational diagrams](docs/22-er-diagram.md) | Final Chen ER and relational diagram, generated from create.sql | Written |
 | — | [Session note](docs/next-session.md) | Where the last session stopped, what to do next | Live |
 | — | [Task board](docs/tasks.md) | Every task, its status and dependencies | Live |
 | — | [Handoff notes](docs/handoff/) | One note per in-progress task (on its branch) | Live |
