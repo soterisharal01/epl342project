@@ -54,7 +54,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 | TEC-2 | Technician documents | III.2.1 | | 24/11 | ○ | |
 | TEC-3 | Availability (time + area) | III.2.1 | | 25/11 | ○ | |
 | TEC-4 | ★ Operator: approve/reject technician, review documents | III.2.1 | TEC-1, TEC-2 | 25/11 | ○ | |
-| TEC-5 | ★ Field tasks: create (also from a consumer request), assign, accept, notes, complete | III.2.2 | | 26/11 | ○ | Agreement X1 |
+| TEC-5 | ★ Field tasks: create (also from a consumer request), assign, accept, notes, complete | III.2.2 | | 26/11 | 👀 | Agreement X1 |
 | TEC-6 | ★ Meter install/replace + equipment documents | III.2.3 | TEC-5 | 26/11 | ○ | |
 | TEC-7 | ★ Operator: confirm meter → Active | III.2.3 | TEC-6 | 26/11 | ○ | |
 | TEC-8 | Remote commands + attempts until ACK | III.2.4 | | 27/11 | ○ | |
