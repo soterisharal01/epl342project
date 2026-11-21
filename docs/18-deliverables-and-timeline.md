@@ -10,10 +10,10 @@
 
 | Folder in `12.zip` | Content | From the repo |
 |---|---|---|
-| `sources/` | All PHP, HTML, CSS, JS | `sources/` (without `config.php`) |
-| `sql/` | Every `.sql`: `create.sql`, `drop.sql`, procedures, `indexes.sql`, `select.sql` and so on | `sql/` |
+| `sources/` | All PHP, HTML, CSS, JS, **and the libraries it needs** (e.g. Leaflet copied into `sources/js/`, not only from a CDN), so the zip works on its own | `sources/` (without `config.php`) |
+| `sql/` | Every `.sql`, with the **recognisable names** the spec gives as examples: `create.sql`, `drop.sql`, `import.sql` (loads the large set, DAT-4), `select.sql` (the main queries of every role and the analytics, DAT-5), `indexes.sql`; plus our `procs_*.sql` and `tests/` | `sql/` |
 | `data/` | `.dat` files that can be imported: a small set and a large set with thousands of rows | `data/` |
-| `docx/` | (a) **User manual:** how to use it, design choices, extra features, difficulties, **final ER**, data dictionary, limitations and improvements. (b) **Separate document:** contention points, security, future extension. Also printed for the lab. | Written as Markdown in `docs/`, converted at the end |
+| `docx/` | (a) **User manual:** how to use it, design choices, extra features, difficulties, **final ER**, data dictionary, limitations and improvements. (b) **One separate document** with three chapters: (a) contention points and how we handle them, (b) security, (c) future extension, including the 3 indexes, the before/after case and the 10,000-request test (DOC-4). Only `docx/` is handed in printed. | Written as Markdown in `docs/`, converted at the end |
 
 **Exam:** on a date announced on Moodle, **every member** presents design and implementation. An absent member gets zero.
 Graded: correct ER and schema, correct behaviour, performance and concurrency, extent of implementation, originality.
@@ -48,21 +48,31 @@ Calls: 21/11 (30 min, plan), 26/11 (15 min, status), 30/11 (integration), 3/12 (
 
 ## Open questions for the professor (one email)
 
-1. May we run `ALTER DATABASE … SET READ_COMMITTED_SNAPSHOT ON` on our department database, or use `SNAPSHOT` isolation?
-2. Is an `import.sql` of INSERTs enough for ".dat files that can be imported", given that `BULK INSERT` cannot see our files?
-3. Intraday provisional aggregates: enough to compute them on demand from raw, or must they be stored?
-4. Confirm that a day is enough as the smallest stored period for transformer aggregates (month and quarter come from it).
+Until he answers, the default after each question applies, so nobody waits.
+
+1. May we run `ALTER DATABASE … SET READ_COMMITTED_SNAPSHOT ON` on our department database, or use `SNAPSHOT` isolation? *Default: no; `READ COMMITTED` with hints (`UPDLOCK`, `READPAST`) and `sp_getapplock`.*
+2. Is an `import.sql` of INSERTs enough for ".dat files that can be imported", given that `BULK INSERT` cannot see our files? *Default: yes (B8).*
+3. Intraday provisional aggregates: enough to compute them on demand from raw, or must they be stored? *Default: on demand (MKT-3).*
+4. Confirm that a day is enough as the smallest stored period for transformer aggregates (month and quarter come from it). *Default: yes.*
+5. **Technical losses (II.C):** we have no meter at the transformer input. Is an estimate enough (fixed no-load loss + a share of the energy through the transformer), or should we model an input meter? *Default: estimate with parameters (DSO-5).*
+6. **GDPR and retention:** are the "right to be forgotten" and the 1-month retention **one** request, and does the account stay with anonymised data afterwards? *Default: one request; the account stays anonymised; invoices, payments and aggregates stay (B17).*
+7. **What retention deletes:** are the "raw 15-minute readings" deleted after 3 years only the raw rows, or also the consumer's validated 15-minute rows? *Default: both; only aggregates stay (B17).*
+8. **Current state (III.4.2):** for history you said aggregates on leaves only. For the current-state intermediate table we keep a row for the whole hierarchy (as the spec says, with ancestor updates). Is that right? *Default: yes (B16).*
+9. **Exam:** when is the exam date, and when is the detailed grading guide (section VI) published?
 
 ## Final checklist (3/12)
 
-- [ ] On a **clean** database, with no errors: `drop.sql` → `create.sql` → `procs_*.sql` → `indexes.sql` → `data/import.sql`.
+- [ ] On a **clean** database, with no errors: `drop.sql` → `create.sql` → `procs_*.sql` → `indexes.sql` → `data/small/*.sql` → `sql/import.sql`.
+- [ ] `sql/` has the spec's file names: `create.sql`, `drop.sql`, `import.sql`, `select.sql`, `indexes.sql`. `data/` has the `.dat` files.
+- [ ] Every line of the **Spec checklists** (docs 05–11 and section 8 of [19-conventions.md](19-conventions.md)) is ticked.
+- [ ] `sources/` works on its own from the zip (libraries such as Leaflet inside), without `config.php`.
 - [ ] Every role has a demo user and all its ★ features work from the UI.
 - [ ] Raw → VEE → validated → aggregates visible in the DSO UI, with a spike and a gap estimate.
 - [ ] Transformer tree with totals per level, and load shedding, visible in the TSO UI.
 - [ ] GDPR runs end to end and invoices are kept.
 - [ ] Thousands of rows in `data/`, 3 indexes in `indexes.sql`, one before/after case with a screenshot.
 - [ ] 10,000-request results (95% < 2 s) in the performance/concurrency document.
-- [ ] `docx/`: manual (final ER, data dictionary, assumptions) and the separate document (contention, security, extension).
+- [ ] `docx/`: manual (instructions, design choices, extra features, difficulties, final ER, data dictionary, limitations/improvements) and **one** separate document with (a) contention, (b) security, (c) extension (DOC-4).
 - [ ] No password in the zip or the repo.
 - [ ] `12.zip` with `sources/ sql/ data/ docx/` on Moodle; `docx/` printed.
 - [ ] Every member can explain every area, for example a table's `create.sql`, VEE and the GDPR flow.

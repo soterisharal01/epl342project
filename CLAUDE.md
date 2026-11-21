@@ -35,12 +35,20 @@ Do all of this before writing any code. Do not ask the human what to do unless s
    tables and columns in [sql/create.sql](sql/create.sql) (never from memory), and the existing code it touches.
 7. **Tell the human in 3–6 lines:** which task, where it stood, what you will do now. Then do it.
 
-## 2. Claiming a new task
+## 2. Claiming a new task (so two members never take the same one)
 
-1. `git checkout -b task/<ID>-<short-slug> main`, for example `task/DSO-1-ingest`.
-2. Create `docs/handoff/<ID>.md` from [docs/handoff/TEMPLATE.md](docs/handoff/TEMPLATE.md) and set `Lock: active since <UTC time>`.
-3. Commit (`<ID>: claim`) and **push at once** (`git push -u origin <branch>`). The pushed branch *is* the claim;
-   other sessions see it in step 1.3.
+Every taken task is marked on `main` in [docs/claims.md](docs/claims.md), the only file anyone may push straight to `main`.
+
+1. **Check:** `git pull` on `main`. The task must not be in `docs/claims.md`, must have no `origin/task/<ID>-*` branch, and **no other task of its lane** may be in `docs/claims.md` (lanes: [docs/tasks.md](docs/tasks.md), section Lanes).
+2. **Mark it:** add one row to `docs/claims.md` (`| <ID> | task/<ID>-<slug> | <UTC time> | <one-line plan> |`), commit
+   `claim: <ID>` on `main`, `git push`. If the push is rejected, `git pull --rebase` and go back to step 1.
+3. **Retest after a minute:** wait 60 seconds (`Start-Sleep 60` / `sleep 60`), `git fetch`, and read
+   `git show origin/main:docs/claims.md`. If the task appears **more than once**, the **earliest row in the file wins**.
+   If yours is not the earliest, delete your row (commit `unclaim: <ID>`, push) and go back to section 1 step 5 for another task.
+4. **Branch:** `git checkout -b task/<ID>-<slug> main`. Create `docs/handoff/<ID>.md` from
+   [docs/handoff/TEMPLATE.md](docs/handoff/TEMPLATE.md) with `Lock: active since <UTC time>`. Commit `<ID>: claim`, push at once.
+5. **Release:** the task's PR deletes its row from `docs/claims.md`, so the row disappears when the PR is merged. A task given
+   up without a PR: delete the row on `main` yourself (`unclaim: <ID>`).
 
 ## 3. While working
 
@@ -54,6 +62,8 @@ Do all of this before writing any code. Do not ask the human what to do unless s
 - Every new procedure gets tests in `sql/tests/test_<area>.sql` that print `OK …` or `FAIL …`: one call that
   succeeds and one that must be refused.
 - Update the task's component doc with what now exists (procedures, pages, how to use it). Docs are part of the task.
+- Before the PR: go through the **Spec checklist** of the task's component doc and section 8 of
+  [docs/19-conventions.md](docs/19-conventions.md). Copy the lines the task covers into the PR description with ✓.
 
 ## 4. Testing
 
@@ -109,7 +119,7 @@ Do everything in section 5, then make **every Markdown file tell the truth** abo
 
 ## 8. Hard rules
 
-- **Never** push to `main`, force-push, or merge, unless the human explicitly asks for that specific PR.
+- **Never** push to `main` (one exception: claim/unclaim rows in `docs/claims.md`, section 2), force-push, or merge, unless the human explicitly asks for that specific PR.
   A PR is merged by a member who did not author it, after approving it.
 - **Never** ask for, type or commit passwords. The database password lives only in `sources/config.php`
   (git-ignored), in SSMS, or in the encrypted `%USERPROFILE%\.mdms_sql.xml`, always entered by the human.
@@ -119,4 +129,5 @@ Do everything in section 5, then make **every Markdown file tell the truth** abo
 - **Never** run anything destructive (`drop.sql`, `DELETE`) on a department database without an explicit "yes".
   Test databases are the human's own.
 - Do not claim in documents that something was produced by a tool when it was written by an AI, or the reverse.
-- The assignment PDF is not in the repo because the repo is public. Ask the human for it if needed.
+- The assignment PDF is not in the repo because the repo is public. The **Spec checklists** in docs 05–11 and
+  section 8 of the conventions carry it sentence by sentence. Ask the human for the PDF if something is missing or contradictory.
