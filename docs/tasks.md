@@ -74,7 +74,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| DSO-1 | ★ Ingest JSON packet → `TELEMETRY_PACKET` + `RAW_READING`, failures as events | III.3.1 | | 25/11 | ○ | Agreements X2, X4 |
+| DSO-1 | ★ Ingest JSON packet → `TELEMETRY_PACKET` + `RAW_READING`, failures as events | III.3.1 | | 25/11 | 👀 | Agreements X2, X4 |
 | DSO-2 | ★ VEE: validation (range, spike, gaps), estimation (interpolation), write `VALIDATED_READING` | III.3.2 | | 26/11 | ○ | Base data has Pending raw rows to work on |
 | DSO-3 | Suspect readings + manual edit | III.3.2 | DSO-2 | 26/11 | ○ | |
 | DSO-4 | ★ Aggregates: meter (Day/Month/Year) + leaf transformer | III.3.2 | DSO-2 | 27/11 | ○ | |
