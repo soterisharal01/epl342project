@@ -111,7 +111,7 @@ change them only through the schema-change process or in the coordinating sessio
 | TSO-3 | ★ Aggregates at any level (month → quarter) | Professor | | 27/11 | 👀 | |
 | TSO-4 | ★ Load shedding on every meter below a transformer | II.D | | 27/11 | 👀 | Agreement X3 |
 | TSO-5 | PHP pages: TSO | IV | TSO-1, TSO-2, TSO-3, TSO-4 | 29/11 | ○ | |
-| TSO-6 | Leaflet map (bonus +10%) | Bonus | TSO-1 | 2/12 | ○ | Only if time allows |
+| TSO-6 | Leaflet map (bonus +10%) | Bonus | TSO-1 | 2/12 | 👀 | Only if time allows |
 
 ## DAT: large data ([13](13-data-sets.md))
 
