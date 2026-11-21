@@ -44,8 +44,8 @@ change them only through the schema-change process or in the coordinating sessio
 |---|---|---|---|---|---|---|
 | ADM-1 | ★ Consumer self-registration (procedure + page) | III.1.1 | | 24/11 | ✓ | `sp_auth_register_consumer`, `register_consumer.php` (PR #4) |
 | ADM-2 | Admin: create Operator/DSO/TSO/Supplier/Aggregator users, suspend/activate, view the audit log | General | | 25/11 | 👀 | |
-| ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | ○ | |
-| ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | ○ | |
+| ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | 👀 | |
+| ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | 👀 | |
 
 ## CON: consumers ([06](06-consumers.md))
 
@@ -64,7 +64,7 @@ change them only through the schema-change process or in the coordinating sessio
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
 | GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | 👀 | |
-| GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | ○ | Agreement X5 |
+| GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | 👀 | Agreement X5 |
 | GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | ○ | |
 
 ## TEC: technicians and meters ([08](08-technicians-and-meters.md))
@@ -89,7 +89,7 @@ change them only through the schema-change process or in the coordinating sessio
 | MKT-1 | ★ Supplier aggregates (Day-Ahead) | III.5.1–5.2 | | 27/11 | 👀 | Agreement X6 |
 | MKT-2 | Aggregator portfolio + aggregates | III.5.1 | | 27/11 | 👀 | |
 | MKT-3 | ★ Intraday provisional (from raw) | III.5.2 | | 27/11 | 👀 | |
-| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | ○ | |
+| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | 👀 | |
 
 ## DSO: ingestion and VEE ([09](09-dso-ingestion-vee.md))
 

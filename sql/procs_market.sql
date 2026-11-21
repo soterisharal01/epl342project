@@ -319,3 +319,47 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- =====================================================================
+-- MKT-4 Λίστες για τη σελίδα χαρτοφυλακίων (μόνο ανάγνωση, λάθη 52600-52699 / 52510-52512)
+-- =====================================================================
+
+-- Τα χαρτοφυλάκια της εταιρείας του Aggregator (PortfolioID, Name, ActivePremises).
+CREATE OR ALTER PROCEDURE sp_aggregator_list_portfolios
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_market_assert @UserID;
+    DECLARE @agg INT = (SELECT AggregatorID FROM USER_ACCOUNT WHERE UserID = @UserID);
+    IF @agg IS NULL
+        THROW 52510, N'Δεν επιτρέπεται: μόνο για Aggregator.', 1;
+    SELECT po.PortfolioID, po.Name,
+           (SELECT COUNT(*) FROM INCLUDES i WHERE i.PortfolioID = po.PortfolioID AND i.EndDate IS NULL) AS ActivePremises
+    FROM PORTFOLIO po
+    WHERE po.AggregatorID = @agg
+    ORDER BY po.Name, po.PortfolioID;
+END;
+GO
+
+-- Τα υποστατικά ενός δικού του χαρτοφυλακίου (και τα παλιά, με EndDate).
+-- Στήλες: PremiseID, Address, PostalCode, UsageType, StartDate, EndDate, IsActive.
+CREATE OR ALTER PROCEDURE sp_aggregator_list_portfolio_premises
+    @UserID INT, @PortfolioID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_market_assert @UserID;
+    DECLARE @agg INT = (SELECT AggregatorID FROM USER_ACCOUNT WHERE UserID = @UserID);
+    IF @agg IS NULL
+        THROW 52510, N'Δεν επιτρέπεται: μόνο για Aggregator.', 1;
+    IF NOT EXISTS (SELECT 1 FROM PORTFOLIO WHERE PortfolioID = @PortfolioID AND AggregatorID = @agg)
+        THROW 52512, N'Το χαρτοφυλάκιο δεν είναι δικό σας.', 1;
+    SELECT p.PremiseID, p.Address, p.PostalCode, p.UsageType, i.StartDate, i.EndDate,
+           CAST(CASE WHEN i.EndDate IS NULL THEN 1 ELSE 0 END AS BIT) AS IsActive
+    FROM INCLUDES i
+    JOIN PREMISE p ON p.PremiseID = i.PremiseID
+    WHERE i.PortfolioID = @PortfolioID
+    ORDER BY CASE WHEN i.EndDate IS NULL THEN 0 ELSE 1 END, p.PremiseID;
+END;
+GO
