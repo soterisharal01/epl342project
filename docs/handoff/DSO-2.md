@@ -1,6 +1,6 @@
 # Handoff: DSO-2 + DSO-3 VEE
 
-Lock: active since 2026-11-21 16:49 UTC
+Lock: free
 <!-- "active since 2026-11-22 14:00 UTC" while a session is working; "free" when it stops. -->
 
 Branch: task/DSO-2-vee

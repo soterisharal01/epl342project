@@ -12,7 +12,6 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 | CON-3 | task/CON-3-thresholds | 2026-11-21 | Thresholds, channels, quality events + pages (stopped early) |
 | TEC-2 | task/TEC-2-docs-approval | 2026-11-21 | TEC-2/3/4 documents, availability, approval (stopped early) |
 | MKT-4 | task/MKT-4-pages | 2026-11-21 | Supplier/aggregator pages (stopped early) |
-| DSO-2 | task/DSO-2-vee | 2026-11-21 | VEE + suspect/manual edit (stopped early, restart from its handoff) |
 | DAT-1 | task/DAT-1-large-data | 2026-11-21 | Large data set DAT-1..4 (stopped early) |
 | TEC-6 | task/TEC-6-install | 2026-11-21 17:20 | TEC-6/7 install + confirm, TEC-8 commands, TEC-9 anti-tamper, TEC-10 pages |
 | TSO-6 | task/TSO-6-map | 2026-11-21 17:20 | Leaflet map (bonus +10%) |
