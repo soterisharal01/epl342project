@@ -54,8 +54,12 @@ Do all of this before writing any code. Do not ask the human what to do unless s
 ## 4. Testing
 
 - If Docker is available: `bash sql/tools/test_local.sh` must end with `ALL OK`.
-- If not (for example on Windows without Docker): run `python sql/tools/build_all.py --tests`, then ask the human
-  to run `sql/build/ALL.sql` in SSMS on **their own** database and paste the `OK`/`FAIL` lines.
+- Windows with the CS VPN on: if `%USERPROFILE%\.mdms_sql.xml` exists (the human ran `sql/tools/save_credential.ps1`),
+  run SQL on the human's **own** database from the terminal:
+  `python sql/tools/build_all.py --tests` then
+  `powershell -ExecutionPolicy Bypass -File sql/tools/run_sql.ps1 -File sql/build/ALL.sql`.
+  `-AllowDestructive` (needed for `drop.sql`) only after the human says yes. Never print or pass the password.
+- Otherwise: build `sql/build/ALL.sql` and ask the human to run it in SSMS on **their own** database and paste the `OK`/`FAIL` lines.
 - PHP: `php -l <file>` where PHP exists; otherwise the human checks the page on their department web space.
 
 ## 5. When the human types `stop` (or the task is done, or the session is ending)
