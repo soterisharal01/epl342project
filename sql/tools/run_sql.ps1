@@ -51,6 +51,17 @@ $batches = [regex]::Split($text, '(?im)^\s*GO\s*$') | Where-Object { $_.Trim() -
 $failed = $false
 try {
     $cn.Open()
+    # One database, several sessions/agents: a full script run (drop + rebuild + tests) holds an exclusive
+    # session lock, so runs queue up instead of wiping each other's objects halfway. Released on disconnect.
+    if ($File -or $AllowDestructive) {
+        $lk = $cn.CreateCommand()
+        $lk.CommandTimeout = 0
+        $lk.CommandText = "DECLARE @r INT; EXEC @r = sp_getapplock @Resource = N'mdms_run_sql', @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = 1800000; SELECT @r;"
+        Write-Host 'Waiting for the database lock (other runs finish first)...'
+        $r = [int]$lk.ExecuteScalar()
+        if ($r -lt 0) { Write-Host "Could not get the database lock (code $r)."; exit 1 }
+        Write-Host 'Database lock acquired.'
+    }
     $setup = $cn.CreateCommand()
     $setup.CommandText = 'SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON;'
     [void]$setup.ExecuteNonQuery()

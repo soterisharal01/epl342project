@@ -22,6 +22,8 @@ Every task, procedure file, page folder, error number and test-data ID belongs t
 | TSO (transformer tree) | [10](10-tso-transformers.md) | `sql/procs_tso.sql` | `sql/tests/test_tso.sql` | `sources/tso/` | 53000–53999 | 3000–3999 |
 
 - `THROW` numbers inside a range: take the next free number in that file. Check with a search before adding one.
+  Areas that share a range use fixed sub-ranges, so parallel work never collides:
+  CON 51000–51399, GDP 51400–51499, ADM 51500–51999 · TEC 52000–52499, MKT 52500–52999 · DSO 53000–53499, TSO 53500–53999.
 - Extra small test data goes in `data/small/10_consumer.sql` (ADM, CON, GDP), `20_field_market.sql` (TEC, MKT) or
   `30_grid.sql` (DSO, TSO). Each builds **only** on `00_base.sql`, never on another file, and inserts its own
   rows with `SET IDENTITY_INSERT` and IDs in its range.
@@ -157,4 +159,5 @@ One username has exactly one role (the professor's rule). A person with two role
 |---|---|
 | 21/11 | First version of the Phase B plan, rules and decisions. |
 | 21/11 | Restructure: no personal ownership, areas instead of people, task IDs by area, start/stop protocol in `CLAUDE.md`, agreement X3 fixed to `'Load shed'`. |
+| 21/11 | `THROW` sub-ranges per area; `run_sql.ps1` serialises full runs with a database lock (parallel sessions). |
 | 21/11 | `finish` command and `docs/next-session.md`. Rule: no `dbo.` and no scalar functions (department server uses per-user schemas). |

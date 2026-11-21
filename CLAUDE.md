@@ -96,7 +96,18 @@ Do everything in section 5, then make **every Markdown file tell the truth** abo
 8. Commit (`<ID>: finish session`) and push. The session note travels with the branch; section 1 step 2 finds the newest one.
 9. Tell the human in a few lines what was updated and what the next session will do first.
 
-## 7. Hard rules
+## 7. Several sessions or agents at once
+
+- **Commit and push after every step** (a procedure written, its tests passing, a doc updated), not only at the end.
+- One task = one branch = one git worktree. Never work in another task's branch.
+- In a task branch, edit only: the area's procedure/test/page files, the area's component doc, `docs/handoff/<ID>.md`,
+  and that task's own row in `docs/tasks.md`. **Do not edit** `README.md`, `docs/01-project-overview.md` or
+  `docs/next-session.md` in a task branch: the coordinating session updates them once, after the tasks land, to avoid conflicts.
+- Database runs are serialised by `run_sql.ps1` (exclusive lock). Always run the **full** build + tests in one call
+  (`-File sql/build/ALL.sql`), never a partial script, because another run may have rebuilt the database in between.
+- `THROW` numbers: the area's sub-range ([docs/19-conventions.md](docs/19-conventions.md), section 1).
+
+## 8. Hard rules
 
 - **Never** push to `main`, force-push, or merge, unless the human explicitly asks for that specific PR.
   A PR is merged by a member who did not author it, after approving it.
