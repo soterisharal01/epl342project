@@ -121,7 +121,7 @@ change them only through the schema-change process or in the coordinating sessio
 | DAT-2 | Large data: technicians, tasks, documents, portfolios | IV | | 30/11 | 👀 | |
 | DAT-3 | Large data: readings (200k–500k), packets | IV | | 30/11 | 👀 | |
 | DAT-4 | `.dat` files + `sql/import.sql` load cleanly on an empty database | V.A | DAT-1, DAT-2, DAT-3 | 30/11 | 👀 | |
-| DAT-5 | `sql/select.sql`: one `EXEC` for every main function of every role, plus the analytics (aggregates per tree level, losses, events), for the examiner to run in SSMS | V.A | all ★ tasks | 2/12 | ○ | Take the `EXEC` calls from the tests |
+| DAT-5 | `sql/select.sql`: one `EXEC` for every main function of every role, plus the analytics (aggregates per tree level, losses, events), for the examiner to run in SSMS | V.A | all ★ tasks | 2/12 | 👀 | `sql/select.sql` part 2, E01–E37 (read procedures only); runs with 0 errors on base data |
 
 ## PRF, SEC, CCY, EXT: quality and documents
 
