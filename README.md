@@ -7,9 +7,14 @@ due **Friday 4/12/2026, 12:00**.
 
 ## How we work
 
-Nobody owns a part. Open Claude Code in this repo and type **`start`**: the AI reads these docs, the task board, the handoff notes
-of unfinished tasks and the recent commits, then resumes where the team stopped or claims the next free task. Type **`stop`** to
-save a handoff note and push. Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [CLAUDE.md](CLAUDE.md).
+Nobody owns a part. Open Claude Code in this repo and type:
+
+- **`start`**: the AI reads the last [session note](docs/next-session.md), these docs, the task board, the handoff notes of
+  unfinished tasks and the recent commits, then resumes where the team stopped or claims the next free task.
+- **`stop`**: quick save. It writes the task's handoff note and pushes.
+- **`finish`**: end of session. It does what `stop` does, updates every Markdown file to match the repo, and writes the session note for the next `start`.
+
+Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [CLAUDE.md](CLAUDE.md).
 
 ## Menu
 
@@ -34,6 +39,7 @@ save a handoff note and push. Details: [docs/03-workflow.md](docs/03-workflow.md
 | 17 | [Extensibility](docs/17-extensibility.md) | New types, codes and rules as rows, not schema changes | Plan |
 | 18 | [Deliverables and timeline](docs/18-deliverables-and-timeline.md) | The zip, documents, day plan, demo script, checklist | Written |
 | 19 | [Conventions and decisions](docs/19-conventions.md) | Areas, code rules, table ownership, agreements, decisions B1–B13 | Written |
+| — | [Session note](docs/next-session.md) | Where the last session stopped, what to do next | Live |
 | — | [Task board](docs/tasks.md) | Every task, its status and dependencies | Live |
 | — | [Handoff notes](docs/handoff/) | One note per in-progress task (on its branch) | Live |
 | — | [Phase A archive](docs/phase-a/README.md) | ER model tooling, design decisions D1–D32, study guide | Archive |

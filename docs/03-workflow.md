@@ -13,6 +13,7 @@
 | What is done? | `✓` rows in [tasks.md](tasks.md) and the git history of `main` |
 | What is in progress, and how far along? | Remote branches `task/<ID>-…`, each with its note `docs/handoff/<ID>.md` |
 | What should happen next on a task? | The **Next step** line in that task's handoff note |
+| Where did the last session stop, and what comes next overall? | [next-session.md](next-session.md) (the newest copy on any branch) |
 | How does a component work? | Its doc in this folder (see the [menu](../README.md)) |
 | How must code be written? | [19-conventions.md](19-conventions.md) |
 
@@ -22,8 +23,11 @@
 2. Open Claude Code in your clone of the repo and type **`start`**.
 3. The AI syncs, reads the docs and history, and tells you which task it is resuming or claiming. Steer it if you want a different task ("start DSO-2").
 4. Run in SSMS, on your own database, whatever it asks you to test. Paste back the result.
-5. When you are done for now, type **`stop`**. The AI writes the handoff note and pushes, so anyone can continue.
-6. When it reports a finished task, open the PR from the link it gives you and tell the group.
+5. Need to pause briefly? Type **`stop`**: the AI writes the task's handoff note and pushes, so anyone can continue.
+6. Ending the session? Type **`finish`**: the AI does everything `stop` does, then brings **every Markdown file** up to date
+   (component docs, task board, README status, overview) and writes [next-session.md](next-session.md), the note the next
+   `start` reads first.
+7. When it reports a finished task, it opens the PR (or gives you the link). Tell the group.
 
 The exact steps the AI follows are in [CLAUDE.md](../CLAUDE.md).
 

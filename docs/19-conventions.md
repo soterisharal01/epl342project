@@ -40,6 +40,10 @@ Every task, procedure file, page folder, error number and test-data ID belongs t
 - Errors: `THROW <number>, N'<Greek message the user will read>', 1;`
 - Files start every object with `CREATE OR ALTER`, so a file can be re-run without dropping anything.
 - Before writing, look up exact column names and CHECK values in `sql/create.sql`. Never invent columns.
+- **No `dbo.` prefix.** On the department server every member's objects are created in their own default schema
+  (for example `apieri01`, `sharal01`), so `dbo.anything` is not found. Call procedures, tables and table-valued
+  functions unqualified. T-SQL cannot call a **scalar** function without a schema, so do not write scalar functions:
+  use an inline table-valued function (`EXISTS (SELECT 1 FROM fn_x(@a, @b))`) or an inline `EXISTS` check.
 
 Template (from `sql/procs_consumer.sql`):
 
@@ -153,3 +157,4 @@ One username has exactly one role (the professor's rule). A person with two role
 |---|---|
 | 21/11 | First version of the Phase B plan, rules and decisions. |
 | 21/11 | Restructure: no personal ownership, areas instead of people, task IDs by area, start/stop protocol in `CLAUDE.md`, agreement X3 fixed to `'Load shed'`. |
+| 21/11 | `finish` command and `docs/next-session.md`. Rule: no `dbo.` and no scalar functions (department server uses per-user schemas). |
