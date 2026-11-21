@@ -13,12 +13,12 @@
 ## Still open from the previous session (unchanged)
 | Task | Branch | State |
 |---|---|---|
-| TEC-6..10 meter install ★, confirm ★, commands, anti-tamper, pages | `task/TEC-6-install` | 3 FAIL in test "doc foreign meter"; its author fixes and merges. Its branch also conflicts with main in `docs/tasks.md` and `docs/claims.md` (simple: keep main's rows, mark TEC-6..10 👀). |
+| TEC-6..10 meter install ★, confirm ★, commands, anti-tamper, pages | `task/TEC-6-install` | **PR #36**: main merged, test bug fixed, 748 OK / 0 FAIL locally. Review and merge. |
 | DOC-1 user manual | `task/DOC-1-user-manual` | DRAFT only (PR #35). Task stays ○: finish after TEC-6 merges and the app is complete (screenshots, TEC sections, DOC-2 ER, final label check) |
 
 ## Next actions
 1. DOC-1 is a draft: merge PR #35 only as a draft; the task is finished at the end (REL stage).
-2. Fix and merge TEC-6; then update manual sections 3.4, 3.5, 4.5 with the real TEC pages.
+2. Merge TEC-6 (PR #36); then update manual sections 3.4, 3.5, 4.5 with the real TEC pages.
 3. PRF: run `sql/perf/before_after.sql` with the large set loaded, fill docs/14; PRF-4 10,000-request test.
 4. SEC-1 page-by-page injection/access check; DOC-1 screenshots from the local demo; DOC-2 final ER.
 5. REL-1 integration on `sharal01`; REL-2 clean rehearsal; REL-3 demo rehearsal; REL-4 zip.
