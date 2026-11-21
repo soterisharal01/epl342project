@@ -763,3 +763,265 @@ BEGIN
     ORDER BY u.RunID DESC;
 END;
 GO
+
+-- =====================================================================
+-- DSO-4: aggregates (ημερήσια/μηνιαία/ετήσια αθροίσματα). Λάθη 53300-53399.
+--   53300 sp_dso_build_aggregates: λείπει η ημέρα
+--   53301 sp_dso_build_aggregates_pending: λάθος περίοδος (@From >= @UpTo)
+--   53302 sp_dso_list_aggregates: άγνωστος @PeriodType
+--   53303 sp_dso_list_aggregates: δεν υπάρχει ο μετρητής
+--   53304 sp_dso_list_aggregates: λάθος περίοδος (@From > @To)
+--
+-- ΚΑΝΟΝΕΣ (απόφαση B2 και spec III.3.2):
+--  * Αθροίζονται ΜΟΝΟ οι σωρευτικοί κωδικοί 1.8.0 και 2.8.0 (η επικυρωμένη τιμή τους είναι
+--    ενέργεια 15λέπτου, άρα το άθροισμα ημέρας έχει νόημα. Η τάση/ένταση δεν αθροίζεται).
+--  * Τα aggregates είναι ΤΕΛΙΚΑ: μόνο INSERT, ποτέ UPDATE/DELETE/επανυπολογισμός. Γραμμή που
+--    υπάρχει ήδη (PK) παραλείπεται. Άρα δεύτερη κλήση για την ίδια ημέρα γράφει 0 γραμμές.
+--  * Ημέρα: METER_AGGREGATE για κάθε (μετρητής, κωδικός) με επικυρωμένες τιμές εκείνης της ημέρας
+--    (SumValue, ReadingCount, EstimatedCount = πόσες είναι Estimated).
+--    TRANSFORMER_AGGREGATE Day ΜΟΝΟ για φύλλα (τα πάνω επίπεδα υπολογίζονται με ερώτημα, B16):
+--    άθροισμα των μετρητών του φύλλου, MeterCount = πόσοι μετρητές είχαν τιμές.
+--  * Μήνας: όταν η ημέρα είναι η τελευταία του μήνα (ή @ForceMonth = 1), από τις γραμμές Day
+--    του μήνα (έως και την @Day). Έτος: στις 31/12 (ή @ForceYear = 1), από τις γραμμές Day του έτους.
+--    Το force είναι ρητή απόφαση του DSO: ό,τι λείπει μέχρι τότε δεν θα μπει ποτέ (τελικό).
+--  * Μια ημέρα που δεν έχει επικυρωμένες τιμές δεν γράφει τίποτα (ReadingCount >= 1).
+-- Δομή: ο πυρήνας sp_dso_build_aggregates_day δεν ανοίγει δικό του transaction (το ανοίγει
+-- ο καλών), ώστε και η pending να είναι ένα ατομικό σύνολο.
+-- =====================================================================
+CREATE OR ALTER PROCEDURE sp_dso_build_aggregates_day
+    @UserID INT, @Day DATE, @ForceMonth BIT, @ForceYear BIT,
+    @MeterRows INT OUTPUT, @TrRows INT OUTPUT, @MonthRows INT OUTPUT, @YearRows INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+
+    DECLARE @From DATETIME2(0) = CAST(@Day AS DATETIME2(0));
+    DECLARE @Next DATETIME2(0) = DATEADD(DAY, 1, @From);
+    DECLARE @MonthStart DATE = DATEFROMPARTS(YEAR(@Day), MONTH(@Day), 1);
+    DECLARE @YearStart DATE = DATEFROMPARTS(YEAR(@Day), 1, 1);
+    DECLARE @Cnt INT;
+    SELECT @MeterRows = 0, @TrRows = 0, @MonthRows = 0, @YearRows = 0;
+
+    -- Ημέρα, μετρητές
+    INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+    SELECT v.MeterID, v.ObisCode, 'Day', @Day, SUM(v.Value), COUNT(*), SUM(CASE WHEN v.Quality = 'Estimated' THEN 1 ELSE 0 END)
+      FROM VALIDATED_READING v
+     WHERE v.ObisCode IN ('1.8.0', '2.8.0') AND v.IntervalStart >= @From AND v.IntervalStart < @Next
+       AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
+                        WHERE a.MeterID = v.MeterID AND a.ObisCode = v.ObisCode AND a.PeriodType = 'Day' AND a.PeriodStart = @Day)
+     GROUP BY v.MeterID, v.ObisCode;
+    SET @MeterRows = @@ROWCOUNT;
+
+    -- Ημέρα, φύλλα μετασχηματιστών
+    INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodType, PeriodStart, SumValue, MeterCount)
+    SELECT m.TransformerID, v.ObisCode, 'Day', @Day, SUM(v.Value), COUNT(DISTINCT v.MeterID)
+      FROM VALIDATED_READING v
+      JOIN METER m ON m.MeterID = v.MeterID
+     WHERE v.ObisCode IN ('1.8.0', '2.8.0') AND v.IntervalStart >= @From AND v.IntervalStart < @Next
+       AND NOT EXISTS (SELECT 1 FROM TRANSFORMER c WHERE c.ParentTransformerID = m.TransformerID)
+       AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
+                        WHERE a.TransformerID = m.TransformerID AND a.ObisCode = v.ObisCode AND a.PeriodType = 'Day' AND a.PeriodStart = @Day)
+     GROUP BY m.TransformerID, v.ObisCode;
+    SET @TrRows = @@ROWCOUNT;
+
+    -- Μήνας
+    IF @ForceMonth = 1 OR @Day = EOMONTH(@Day)
+    BEGIN
+        INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+        SELECT d.MeterID, d.ObisCode, 'Month', @MonthStart, SUM(d.SumValue), SUM(d.ReadingCount), SUM(d.EstimatedCount)
+          FROM METER_AGGREGATE d
+         WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @MonthStart AND d.PeriodStart <= @Day
+           AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
+                            WHERE a.MeterID = d.MeterID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Month' AND a.PeriodStart = @MonthStart)
+         GROUP BY d.MeterID, d.ObisCode;
+        SET @Cnt = @@ROWCOUNT;
+        INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodType, PeriodStart, SumValue, MeterCount)
+        SELECT d.TransformerID, d.ObisCode, 'Month', @MonthStart, SUM(d.SumValue), MAX(d.MeterCount)
+          FROM TRANSFORMER_AGGREGATE d
+         WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @MonthStart AND d.PeriodStart <= @Day
+           AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
+                            WHERE a.TransformerID = d.TransformerID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Month' AND a.PeriodStart = @MonthStart)
+         GROUP BY d.TransformerID, d.ObisCode;
+        SET @MonthRows = @Cnt + @@ROWCOUNT;
+    END;
+
+    -- Έτος
+    IF @ForceYear = 1 OR (MONTH(@Day) = 12 AND DAY(@Day) = 31)
+    BEGIN
+        INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+        SELECT d.MeterID, d.ObisCode, 'Year', @YearStart, SUM(d.SumValue), SUM(d.ReadingCount), SUM(d.EstimatedCount)
+          FROM METER_AGGREGATE d
+         WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @YearStart AND d.PeriodStart <= @Day
+           AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
+                            WHERE a.MeterID = d.MeterID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Year' AND a.PeriodStart = @YearStart)
+         GROUP BY d.MeterID, d.ObisCode;
+        SET @Cnt = @@ROWCOUNT;
+        INSERT TRANSFORMER_AGGREGATE (TransformerID, ObisCode, PeriodType, PeriodStart, SumValue, MeterCount)
+        SELECT d.TransformerID, d.ObisCode, 'Year', @YearStart, SUM(d.SumValue), MAX(d.MeterCount)
+          FROM TRANSFORMER_AGGREGATE d
+         WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @YearStart AND d.PeriodStart <= @Day
+           AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
+                            WHERE a.TransformerID = d.TransformerID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Year' AND a.PeriodStart = @YearStart)
+         GROUP BY d.TransformerID, d.ObisCode;
+        SET @YearRows = @Cnt + @@ROWCOUNT;
+    END;
+
+    INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+    VALUES ('AGGREGATE', CONVERT(VARCHAR(10), @Day, 120), 'Build aggregates', NULL, 'Final',
+            CONCAT(N'Μετρητές: ', @MeterRows, N', μετασχηματιστές (φύλλα): ', @TrRows,
+                   N', μήνας: ', @MonthRows, N', έτος: ', @YearRows), @UserID);
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-4: aggregates μιας ημέρας (UTC). Επιστρέφει μία γραμμή:
+-- Day, MeterRows, TransformerRows, MonthRows, YearRows (πόσες γραμμές ΓΡΑΦΤΗΚΑΝ τώρα).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_build_aggregates
+    @UserID INT,
+    @Day DATE,
+    @ForceMonth BIT = 0,
+    @ForceYear BIT = 0
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @Day IS NULL
+        THROW 53300, N'Δώστε την ημέρα για τα aggregates.', 1;
+
+    DECLARE @MeterRows INT, @TrRows INT, @MonthRows INT, @YearRows INT;
+    BEGIN TRY
+        BEGIN TRAN;
+        EXEC sp_dso_build_aggregates_day @UserID, @Day, @ForceMonth, @ForceYear,
+             @MeterRows OUTPUT, @TrRows OUTPUT, @MonthRows OUTPUT, @YearRows OUTPUT;
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH;
+
+    SELECT @Day AS Day, @MeterRows AS MeterRows, @TrRows AS TransformerRows,
+           @MonthRows AS MonthRows, @YearRows AS YearRows;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-4: χτίζει τα aggregates για κάθε ΠΛΗΡΗ ημέρα που έχει επικυρωμένες σωρευτικές τιμές
+-- (1.8.0/2.8.0) χωρίς Day aggregate για τον μετρητή/κωδικό. Πλήρης ημέρα = πριν από @UpTo
+-- (προεπιλογή: η σημερινή ημερομηνία UTC). @From (προεπιλογή: από την αρχή) περιορίζει από κάτω.
+-- Οι ημέρες με σειρά από την παλιά στη νέα (ώστε μήνας/έτος να βγαίνουν μετά τις ημέρες τους).
+-- Ένα transaction για όλες. Το sp_dso_run_vee ΔΕΝ αλλάζει: το DSO καλεί αυτό μετά το VEE.
+-- Επιστρέφει: DaysBuilt, MeterRows, TransformerRows, MonthRows, YearRows.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_build_aggregates_pending
+    @UserID INT,
+    @From DATE = NULL,
+    @UpTo DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    SET @UpTo = ISNULL(@UpTo, CAST(SYSUTCDATETIME() AS DATE));
+    IF @From IS NOT NULL AND @From >= @UpTo
+        THROW 53301, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν από το όριο.', 1;
+
+    DECLARE @d4_Day DATE, @d4_Days INT = 0, @d4_M INT, @d4_T INT, @d4_Mo INT, @d4_Y INT;
+    DECLARE @d4_SumM INT = 0, @d4_SumT INT = 0, @d4_SumMo INT = 0, @d4_SumY INT = 0;
+
+    BEGIN TRY
+        BEGIN TRAN;
+        SELECT DISTINCT CAST(v.IntervalStart AS DATE) AS Day
+          INTO #d4_pending
+          FROM VALIDATED_READING v
+         WHERE v.ObisCode IN ('1.8.0', '2.8.0')
+           AND CAST(v.IntervalStart AS DATE) < @UpTo
+           AND (@From IS NULL OR CAST(v.IntervalStart AS DATE) >= @From)
+           AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a
+                            WHERE a.MeterID = v.MeterID AND a.ObisCode = v.ObisCode AND a.PeriodType = 'Day'
+                              AND a.PeriodStart = CAST(v.IntervalStart AS DATE));
+
+        WHILE EXISTS (SELECT 1 FROM #d4_pending)
+        BEGIN
+            SELECT @d4_Day = MIN(Day) FROM #d4_pending;
+            EXEC sp_dso_build_aggregates_day @UserID, @d4_Day, 0, 0, @d4_M OUTPUT, @d4_T OUTPUT, @d4_Mo OUTPUT, @d4_Y OUTPUT;
+            SELECT @d4_Days += 1, @d4_SumM += @d4_M, @d4_SumT += @d4_T, @d4_SumMo += @d4_Mo, @d4_SumY += @d4_Y;
+            DELETE #d4_pending WHERE Day = @d4_Day;
+        END;
+        DROP TABLE #d4_pending;
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH;
+
+    SELECT @d4_Days AS DaysBuilt, @d4_SumM AS MeterRows, @d4_SumT AS TransformerRows,
+           @d4_SumMo AS MonthRows, @d4_SumY AS YearRows;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-4: λίστα aggregates μετρητών. @PeriodType 'Day' (προεπιλογή), 'Month' ή 'Year'.
+-- @MeterID NULL = όλοι. @From/@To (PeriodStart, και τα δύο άκρα μέσα) προαιρετικά.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_list_aggregates
+    @UserID INT,
+    @MeterID INT = NULL,
+    @PeriodType VARCHAR(5) = 'Day',
+    @From DATE = NULL,
+    @To DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @PeriodType IS NULL OR @PeriodType NOT IN ('Day', 'Month', 'Year')
+        THROW 53302, N'Ο τύπος περιόδου πρέπει να είναι Day, Month ή Year.', 1;
+    IF @MeterID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM METER WHERE MeterID = @MeterID)
+        THROW 53303, N'Δεν υπάρχει ο μετρητής.', 1;
+    IF @From IS NOT NULL AND @To IS NOT NULL AND @From > @To
+        THROW 53304, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν ή ίση με το τέλος.', 1;
+
+    SELECT TOP (5000) a.MeterID, m.SerialNumber, a.ObisCode, a.PeriodType, a.PeriodStart,
+           a.SumValue, a.ReadingCount, a.EstimatedCount, m.TransformerID
+    FROM METER_AGGREGATE a
+    JOIN METER m ON m.MeterID = a.MeterID
+    WHERE a.PeriodType = @PeriodType
+      AND (@MeterID IS NULL OR a.MeterID = @MeterID)
+      AND (@From IS NULL OR a.PeriodStart >= @From)
+      AND (@To IS NULL OR a.PeriodStart <= @To)
+    ORDER BY a.PeriodStart DESC, a.MeterID, a.ObisCode;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-4: aggregates φύλλων μετασχηματιστών (ίδιες παράμετροι, @TransformerID NULL = όλοι).
+-- Λάθη: 53302 (τύπος), 53304 (περίοδος).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_list_transformer_aggregates
+    @UserID INT,
+    @TransformerID INT = NULL,
+    @PeriodType VARCHAR(5) = 'Day',
+    @From DATE = NULL,
+    @To DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @PeriodType IS NULL OR @PeriodType NOT IN ('Day', 'Month', 'Year')
+        THROW 53302, N'Ο τύπος περιόδου πρέπει να είναι Day, Month ή Year.', 1;
+    IF @From IS NOT NULL AND @To IS NOT NULL AND @From > @To
+        THROW 53304, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν ή ίση με το τέλος.', 1;
+
+    SELECT TOP (5000) a.TransformerID, t.Name, a.ObisCode, a.PeriodType, a.PeriodStart,
+           a.SumValue, a.MeterCount, a.ComputedAt
+    FROM TRANSFORMER_AGGREGATE a
+    JOIN TRANSFORMER t ON t.TransformerID = a.TransformerID
+    WHERE a.PeriodType = @PeriodType
+      AND (@TransformerID IS NULL OR a.TransformerID = @TransformerID)
+      AND (@From IS NULL OR a.PeriodStart >= @From)
+      AND (@To IS NULL OR a.PeriodStart <= @To)
+    ORDER BY a.PeriodStart DESC, a.TransformerID, a.ObisCode;
+END;
+GO
