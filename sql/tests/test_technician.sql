@@ -273,3 +273,232 @@ UPDATE USER_ACCOUNT SET ApprovalStatus = 'Suspended' WHERE UserID = @techB;
 BEGIN TRY EXEC sp_task_create 2, 'Technical check', '2027-06-15 17:00:00', '2027-06-15 18:00:00', @techB, 1; PRINT 'FAIL suspended technician assigned'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 52103 PRINT 'OK   Suspended technician as assignee -> 52103' ELSE PRINT 'FAIL suspended assignee: ' + ERROR_MESSAGE(); END CATCH;
 GO
+
+-- =====================================================================
+-- TEC-2 / TEC-3 / TEC-4: έγγραφα, διαθεσιμότητα, έγκριση τεχνικού.
+-- Νέοι χρήστες: test_tec2_a (εγκρίνεται), test_tec2_b (απορρίπτεται). Το tech1 (5) δηλώνει
+-- διαθεσιμότητα στις 2027-07-01 (καθαρίζεται στο τέλος). Οι tech1/tech2 δεν αλλάζουν κατάσταση.
+-- =====================================================================
+GO
+SET NOCOUNT ON;
+
+-- ---------- Εγγραφή δύο τεχνικών ----------
+DECLARE @ra TABLE (UserID INT);
+INSERT @ra EXEC sp_auth_register_technician N'test_tec2_a', '$2y$10$abcdefghijklmnopqrstuv', 'tec2a@test.cy', '99222221',
+    N'Άλφα', N'Τεχνικός', '1988-03-10', N'photos/test_tec2_a.jpg', '1';
+DECLARE @ta INT = (SELECT UserID FROM @ra);
+DECLARE @rb TABLE (UserID INT);
+INSERT @rb EXEC sp_auth_register_technician N'test_tec2_b', '$2y$10$abcdefghijklmnopqrstuv', 'tec2b@test.cy', '99222222',
+    N'Βήτα', N'Τεχνικός', '1989-04-11', N'photos/test_tec2_b.jpg', '1';
+DECLARE @tb INT = (SELECT UserID FROM @rb);
+
+-- ---------- sp_tech_assert_any ----------
+BEGIN TRY EXEC sp_tech_assert_any @ta; PRINT 'OK   pending technician passes assert_any'; END TRY
+BEGIN CATCH PRINT 'FAIL assert_any pending: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_assert_any 3; PRINT 'FAIL consumer passed assert_any'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52300 PRINT 'OK   consumer assert_any -> 52300' ELSE PRINT 'FAIL assert_any consumer: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- sp_tech_add_document ----------
+BEGIN TRY EXEC sp_tech_add_document @ta, 'Calibration certificate', N'X1', '2020-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL meter doc type accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52301 PRINT 'OK   wrong doc type -> 52301' ELSE PRINT 'FAIL wrong doc type: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_document @ta, 'ID card', N'  ', '2020-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL empty number accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52302 PRINT 'OK   empty doc number -> 52302' ELSE PRINT 'FAIL empty number: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_document @ta, 'ID card', N'X1', '2020-01-01', '2019-01-01', N'docs/x.pdf'; PRINT 'FAIL expiry before issue accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52303 PRINT 'OK   expiry before issue -> 52303' ELSE PRINT 'FAIL expiry: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_document @ta, 'ID card', N'X1', '2020-01-01', NULL, N' '; PRINT 'FAIL empty file accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52304 PRINT 'OK   empty file path -> 52304' ELSE PRINT 'FAIL empty file: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_document 3, 'ID card', N'X1', '2020-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL consumer added technician document'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52300 PRINT 'OK   consumer add document -> 52300' ELSE PRINT 'FAIL consumer add doc: ' + ERROR_MESSAGE(); END CATCH;
+
+DECLARE @d1 TABLE (DocumentID INT); DECLARE @d2 TABLE (DocumentID INT); DECLARE @d3 TABLE (DocumentID INT);
+INSERT @d1 EXEC sp_tech_add_document @ta, 'ID card', N'AB123456', '2020-01-01', '2035-01-01', N'docs/a_id.pdf';
+INSERT @d2 EXEC sp_tech_add_document @ta, 'Installer licence', N'LIC-777', '2021-02-02', NULL, N'docs/a_lic.pdf';
+INSERT @d3 EXEC sp_tech_add_document @ta, 'Training certificate', N'TR-55', '2022-03-03', '2034-03-03', N'docs/a_tr.pdf';
+DECLARE @ida1 INT = (SELECT DocumentID FROM @d1);
+DECLARE @ida2 INT = (SELECT DocumentID FROM @d2);
+DECLARE @ida3 INT = (SELECT DocumentID FROM @d3);
+IF (SELECT COUNT(*) FROM DOCUMENT WHERE TechnicianID = @ta AND ReviewStatus = 'Pending' AND ReviewedBy IS NULL) = 3
+    PRINT 'OK   3 documents added as Pending' ELSE PRINT 'FAIL add documents';
+
+DECLARE @ld TABLE (DocumentID INT, DocType VARCHAR(27), DocNumber NVARCHAR(50), IssueDate DATE, ExpiryDate DATE,
+                   FilePath NVARCHAR(400), ReviewStatus VARCHAR(8), ReviewComment NVARCHAR(500), ReviewedAt DATETIME2(0));
+INSERT @ld EXEC sp_tech_list_documents @ta;
+IF (SELECT COUNT(*) FROM @ld) = 3 PRINT 'OK   technician lists own 3 documents' ELSE PRINT 'FAIL list documents';
+BEGIN TRY EXEC sp_tech_list_documents 3; PRINT 'FAIL consumer listed technician documents'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52300 PRINT 'OK   consumer list documents -> 52300' ELSE PRINT 'FAIL consumer list docs: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Ρόλοι ----------
+BEGIN TRY EXEC sp_operator_list_pending_technicians 5; PRINT 'FAIL technician used operator list'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   technician pending list -> 52100' ELSE PRINT 'FAIL pending list role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_review_document 3, @ida1, 1, NULL; PRINT 'FAIL consumer reviewed document'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   consumer review -> 52100' ELSE PRINT 'FAIL review role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_decide_technician 5, @ta, 1, NULL; PRINT 'FAIL technician approved a technician'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   technician decide -> 52100' ELSE PRINT 'FAIL decide role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_set_technician_status 3, 5, 'Suspended', N'x'; PRINT 'FAIL consumer set status'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   consumer set status -> 52100' ELSE PRINT 'FAIL set status role: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Λίστα εκκρεμών ----------
+DECLARE @lp TABLE (TechnicianID INT, Username NVARCHAR(50), FirstName NVARCHAR(50), LastName NVARCHAR(50), Email VARCHAR(254),
+                   Phone VARCHAR(20), BirthDate DATE, Photo NVARCHAR(400), Categories NVARCHAR(MAX),
+                   DocsPending INT, DocsAccepted INT, DocsRejected INT);
+INSERT @lp EXEC sp_operator_list_pending_technicians 2;
+IF EXISTS (SELECT 1 FROM @lp WHERE TechnicianID = @ta AND DocsPending = 3 AND DocsAccepted = 0 AND Categories IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM @lp WHERE TechnicianID = 5)
+    PRINT 'OK   pending list shows new technician with 3 Pending docs, not tech1' ELSE PRINT 'FAIL pending list';
+
+DECLARE @od TABLE (DocumentID INT, DocType VARCHAR(27), DocNumber NVARCHAR(50), IssueDate DATE, ExpiryDate DATE,
+                   FilePath NVARCHAR(400), ReviewStatus VARCHAR(8), ReviewComment NVARCHAR(500), ReviewedAt DATETIME2(0),
+                   ReviewedByUsername NVARCHAR(50));
+INSERT @od EXEC sp_operator_list_technician_documents 2, @ta;
+IF (SELECT COUNT(*) FROM @od) = 3 PRINT 'OK   operator lists technician documents' ELSE PRINT 'FAIL operator list docs';
+BEGIN TRY EXEC sp_operator_list_technician_documents 2, 3; PRINT 'FAIL listed documents of a consumer'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52320 PRINT 'OK   documents of non-technician -> 52320' ELSE PRINT 'FAIL list docs non-tech: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Έγκριση πριν τον έλεγχο: απορρίπτεται ----------
+BEGIN TRY EXEC sp_operator_decide_technician 2, @ta, 1, NULL; PRINT 'FAIL approved without reviewed documents'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52325 PRINT 'OK   approve before review -> 52325' ELSE PRINT 'FAIL approve before review: ' + ERROR_MESSAGE(); END CATCH;
+IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @ta AND ApprovalStatus = 'Pending' AND ApprovedBy IS NULL)
+    PRINT 'OK   refused approval left status Pending' ELSE PRINT 'FAIL status changed by refused approval';
+
+-- ---------- Έλεγχος εγγράφων ----------
+BEGIN TRY EXEC sp_operator_review_document 2, @ida1, 0, NULL; PRINT 'FAIL rejection without comment'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52326 PRINT 'OK   reject document without comment -> 52326' ELSE PRINT 'FAIL reject no comment: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_review_document 2, 999999, 1, NULL; PRINT 'FAIL reviewed missing document'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52321 PRINT 'OK   missing document -> 52321' ELSE PRINT 'FAIL missing document: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_review_document 2, @ida1, 1, NULL;
+EXEC sp_operator_review_document 2, @ida2, 1, N'Εντάξει';
+IF EXISTS (SELECT 1 FROM DOCUMENT WHERE DocumentID = @ida1 AND ReviewStatus = 'Accepted' AND ReviewedBy = 2 AND ReviewedAt IS NOT NULL)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'DOCUMENT' AND ObjectID = CAST(@ida2 AS VARCHAR(100))
+               AND Action = 'Review technician document' AND OldState = 'Pending' AND NewState = 'Accepted' AND ResultComment = N'Εντάξει')
+    PRINT 'OK   review document Accepted + audit old/new/comment' ELSE PRINT 'FAIL review document';
+BEGIN TRY EXEC sp_operator_review_document 2, @ida1, 0, N'Λάθος'; PRINT 'FAIL reviewed twice'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52322 PRINT 'OK   second review -> 52322' ELSE PRINT 'FAIL second review: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_decide_technician 2, @ta, 1, NULL; PRINT 'FAIL approved with 2 of 3 types accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52325 PRINT 'OK   approve with one type unreviewed -> 52325' ELSE PRINT 'FAIL approve 2 of 3: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_decide_technician 2, @ta, 0, NULL; PRINT 'FAIL rejected without comment'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52326 PRINT 'OK   reject technician without comment -> 52326' ELSE PRINT 'FAIL reject tech no comment: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_review_document 2, @ida3, 1, NULL;
+
+-- ---------- Έγκριση ----------
+EXEC sp_operator_decide_technician 2, @ta, 1, N'Πλήρης φάκελος';
+IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @ta AND ApprovalStatus = 'Approved' AND ApprovedBy = 2 AND ApprovalDecidedAt IS NOT NULL)
+    PRINT 'OK   technician Approved with ApprovedBy and ApprovalDecidedAt' ELSE PRINT 'FAIL approve technician';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'USER_ACCOUNT' AND ObjectID = CAST(@ta AS VARCHAR(100))
+           AND Action = 'Approve technician' AND OldState = 'Pending' AND NewState = 'Approved' AND ResultComment = N'Πλήρης φάκελος' AND PerformedBy = 2)
+    PRINT 'OK   approval -> audit with old/new/comment' ELSE PRINT 'FAIL approval audit';
+BEGIN TRY EXEC sp_tech_assert @ta; PRINT 'OK   approved technician passes sp_tech_assert'; END TRY
+BEGIN CATCH PRINT 'FAIL approved technician blocked: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_decide_technician 2, @ta, 1, NULL; PRINT 'FAIL decided twice'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52324 PRINT 'OK   decide on non-Pending -> 52324' ELSE PRINT 'FAIL decide twice: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_decide_technician 2, 999999, 1, NULL; PRINT 'FAIL decided missing technician'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52320 PRINT 'OK   decide missing technician -> 52320' ELSE PRINT 'FAIL decide missing: ' + ERROR_MESSAGE(); END CATCH;
+DELETE FROM @lp;
+INSERT @lp EXEC sp_operator_list_pending_technicians 2;
+IF NOT EXISTS (SELECT 1 FROM @lp WHERE TechnicianID = @ta) PRINT 'OK   approved technician leaves pending list' ELSE PRINT 'FAIL still in pending list';
+
+-- ---------- Αναστολή και επαναφορά (test_tec2_a) ----------
+BEGIN TRY EXEC sp_operator_set_technician_status 2, @ta, 'Suspended', NULL; PRINT 'FAIL suspended without comment'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52326 PRINT 'OK   suspend without comment -> 52326' ELSE PRINT 'FAIL suspend no comment: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_set_technician_status 2, @ta, 'Pending', N'x'; PRINT 'FAIL status Pending accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52327 PRINT 'OK   invalid status -> 52327' ELSE PRINT 'FAIL invalid status: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_set_technician_status 2, 6, 'Approved', N'x'; PRINT 'FAIL Pending technician set to Approved'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52328 PRINT 'OK   Pending -> Approved via set_status -> 52328' ELSE PRINT 'FAIL pending set status: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_set_technician_status 2, @ta, 'Approved', N'x'; PRINT 'FAIL Approved -> Approved accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52328 PRINT 'OK   Approved -> Approved -> 52328' ELSE PRINT 'FAIL same status: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_set_technician_status 2, @ta, 'Suspended', N'Παράπονο πελάτη';
+IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @ta AND ApprovalStatus = 'Suspended')
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'USER_ACCOUNT' AND ObjectID = CAST(@ta AS VARCHAR(100))
+               AND Action = 'Set technician status' AND OldState = 'Approved' AND NewState = 'Suspended' AND ResultComment = N'Παράπονο πελάτη')
+    PRINT 'OK   suspend + audit' ELSE PRINT 'FAIL suspend';
+BEGIN TRY EXEC sp_tech_assert @ta; PRINT 'FAIL suspended technician passes assert'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   suspended technician blocked -> 52000' ELSE PRINT 'FAIL suspended assert: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_assert_any @ta; PRINT 'OK   suspended technician passes assert_any (may list documents)'; END TRY
+BEGIN CATCH PRINT 'FAIL suspended assert_any: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_set_technician_status 2, @ta, 'Approved', NULL;
+IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @ta AND ApprovalStatus = 'Approved')
+   AND (SELECT COUNT(*) FROM AUDIT_LOG WHERE ObjectType = 'USER_ACCOUNT' AND ObjectID = CAST(@ta AS VARCHAR(100)) AND Action = 'Set technician status') = 2
+    PRINT 'OK   reinstate to Approved + second audit row' ELSE PRINT 'FAIL reinstate';
+
+-- ---------- Δεύτερος τεχνικός: ληγμένο έγγραφο, μετά απόρριψη ----------
+DECLARE @e1 TABLE (DocumentID INT); DECLARE @e2 TABLE (DocumentID INT); DECLARE @e3 TABLE (DocumentID INT);
+INSERT @e1 EXEC sp_tech_add_document @tb, 'ID card', N'B-1', '2018-01-01', '2020-01-01', N'docs/b_id.pdf';
+INSERT @e2 EXEC sp_tech_add_document @tb, 'Installer licence', N'B-2', '2020-01-01', NULL, N'docs/b_lic.pdf';
+INSERT @e3 EXEC sp_tech_add_document @tb, 'Training certificate', N'B-3', '2020-01-01', NULL, N'docs/b_tr.pdf';
+DECLARE @idb1 INT = (SELECT DocumentID FROM @e1);
+DECLARE @idb2 INT = (SELECT DocumentID FROM @e2);
+DECLARE @idb3 INT = (SELECT DocumentID FROM @e3);
+EXEC sp_operator_review_document 2, @idb1, 1, NULL;
+EXEC sp_operator_review_document 2, @idb2, 1, NULL;
+EXEC sp_operator_review_document 2, @idb3, 1, NULL;
+BEGIN TRY EXEC sp_operator_decide_technician 2, @tb, 1, NULL; PRINT 'FAIL approved with an expired ID card'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52325 PRINT 'OK   expired document does not count -> 52325' ELSE PRINT 'FAIL expired document: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_decide_technician 2, @tb, 0, N'Ληγμένη ταυτότητα';
+IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @tb AND ApprovalStatus = 'Rejected' AND ApprovedBy = 2 AND ApprovalDecidedAt IS NOT NULL)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'USER_ACCOUNT' AND ObjectID = CAST(@tb AS VARCHAR(100))
+               AND Action = 'Reject technician' AND OldState = 'Pending' AND NewState = 'Rejected' AND ResultComment = N'Ληγμένη ταυτότητα')
+    PRINT 'OK   reject Pending technician + audit' ELSE PRINT 'FAIL reject technician';
+BEGIN TRY EXEC sp_tech_assert_any @tb; PRINT 'FAIL rejected technician passes assert_any'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52300 PRINT 'OK   rejected technician -> 52300' ELSE PRINT 'FAIL rejected assert_any: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_decide_technician 2, @tb, 1, NULL; PRINT 'FAIL approved a Rejected technician'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52324 PRINT 'OK   decide on Rejected -> 52324' ELSE PRINT 'FAIL decide rejected: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Διαθεσιμότητα (TEC-3), tech1 = 5 ----------
+DECLARE @lm TABLE (MunicipalityID INT, Label NVARCHAR(200));
+INSERT @lm EXEC sp_ref_list_municipalities;
+IF (SELECT COUNT(*) FROM @lm) >= 1 PRINT 'OK   list municipalities' ELSE PRINT 'FAIL list municipalities';
+DECLARE @mun INT = (SELECT MIN(MunicipalityID) FROM @lm);
+DECLARE @munList VARCHAR(20) = CAST(@mun AS VARCHAR(10));
+
+BEGIN TRY EXEC sp_tech_declare_availability 6, '2027-07-01', '09:00', '12:00', @munList; PRINT 'FAIL Pending technician declared availability'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   Pending technician availability -> 52000' ELSE PRINT 'FAIL pending availability: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_declare_availability 5, '2020-01-01', '09:00', '12:00', @munList; PRINT 'FAIL past date accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52310 PRINT 'OK   past date -> 52310' ELSE PRINT 'FAIL past date: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_declare_availability 5, '2027-07-01', '12:00', '09:00', @munList; PRINT 'FAIL reversed times accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52311 PRINT 'OK   reversed times -> 52311' ELSE PRINT 'FAIL reversed times: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_declare_availability 5, '2027-07-01', '09:00', '12:00', ''; PRINT 'FAIL no municipality accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52313 PRINT 'OK   no municipality -> 52313' ELSE PRINT 'FAIL no municipality: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_declare_availability 5, '2027-07-01', '09:00', '12:00', '999999'; PRINT 'FAIL unknown municipality accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52313 PRINT 'OK   unknown municipality -> 52313' ELSE PRINT 'FAIL unknown municipality: ' + ERROR_MESSAGE(); END CATCH;
+IF NOT EXISTS (SELECT 1 FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027-07-01')
+    PRINT 'OK   refused declarations left no rows' ELSE PRINT 'FAIL refused declarations left rows';
+
+EXEC sp_tech_declare_availability 5, '2027-07-01', '09:00', '12:00', @munList;
+IF EXISTS (SELECT 1 FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027-07-01' AND FromTime = '09:00' AND ToTime = '12:00')
+   AND EXISTS (SELECT 1 FROM AVAILABLE_IN WHERE UserID = 5 AND AvailDate = '2027-07-01' AND FromTime = '09:00' AND MunicipalityID = @mun)
+    PRINT 'OK   declare availability writes AVAILABILITY + AVAILABLE_IN' ELSE PRINT 'FAIL declare availability';
+BEGIN TRY EXEC sp_tech_declare_availability 5, '2027-07-01', '11:00', '13:00', @munList; PRINT 'FAIL overlapping slot accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52312 PRINT 'OK   overlapping slot -> 52312' ELSE PRINT 'FAIL overlap: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_declare_availability 5, '2027-07-01', '08:00', '09:30', @munList; PRINT 'FAIL overlapping slot (start) accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52312 PRINT 'OK   overlap at the start -> 52312' ELSE PRINT 'FAIL overlap start: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_tech_declare_availability 5, '2027-07-01', '12:00', '14:00', @munList;
+DECLARE @la TABLE (AvailDate DATE, FromTime TIME(0), ToTime TIME(0), Municipalities NVARCHAR(MAX));
+INSERT @la EXEC sp_tech_list_availability 5, '2027-07-01', '2027-07-01';
+IF (SELECT COUNT(*) FROM @la) = 2 AND NOT EXISTS (SELECT 1 FROM @la WHERE Municipalities IS NULL)
+    PRINT 'OK   adjacent slot accepted, list shows 2 slots with municipalities' ELSE PRINT 'FAIL list availability';
+DELETE FROM @la;
+INSERT @la EXEC sp_tech_list_availability 5, '2027-07-02', NULL;
+IF NOT EXISTS (SELECT 1 FROM @la WHERE AvailDate = '2027-07-01') PRINT 'OK   availability date filter' ELSE PRINT 'FAIL availability filter';
+BEGIN TRY EXEC sp_tech_list_availability 6; PRINT 'FAIL Pending technician listed availability'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   list availability by Pending -> 52000' ELSE PRINT 'FAIL list availability role: ' + ERROR_MESSAGE(); END CATCH;
+
+-- Αφαίρεση
+BEGIN TRY EXEC sp_tech_remove_availability 5, '2027-07-01', '10:00'; PRINT 'FAIL removed a non-existing slot'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52314 PRINT 'OK   remove unknown slot -> 52314' ELSE PRINT 'FAIL remove unknown: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_remove_availability 6, '2027-07-01', '09:00'; PRINT 'FAIL Pending technician removed availability'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   remove by Pending -> 52000' ELSE PRINT 'FAIL remove role: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @rt TABLE (TaskID INT);
+INSERT @rt EXEC sp_task_create 2, 'Technical check', '2027-07-01 10:00:00', '2027-07-01 11:00:00', 5, 1;
+DECLARE @tk INT = (SELECT TaskID FROM @rt);
+BEGIN TRY EXEC sp_tech_remove_availability 5, '2027-07-01', '09:00'; PRINT 'FAIL removed slot holding an active task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52315 PRINT 'OK   slot with active task cannot be removed -> 52315' ELSE PRINT 'FAIL remove with task: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_tech_remove_availability 5, '2027-07-01', '12:00';
+IF NOT EXISTS (SELECT 1 FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027-07-01' AND FromTime = '12:00') PRINT 'OK   remove slot without task' ELSE PRINT 'FAIL remove slot';
+EXEC sp_task_cancel 2, @tk, N'Δοκιμή TEC-3';
+EXEC sp_tech_remove_availability 5, '2027-07-01', '09:00';
+IF NOT EXISTS (SELECT 1 FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027-07-01')
+   AND NOT EXISTS (SELECT 1 FROM AVAILABLE_IN WHERE UserID = 5 AND AvailDate = '2027-07-01')
+    PRINT 'OK   remove slot after the task was cancelled (AVAILABLE_IN cascades)' ELSE PRINT 'FAIL remove after cancel';
+
+-- ---------- Καθαρισμός ----------
+DELETE FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027-07-01';
+GO

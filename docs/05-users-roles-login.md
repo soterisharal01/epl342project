@@ -47,9 +47,16 @@ A Pending technician who logs in sees only "waiting for approval". Tests: `sql/t
 
 Tests: `sql/tests/test_admin.sql` (43 checks).
 
-## Planned
+| Procedure (`sql/procs_admin.sql`, ADM-3, errors 51600-51699) | What it does |
+|---|---|
+| `sp_admin_operator_assert(@UserID)` | Helper: THROW 51600 unless the user is an Active Operator. (Not named `sp_operator_assert`: TEC-5 already defines that name.) |
+| `sp_operator_save_meter_model(@UserID, @ModelID, @Manufacturer, @ModelName, @MeterType, @PhaseCount)` | Insert (`@ModelID` NULL) or update; duplicate manufacturer+model refused (51603); audit row with old/new state. Returns `ModelID`. |
+| `sp_operator_save_service_type(@UserID, @ServiceTypeID, @Name, @Fee)` | Same pattern; Fee >= 0. A new Fee does not change past purchases (they store their own Amount). Returns `ServiceTypeID`. |
+| `sp_operator_save_tariff_type(@UserID, @TariffTypeID, @Name)` | Same pattern. Returns `TariffTypeID`. |
+| `sp_operator_delete_catalog_item(@UserID, @Catalog, @ID)` | `@Catalog` = `MeterModel`, `ServiceType` or `TariffType`. Refused with 51632 if any meter / purchase / contract uses it. Audit row. |
+| `sp_ref_list_meter_models`, `sp_ref_list_service_types`, `sp_ref_list_tariff_types` | Public lookups for drop-downs (no `@UserID`). |
 
-| Task | Procedures | Tables | Page |
-|---|---|---|---|
-| ADM-3 | `sp_operator_save_meter_model`, `sp_operator_save_service_type`, `sp_operator_save_tariff_type` | `METER_MODEL`, `SERVICE_TYPE`, `TARIFF_TYPE` | `operator/adm_catalogs.php` |
-| ADM-4 | Pages for ADM-2 (`admin/users.php`, `admin/log.php`) and ADM-3 | | |
+ADM-3 tests are appended to `test_admin.sql` (names `TEST-ADM3-*`).
+
+Pages (ADM-4): `admin/10_users.php` (user list with role filter, create-user form with `password_hash`, suspend/activate),
+`admin/20_log.php` (audit log filtered by object type and dates), `operator/adm_10_catalogs.php` (three catalogs: list, add/edit, delete).
