@@ -902,3 +902,9 @@ IF NOT EXISTS (SELECT 1 FROM METER WHERE SerialNumber LIKE 'SN-TEC6-%') AND NOT 
    AND (SELECT COUNT(*) FROM METER WHERE Status = 'Active' AND TransformerID IN (4, 5, 6)) = @t6_act0
     PRINT 'OK   TEC-6 test data removed (Active meters on base leaves 4/5/6 are back to the starting count)' ELSE PRINT 'FAIL TEC-6 cleanup';
 GO
+
+-- ---------- sp_ref_list_comm_types ----------
+DECLARE @t6_ct TABLE (CommTypeID INT, Label NVARCHAR(30));
+INSERT @t6_ct EXEC sp_ref_list_comm_types;
+IF (SELECT COUNT(*) FROM @t6_ct) >= 3 PRINT 'OK   list communication types' ELSE PRINT 'FAIL list communication types';
+GO

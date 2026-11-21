@@ -1660,3 +1660,14 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- ---------------------------------------------------------------------
+-- sp_ref_list_comm_types: δημόσια λίστα τύπων επικοινωνίας για τη φόρμα εγκατάστασης (TEC-10).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_ref_list_comm_types
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT CommTypeID, Name AS Label FROM COMM_TYPE ORDER BY Name;
+END;
+GO
