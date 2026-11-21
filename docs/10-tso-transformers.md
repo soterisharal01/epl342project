@@ -23,6 +23,20 @@
 | TSO-5 | Pages for the tasks above | | |
 | TSO-6 | Bonus: Leaflet map of transformers, geofences and meters, `sp_tso_map_data` | | `tso/map.php` |
 
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] 4.1 Every meter has WGS84 coordinates and belongs to **one** low-voltage transformer. Every transformer has **one** geofence (here a rectangle).
+- [ ] 4.1 From a meter's coordinates we find the geofence and so the transformer.
+- [ ] 4.1 Hierarchy of any depth (L1 … Ln).
+- [ ] 4.2 **VEE-verified** picture, per 15 minutes, for the **whole** hierarchy. L1 nodes count their own meters; higher nodes count **all** meters below them, at any depth.
+- [ ] 4.2 SUM per geofence, 15-minute slot and OBIS, **only** for `1.8.0` and `2.8.0`.
+- [ ] 4.2 Stored in an **intermediate** table with at least geofence (here transformer, B16), a **common** reference slot, OBIS, SUM. Manual trigger is enough. Missing readings are simply ignored.
+- [ ] 4.2 When a reading changes an L1, we can update it **and all its ancestors**.
+- [ ] 4.2 Final 15-minute readings and historical aggregates stay immutable. The intermediate table gives the new picture without recomputing from raw.
+- [ ] II.D Remote load disconnection on **all** meters of a transformer.
+
 ## Base data tree
 
 ```
