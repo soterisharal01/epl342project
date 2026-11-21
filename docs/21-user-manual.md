@@ -2,9 +2,9 @@
 
 [← Back to the menu](../README.md) · Task: DOC-1 in [tasks.md](tasks.md) · Deliverable list: [18-deliverables-and-timeline.md](18-deliverables-and-timeline.md)
 
-> **Status: DRAFT, NOT FINISHED (DOC-1 stays open on the task board).** Text written for every page on `main` as of 21/11. Screenshots are still missing: they are added from the
-> local demo or the demo account before the document is converted to `docx/`. The meter installation, meter confirmation,
-> remote command and tamper pages (TEC-6..10) are described from their open branch and marked *(in review)*.
+> **Status: complete.** Every page named here was checked against `sources/`, and the screenshots were taken from the running
+> local demo with `img/manual/shoot.py` (rerun it after the demo database is rebuilt). Screenshots show demo data and the
+> display names of the demo users.
 
 This manual is the printed user manual of the assignment (section V). It has the parts the assignment asks for:
 how to use the system (sections 1–10), design choices (11), extra features (12), difficulties (13), the final ER and the
@@ -34,6 +34,9 @@ exactly as it appears on screen.
 
 **Address.** The demo runs at `https://students.cs.ucy.ac.cy/~sharal01/mdms/` (CS VPN needed). The first page is the login page.
 
+![Login page](img/manual/public-login.png)
+*Login page.*
+
 **Demo users.** The base data (`data/small/00_base.sql`) creates one user per role. All share one test password, written in
 the header of that file (it is nobody's real password).
 
@@ -62,6 +65,12 @@ checks the role again on the server, so typing the address of another role's pag
 - **Technician** (`register_technician.php`): the same plus date of birth, photo (file path) and the technician's
   categories. After «Εγγραφή» the account is **Pending**: the technician can log in only after the Operator approves them (4.1).
 
+![Consumer registration](img/manual/public-register-consumer.png)
+*Consumer registration.*
+
+![Technician registration](img/manual/public-register-technician.png)
+*Technician registration.*
+
 **Messages.** A green message means the action was saved; a red one is the reason it was refused, written by the database
 procedure (for example a wrong role, a value out of range or a step done in the wrong order).
 
@@ -85,13 +94,25 @@ longitude, «Χρήση» (use of the premise), «Σχήμα προμήθεια�
 The table lists your premises; «Λήξη» ends your holding (for example when you move out). Ending a holding does not delete the
 premise: the next holder can be added later, and the old data stay with the period you held it.
 
+![Consumer: «Τα υποστατικά μου»](img/manual/consumer-10_premises.png)
+*Consumer: «Τα υποστατικά μου».*
+
 **2.2 Bank accounts.** IBAN, holder name, and optionally the premise the account pays for, then «Προσθήκη».
+
+![Consumer: bank accounts](img/manual/consumer-20_bank.png)
+*Consumer: bank accounts.*
 
 **2.3 Requests.** Choose «Είδος» («Έλεγχος μετρητή» or «Αναφορά βλάβης»), «Για» (which premise or meter) and write a description, then «Υποβολή».
 The Operator turns a request into a field task for a technician (4.3). Open requests can be cancelled with «Ακύρωση».
 
+![Consumer: check / fault requests](img/manual/consumer-30_requests.png)
+*Consumer: check / fault requests.*
+
 **2.4 Invoices and payments.** Choose a year and «Φίλτρο». An unpaid invoice has a «Πληρωμή» button: pick the bank account
 and the amount. If you have no account yet the page asks you to add one first. Payments are listed under «Πληρωμές».
+
+![Consumer: invoices and payments](img/manual/consumer-40_billing.png)
+*Consumer: invoices and payments.*
 
 **2.5 Readings.** Choose «Υποστατικό» and a period, then «Εμφάνιση».
 - «Μετρήσεις 15 λεπτών»: up to 31 days at a time. **The current month is free**; older months need bought history.
@@ -102,16 +123,28 @@ and the amount. If you have no account yet the page asks you to add one first. P
 You only ever see the meters installed on **your** premises and only for the period **you** held them, and only data that
 are still within the retention period (section 7.2).
 
+![Consumer: readings](img/manual/consumer-50_readings.png)
+*Consumer: readings.*
+
 **2.6 Thresholds and notifications.** Under «Νέο / αλλαγή ορίου» choose premise, «Περίοδος» and «Όριο (kWh)», then
 «Αποθήκευση». One active threshold per premise and period: saving the same pair again changes it. «Αφαίρεση» removes one.
 Under «Κανάλια ειδοποίησης» tick email and/or SMS. The database records what must be sent; the actual sending is outside
 the database (assumption from Phase A).
 
+![Consumer: thresholds and notification channels](img/manual/consumer-60_settings.png)
+*Consumer: thresholds and notification channels.*
+
 **2.7 Quality events.** Choose a period and «Εμφάνιση»: voltage and other events of your meters, newest first, times in UTC.
+
+![Consumer: quality events](img/manual/consumer-70_events.png)
+*Consumer: quality events.*
 
 **2.8 GDPR, right to be forgotten.** Tick the confirmation and press «Υποβολή αιτήματος διαγραφής». It is not executed at once:
 the Operator pre-approves it, the Admin decides and applies it (4.4, 5.3). Under «Τα αιτήματά μου» you follow its status.
 Only one open request is allowed at a time.
+
+![Consumer: right to be forgotten](img/manual/consumer-80_gdpr.png)
+*Consumer: right to be forgotten.*
 
 ---
 
@@ -122,11 +155,14 @@ Only one open request is allowed at a time.
 | «Τα έγγραφά μου» | Register your documents (licence, certificates) |
 | «Οι εργασίες μου» | Field tasks assigned to you: accept, notes, attachments, complete |
 | «Διαθεσιμότητα» | Declare when and where you are available |
-| Install / replace meter *(in review)* | Install a meter on a premise or replace one, with equipment documents |
-| Remote commands *(in review)* | Ask for Disconnect / Reconnect / Firmware upgrade; run a tamper check |
+| «Εγκατάσταση μετρητή» | Install a meter or replace one, add photos and the 3 equipment documents |
+| «Εντολές» | Ask for Disconnect / Reconnect / Firmware upgrade; record an anti-tamper check |
 
 **3.1 Documents.** «Τύπος», «Αριθμός», issue date, expiry date (if any), file path, then «Καταχώριση». The Operator reviews each
 document (4.1).
+
+![Technician: documents](img/manual/technician-10_documents.png)
+*Technician: documents.*
 
 **3.2 Tasks.** Filter by status with «Φίλτρο». Open a task to see its details, «Σημειώσεις» and «Συνημμένα».
 - «Αποδοχή»: you accept a task the Operator assigned to you.
@@ -134,15 +170,42 @@ document (4.1).
 - «Προσθήκη συνημμένου»: kind, file path and caption (for example a photo of the meter).
 - «Ολοκλήρωση εργασίας»: write the result and close the task. A task must be accepted before it can be completed.
 
+![Technician: tasks](img/manual/technician-20_tasks.png)
+*Technician: tasks.*
+
 **3.3 Availability.** Choose «Ημερομηνία», «Από» and «Έως» and the municipalities you cover, then «Δήλωση». «Διαγραφή» removes
 a zone. The Operator sees only technicians available at the time and area of a task when assigning it.
 
-**3.4 Meter install / replace** *(TEC-6, in review)*. On a task of type installation or replacement, enter the meter, the
-premise and the equipment documents. The meter stays **not active** until the Operator confirms it (4.5).
+![Technician: availability](img/manual/technician-30_availability.png)
+*Technician: availability.*
 
-**3.5 Remote commands and tamper check** *(TEC-8/9, in review)*. For a meter where you have an open task you can ask for a
-command. The command is retried until the meter answers (ACK) or the attempts run out. The tamper check looks for signs of
-tampering; if it finds any it records an event and opens a new field task automatically.
+**3.4 Meter install / replace** («Εγκατάσταση μετρητή»). The page has three parts.
+- «Οι εγκαταστάσεις μου»: your installations with the meter status, «Επιβεβαίωση» (Pending / Confirmed), the Operator's
+  comment and «Έγγραφα (από 3)», how many of the 3 equipment documents are present.
+- «Νέα εγκατάσταση / αντικατάσταση»: first accept an installation or replacement task in «Οι εργασίες μου»; it then appears in
+  the «Εργασία» list (a replacement shows the old meter). Fill Serial, Network ID, Firmware, «Μέγιστα Amps», «Πλάτος (lat)»,
+  «Μήκος (lon)», «Μοντέλο», «Επικοινωνία» and tick the phases (L1, L2, L3) the model has, then «Καταχώριση μετρητή». The
+  transformer is found from the coordinates. The page says that the meter now waits for the Operator. «Προσθήκη φωτογραφίας»
+  adds a photo path and caption to the task.
+- «Έγγραφα εξοπλισμού μετρητή»: for each meter waiting for confirmation add the three documents, «Πιστοποιητικό βαθμονόμησης»,
+  «Δήλωση CE και πρωτοκόλλου» and «Πιστοποιητικό κρυπτογράφησης τηλεμετρίας» (code, issue date, optional expiry, file path),
+  with «Προσθήκη εγγράφου».
+The meter stays **«Pending confirmation»** and its readings are not accepted until the Operator confirms it (4.5).
+
+![Technician: meter installation, with one installation waiting for the Operator](img/manual/technician-40_install.png)
+*Technician: meter installation, with one installation waiting for the Operator.*
+
+**3.5 Remote commands and tamper check** («Εντολές»).
+- «Νέα εντολή»: choose a meter on which you have an accepted task, the command («Disconnect», «Reconnect» or «Firmware upgrade»),
+  optional JSON parameters, then «Αίτηση εντολής». The command first waits as **Awaiting approval** until the Operator approves
+  it (4.5); only then it is **Sent**.
+- «Οι εντολές μου»: status, number of attempts and last outcome. For a sent command «Καταγραφή προσπάθειας» records one attempt
+  (ACK, NAK or Timeout; a device simulation, since there are no real meters); ACK completes it. «Προσπάθειες» lists the attempts.
+- «Έλεγχος anti-tamper»: for an accepted task of type *Anti-tamper check* write «Ευρήματα», optionally tick «Κρίσιμο εύρημα»
+  (it creates an event for the Operator) and press «Καταγραφή ελέγχου».
+
+![Technician: remote commands and anti-tamper check](img/manual/technician-50_commands.png)
+*Technician: remote commands and anti-tamper check.*
 
 ---
 
@@ -154,27 +217,54 @@ tampering; if it finds any it records an event and opens a new field task automa
 | «Εργασίες πεδίου» | Create field tasks (also from consumer requests), assign, reassign, cancel |
 | «Κατάλογοι» | Catalogs: meter models, service fees, tariffs |
 | «Αιτήματα GDPR» | Start review, pre-approve or reject GDPR requests |
-| Meter confirmation, events *(in review)* | Confirm installed meters → Active; tamper events |
+| «Επιβεβαίωση μετρητών» | Confirm or reject installed meters (Pending → Active) |
+| «Συμβάντα / anti-tamper» | Open events, anti-tamper tasks, approve remote commands |
 
 **4.1 Approving technicians.** The list shows **Pending** technicians. Open one to see their documents: «Αποδοχή» or
 «Απόρριψη» for each document, then under «Απόφαση για τον τεχνικό» press «Έγκριση» or «Απόρριψη (απαιτεί σχόλιο)».
 For an approved technician, «Αναστολή (απαιτεί σχόλιο)» suspends them and «Επαναφορά» restores them.
 Demo: approve `tech2`, then log in as `tech2`.
 
+![Operator: technician approval](img/manual/operator-tec_10_technicians.png)
+*Operator: technician approval.*
+
 **4.2 Catalogs.** Three tables: «Μοντέλα μετρητών» (manufacturer, model, meter type, phases), «Υπηρεσίες (τέλη)» (name, fee
 in €) and «Τιμολόγια» (tariffs). «Αποθήκευση» adds or changes, «Διαγραφή» deletes an item that nothing uses. Changing a fee
 does not change past purchases: each purchase keeps its own amount.
+
+![Operator: catalogs](img/manual/operator-adm_10_catalogs.png)
+*Operator: catalogs.*
 
 **4.3 Field tasks.** Under «Νέα εργασία» choose «Τύπος», premise, the meter (only for replacement or a check), optionally the
 consumer request it comes from (the page lists requests waiting for assignment), the technician (only approved and available
 ones), and users to notify. Then «Δημιουργία εργασίας». The list filters by status and dates; «Αλλαγή τεχνικού» reassigns
 and «Ακύρωση» cancels a task with a reason.
 
+![Operator: field tasks](img/manual/operator-tec_20_tasks.png)
+*Operator: field tasks.*
+
 **4.4 GDPR review.** «Έναρξη εξέτασης» marks a request as being examined; then «Προέγκριση» sends it to the Admin, or
 «Απόρριψη» with a comment ends it.
 
-**4.5 Meter confirmation** *(TEC-7, in review)*. After a technician installs a meter, the Operator checks the installation and
-confirms it; only then the meter becomes **Active** and its readings are accepted.
+![Operator: GDPR review](img/manual/operator-gdp_10_review.png)
+*Operator: GDPR review.*
+
+**4.5 Meter confirmation, events and commands.**
+- «Επιβεβαίωση μετρητών» lists installations waiting for confirmation (serial, network ID, firmware, location, transformer,
+  premise, technician, how many of the 3 documents and photos). «Έγγραφα» shows the documents of one meter. Write an optional
+  comment and press «Επιβεβαίωση»: the meter becomes **Active** and its readings are accepted (all 3 documents must be present).
+  «Απόρριψη» needs a comment.
+- «Συμβάντα / anti-tamper», «Ανοιχτά συμβάντα»: events not yet handled (tamper findings, grid events). For an event that has a
+  meter choose a technician and a time window and press «Δημιουργία εργασίας»: an *Anti-tamper check* task is created and the
+  event becomes *In progress*.
+- «Εντολές εξ αποστάσεως»: «Έγκριση» sends a command asked by a technician, «Απόρριψη» (comment required) refuses it. For a sent
+  command «Καταγραφή προσπάθειας» records ACK, NAK or Timeout; «Προσπάθειες» lists them.
+
+![Operator: meter confirmation](img/manual/operator-tec_30_meters.png)
+*Operator: meter confirmation.*
+
+![Operator: events, anti-tamper tasks and remote commands](img/manual/operator-tec_40_events.png)
+*Operator: events, anti-tamper tasks and remote commands.*
 
 ---
 
@@ -191,15 +281,27 @@ confirms it; only then the meter becomes **Active** and its readings are accepte
 where it applies, username, email, names, phone and a password of at least 8 characters, then «Δημιουργία». Consumers and
 technicians register themselves (section 1). The list filters by role/status; each row has «Αναστολή» or «Ενεργοποίηση».
 
+![Admin: users](img/manual/admin-10_users.png)
+*Admin: users.*
+
 **5.2 Audit log.** The 500 newest events, newest first. Filter by «Τύπος αντικειμένου» and dates. Every state change made
 through any page writes one row here (who, when, what, old and new value).
+
+![Admin: audit log](img/manual/admin-20_log.png)
+*Admin: audit log.*
 
 **5.3 GDPR decision.** Only requests pre-approved by an Operator appear. «Έγκριση» or «Απόρριψη» with a comment. An approved
 request is carried out with «Εφαρμογή» (needs the confirmation tick): the person's name, email, phone, bank accounts and
 notification channels are deleted or anonymised, and their raw readings get the short 1-month retention.
 
+![Admin: GDPR decision](img/manual/admin-gdp_10_decide.png)
+*Admin: GDPR decision.*
+
 **5.4 Retention.** Raw and validated readings are kept **36 months**, or **1 month** after an applied GDPR request.
 «Προεπισκόπηση» shows how many rows would be deleted (optionally for a chosen reference date); «Εκκαθάριση τώρα» deletes them.
+
+![Admin: data retention](img/manual/admin-gdp_retention.png)
+*Admin: data retention.*
 
 ---
 
@@ -216,19 +318,31 @@ notification channels are deleted or anonymised, and their raw readings get the 
 «Αποτέλεσμα» shows how many readings were stored. A packet from an unknown network ID, a non-active meter or with bad JSON is
 not lost: it is stored as an event. «Πρόσφατα πακέτα» lists the latest packets.
 
+![DSO: ingest](img/manual/dso-10_ingest.png)
+*DSO: ingest.*
+
 **6.2 VEE (Validation, Estimation, Editing).** Under «Εκτέλεση VEE» give «Από» and «Έως» (UTC) and press «Εκτέλεση VEE».
 The run checks every raw reading of the period: range, sudden spikes and gaps. Good readings become **validated** (they can
 never be changed again); a gap is filled by interpolation; a doubtful value goes to «Ύποπτες μετρήσεις». There the DSO
 enters «Νέα τιμή» and «Λόγος» and presses «Διόρθωση». «Τρεξίματα VEE» lists past runs with their counts.
 The stored value is the energy of the 15 minutes (for cumulative codes: counter minus previous counter).
 
+![DSO: VEE](img/manual/dso-20_vee.png)
+*DSO: VEE.*
+
 **6.3 Aggregates.** Under «Χτίσιμο aggregates ημέρας» choose a day and «Χτίσιμο», or «Χτίσιμο όλων των ημερών που λείπουν
 (έως χθες)». This builds the daily total of each meter (and month and year when they complete) and the monthly total of every
 **leaf** transformer. Then choose type and dates and «Εμφάνιση» for «Aggregates μετρητών» or «Aggregates μετασχηματιστών (φύλλα)».
 
+![DSO: aggregates](img/manual/dso-30_aggregates.png)
+*DSO: aggregates.*
+
 **6.4 Events and losses.** «Ανίχνευση» runs the rules on validated readings: voltage outside 207–253 V, phase-current
 imbalance above 25 %, suspected theft and others. «Συμβάντα» lists events by type, status and dates.
 «Αναφορά τεχνικών απωλειών» compares each leaf transformer's total with the sum of its meters for the last 7 days.
+
+![DSO: grid events and losses](img/manual/dso-40_events.png)
+*DSO: grid events and losses.*
 
 ---
 
@@ -247,17 +361,32 @@ for the first root), the geofence name and its rectangle (minimum/maximum latitu
 the parent's geofence and the parent must not have meters (only leaves have meters). «Εύρεση μετασχηματιστή από συντεταγμένες»
 returns the leaf transformer whose geofence contains a point.
 
+![TSO: transformer tree](img/manual/tso-10_tree.png)
+*TSO: transformer tree.*
+
 **7.2 Current state.** «Ανανέωση τρέχουσας κατάστασης» computes the load of each leaf from its meters and adds it up the tree,
 so every level shows its total. It runs only when the button is pressed; meters with no reading in the reference interval are
 left out.
 
+![TSO: current state after the refresh button](img/manual/tso-20_state-refreshed.png)
+*TSO: current state after the refresh button.*
+
 **7.3 Aggregates.** Choose «Μετασχηματιστής» (any level), «Περίοδος» (month, quarter, year) and the dates, then «Εμφάνιση».
 Leaves have stored monthly totals; higher levels are summed on demand. Months, quarters and years are taken whole.
+
+![TSO: network aggregates](img/manual/tso-30_aggregates.png)
+*TSO: network aggregates.*
 
 **7.4 Load shedding.** Choose the transformer, write «Αιτιολογία», tick the confirmation and press «Αποστολή εντολής».
 A remote command of type `Load shed` is created for every meter in its subtree, all linked to one shed order. «Εντολές αποκοπής» lists past orders.
 
+![TSO: load shedding](img/manual/tso-40_shed.png)
+*TSO: load shedding.*
+
 **7.5 Map.** A Leaflet map: filled rectangles are leaf geofences, dashed ones higher levels, markers are transformers and meters.
+
+![TSO: network map](img/manual/tso-50_map.png)
+*TSO: network map.*
 
 ---
 
@@ -272,12 +401,21 @@ A remote command of type `Load shed` is created for every meter in its subtree, 
 **only totals** of validated data, never one consumer's readings (privacy).
 **Intraday.** Choose a date: «Προσωρινά δεδομένα (πριν το VEE)» shows the newest raw values, which may still change after VEE.
 
+![Supplier: Day-Ahead](img/manual/supplier-10_dayahead.png)
+*Supplier: Day-Ahead.*
+
+![Supplier: Intraday](img/manual/supplier-20_intraday.png)
+*Supplier: Intraday.*
+
 ## 9. Aggregator
 
 The same two pages as the Supplier, for the premises in the aggregator's portfolios, plus:
 
 **«Χαρτοφυλάκια».** «Νέο χαρτοφυλάκιο» with a name and «Δημιουργία»; «Μετονομασία» renames. Open a portfolio, give
 «Αριθμός υποστατικού» and optionally «Από», then «Προσθήκη υποστατικού»; «Αφαίρεση» removes one.
+
+![Aggregator: portfolios](img/manual/aggregator-30_portfolio.png)
+*Aggregator: portfolios.*
 
 ---
 
@@ -288,7 +426,8 @@ The order below touches every ★ function once and keeps the data consistent be
 1. `consumer1`: «Τα υποστατικά μου», «Μετρήσεις» (current month free), buy one older month, pay the new invoice.
 2. `consumer1`: submit a fault request.
 3. `operator`: approve `tech2` («Έγκριση τεχνικών»); create a field task from the consumer's request and assign it to `tech1`.
-4. `tech1`: accept the task, add a note, complete it. *(Installation + operator confirmation when TEC-6/7 are merged.)*
+4. `tech1`: accept the task, add a note, complete it. Then «Εγκατάσταση μετρητή»: register the meter and its 3 documents.
+4b. `operator`: «Επιβεβαίωση μετρητών» → «Επιβεβαίωση»; the meter is Active.
 5. `dso1`: ingest a JSON packet, run VEE for that period, correct one suspect reading, build aggregates, detect events.
 6. `tso1`: show the tree, add a transformer, refresh the current state, show quarter aggregates at a higher level,
    load shedding on a small subtree, the map.
@@ -340,7 +479,13 @@ The order below touches every ★ function once and keeps the data consistent be
 
 ## 14. Final ER and data dictionary
 
-- **Final ER and relational diagram:** redrawn from the final `create.sql` in task DOC-2 (to be inserted here).
+- **Final ER diagram (Chen)** and **relational diagram**, redrawn from the final `create.sql` (task DOC-2):
+
+  ![Final ER diagram](img/er/er-chen.png)
+
+  ![Relational diagram](img/er/relational.png)
+
+  *(If the images do not show, DOC-2 is not merged yet: the files are `docs/img/er/er-chen.png` and `docs/img/er/relational.png`.)*
 - **Data dictionary:** every table and column explained in [20-data-dictionary.md](20-data-dictionary.md).
 - Schema overview: [04-database-schema.md](04-database-schema.md).
 
