@@ -19,3 +19,4 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 | TEC-2 | task/TEC-2-docs-approval | 2026-11-21 | TEC-2/3/4 documents, availability, approval (stopped early) |
 | MKT-4 | task/MKT-4-pages | 2026-11-21 | Supplier/aggregator pages (stopped early) |
 | TEC-6 | task/TEC-6-install | 2026-11-21 17:20 | TEC-6/7 install + confirm, TEC-8 commands, TEC-9 anti-tamper, TEC-10 pages |
+| DOC-1 | task/DOC-1-user-manual | 2026-11-21 18:14 | User manual in docs/21-user-manual.md: per-role how-to from the real pages, design choices, extras, limitations |
