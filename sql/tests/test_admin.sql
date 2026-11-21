@@ -143,3 +143,139 @@ BEGIN CATCH IF ERROR_NUMBER() = 51500 PRINT 'OK   list companies by non-admin ->
 -- ---------- βασικοί χρήστες ανέγγιχτοι ----------
 IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID BETWEEN 1 AND 10 AND AccountStatus <> 'Active')
     PRINT 'OK   base demo users all still Active' ELSE PRINT 'FAIL a base demo user is suspended';
+
+-- =====================================================================
+-- ADM-3: κατάλογοι Χειριστή (operator = UserID 2). Δοκιμαστικές γραμμές: TEST-ADM3-*
+-- =====================================================================
+DECLARE @i TABLE (ID INT);
+DECLARE @mid INT, @sid INT, @tid INT;
+
+-- ---------- sp_admin_operator_assert ----------
+BEGIN TRY EXEC sp_admin_operator_assert 2; PRINT 'OK   operator assert: active operator passes'; END TRY
+BEGIN CATCH PRINT 'FAIL operator assert: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_admin_operator_assert 1; PRINT 'FAIL operator assert: admin passed'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   operator assert: admin -> 51600' ELSE PRINT 'FAIL operator assert admin: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- meter model ----------
+INSERT @i EXEC sp_operator_save_meter_model 2, NULL, N'TEST-ADM3-Co', N'TEST-ADM3-M1', 'Single-Phase', 1;
+SELECT @mid = ID FROM @i; DELETE @i;
+IF EXISTS (SELECT 1 FROM METER_MODEL WHERE ModelID = @mid AND Manufacturer = N'TEST-ADM3-Co' AND PhaseCount = 1)
+    PRINT 'OK   meter model insert' ELSE PRINT 'FAIL meter model insert';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER_MODEL' AND ObjectID = CAST(@mid AS VARCHAR(100)) AND Action = 'Create meter model' AND PerformedBy = 2)
+    PRINT 'OK   meter model insert -> AUDIT_LOG' ELSE PRINT 'FAIL meter model insert audit';
+INSERT @i EXEC sp_operator_save_meter_model 2, @mid, N'TEST-ADM3-Co', N'TEST-ADM3-M1', 'Three-Phase', 3;
+IF EXISTS (SELECT 1 FROM METER_MODEL WHERE ModelID = @mid AND PhaseCount = 3 AND MeterType = 'Three-Phase') AND (SELECT ID FROM @i) = @mid
+    PRINT 'OK   meter model update (same id returned)' ELSE PRINT 'FAIL meter model update';
+DELETE @i;
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER_MODEL' AND ObjectID = CAST(@mid AS VARCHAR(100)) AND Action = 'Update meter model' AND OldState LIKE N'%1 φάσεις' AND NewState LIKE N'%3 φάσεις')
+    PRINT 'OK   meter model update -> AUDIT_LOG old/new' ELSE PRINT 'FAIL meter model update audit';
+BEGIN TRY EXEC sp_operator_save_meter_model 2, NULL, N'TEST-ADM3-Co', N'TEST-ADM3-M1', 'Single-Phase', 1; PRINT 'FAIL duplicate meter model'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51603 PRINT 'OK   duplicate meter model -> 51603' ELSE PRINT 'FAIL dup model: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_meter_model 2, NULL, N'TEST-ADM3-Co', N'TEST-ADM3-M2', 'Single-Phase', 4; PRINT 'FAIL phase 4'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51602 PRINT 'OK   phase count 4 -> 51602' ELSE PRINT 'FAIL phase: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_meter_model 2, NULL, N'  ', N'X', 'Single-Phase', 1; PRINT 'FAIL empty manufacturer'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51601 PRINT 'OK   empty manufacturer -> 51601' ELSE PRINT 'FAIL empty manuf: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_meter_model 2, 999999, N'TEST-ADM3-Co', N'TEST-ADM3-M9', 'Single-Phase', 1; PRINT 'FAIL unknown model id'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51604 PRINT 'OK   unknown model id -> 51604' ELSE PRINT 'FAIL unknown model: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_meter_model 3, NULL, N'TEST-ADM3-Co', N'TEST-ADM3-M3', 'Single-Phase', 1; PRINT 'FAIL consumer saved model'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   save meter model by consumer -> 51600' ELSE PRINT 'FAIL model consumer: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_meter_model 1, NULL, N'TEST-ADM3-Co', N'TEST-ADM3-M3', 'Single-Phase', 1; PRINT 'FAIL admin saved model'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   save meter model by admin -> 51600' ELSE PRINT 'FAIL model admin: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- service type ----------
+INSERT @i EXEC sp_operator_save_service_type 2, NULL, N'TEST-ADM3-Service', 5.50;
+SELECT @sid = ID FROM @i; DELETE @i;
+IF EXISTS (SELECT 1 FROM SERVICE_TYPE WHERE ServiceTypeID = @sid AND Fee = 5.50) PRINT 'OK   service type insert' ELSE PRINT 'FAIL service insert';
+INSERT @i EXEC sp_operator_save_service_type 2, @sid, N'TEST-ADM3-Service', 7.25;
+DELETE @i;
+IF EXISTS (SELECT 1 FROM SERVICE_TYPE WHERE ServiceTypeID = @sid AND Fee = 7.25) PRINT 'OK   service type update (fee)' ELSE PRINT 'FAIL service update';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'SERVICE_TYPE' AND ObjectID = CAST(@sid AS VARCHAR(100)) AND Action = 'Update service type' AND OldState LIKE N'%5.50' AND NewState LIKE N'%7.25')
+    PRINT 'OK   service type update -> AUDIT_LOG old/new' ELSE PRINT 'FAIL service update audit';
+BEGIN TRY EXEC sp_operator_save_service_type 2, NULL, N'TEST-ADM3-Service', 1; PRINT 'FAIL duplicate service'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51612 PRINT 'OK   duplicate service type -> 51612' ELSE PRINT 'FAIL dup service: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_service_type 2, NULL, N'TEST-ADM3-Service2', -1; PRINT 'FAIL negative fee'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51611 PRINT 'OK   negative fee -> 51611' ELSE PRINT 'FAIL fee: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_service_type 2, NULL, N'', 1; PRINT 'FAIL empty service name'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51610 PRINT 'OK   empty service name -> 51610' ELSE PRINT 'FAIL service name: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_service_type 2, 999999, N'TEST-ADM3-Service9', 1; PRINT 'FAIL unknown service id'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51613 PRINT 'OK   unknown service id -> 51613' ELSE PRINT 'FAIL unknown service: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_service_type 3, NULL, N'TEST-ADM3-Service3', 1; PRINT 'FAIL consumer saved service'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   save service type by consumer -> 51600' ELSE PRINT 'FAIL service consumer: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_service_type 1, NULL, N'TEST-ADM3-Service3', 1; PRINT 'FAIL admin saved service'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   save service type by admin -> 51600' ELSE PRINT 'FAIL service admin: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- tariff type ----------
+INSERT @i EXEC sp_operator_save_tariff_type 2, NULL, N'TEST-ADM3-Tariff';
+SELECT @tid = ID FROM @i; DELETE @i;
+IF EXISTS (SELECT 1 FROM TARIFF_TYPE WHERE TariffTypeID = @tid AND Name = N'TEST-ADM3-Tariff') PRINT 'OK   tariff type insert' ELSE PRINT 'FAIL tariff insert';
+INSERT @i EXEC sp_operator_save_tariff_type 2, @tid, N'TEST-ADM3-Tariff-renamed';
+DELETE @i;
+IF EXISTS (SELECT 1 FROM TARIFF_TYPE WHERE TariffTypeID = @tid AND Name = N'TEST-ADM3-Tariff-renamed') PRINT 'OK   tariff type update' ELSE PRINT 'FAIL tariff update';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'TARIFF_TYPE' AND ObjectID = CAST(@tid AS VARCHAR(100)) AND Action = 'Update tariff type' AND OldState = N'TEST-ADM3-Tariff' AND NewState = N'TEST-ADM3-Tariff-renamed')
+    PRINT 'OK   tariff type update -> AUDIT_LOG old/new' ELSE PRINT 'FAIL tariff update audit';
+BEGIN TRY EXEC sp_operator_save_tariff_type 2, NULL, N'TEST-ADM3-Tariff-renamed'; PRINT 'FAIL duplicate tariff'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51621 PRINT 'OK   duplicate tariff type -> 51621' ELSE PRINT 'FAIL dup tariff: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_tariff_type 2, NULL, N' '; PRINT 'FAIL empty tariff name'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51620 PRINT 'OK   empty tariff name -> 51620' ELSE PRINT 'FAIL tariff name: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_tariff_type 2, 999999, N'TEST-ADM3-Tariff9'; PRINT 'FAIL unknown tariff id'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51622 PRINT 'OK   unknown tariff id -> 51622' ELSE PRINT 'FAIL unknown tariff: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_tariff_type 3, NULL, N'TEST-ADM3-Tariff3'; PRINT 'FAIL consumer saved tariff'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   save tariff type by consumer -> 51600' ELSE PRINT 'FAIL tariff consumer: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_save_tariff_type 1, NULL, N'TEST-ADM3-Tariff3'; PRINT 'FAIL admin saved tariff'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   save tariff type by admin -> 51600' ELSE PRINT 'FAIL tariff admin: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- ref lists ----------
+DECLARE @rm TABLE (ModelID INT, Manufacturer NVARCHAR(100), ModelName NVARCHAR(100), MeterType VARCHAR(30), PhaseCount TINYINT, Label NVARCHAR(400));
+DECLARE @rs TABLE (ServiceTypeID INT, Name NVARCHAR(100), Fee DECIMAL(10,2), Label NVARCHAR(400));
+DECLARE @rt TABLE (TariffTypeID INT, Name NVARCHAR(100), Label NVARCHAR(100));
+INSERT @rm EXEC sp_ref_list_meter_models;
+INSERT @rs EXEC sp_ref_list_service_types;
+INSERT @rt EXEC sp_ref_list_tariff_types;
+IF EXISTS (SELECT 1 FROM @rm WHERE ModelID = @mid) AND EXISTS (SELECT 1 FROM @rs WHERE ServiceTypeID = @sid)
+   AND EXISTS (SELECT 1 FROM @rt WHERE TariffTypeID = @tid)
+   AND (SELECT COUNT(*) FROM @rm) = (SELECT COUNT(*) FROM METER_MODEL)
+    PRINT 'OK   ref lists show catalog rows' ELSE PRINT 'FAIL ref lists';
+
+-- ---------- delete ----------
+BEGIN TRY EXEC sp_operator_delete_catalog_item 3, 'TariffType', @tid; PRINT 'FAIL consumer deleted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   delete by consumer -> 51600' ELSE PRINT 'FAIL delete consumer: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_delete_catalog_item 1, 'TariffType', @tid; PRINT 'FAIL admin deleted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51600 PRINT 'OK   delete by admin -> 51600' ELSE PRINT 'FAIL delete admin: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_delete_catalog_item 2, 'Colour', 1; PRINT 'FAIL unknown catalog'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51630 PRINT 'OK   unknown catalog -> 51630' ELSE PRINT 'FAIL unknown catalog: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_delete_catalog_item 2, 'MeterModel', 999999; PRINT 'FAIL unknown item'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51631 PRINT 'OK   delete unknown item -> 51631' ELSE PRINT 'FAIL delete unknown: ' + ERROR_MESSAGE(); END CATCH;
+
+-- σε χρήση: στοιχεία 1 των βασικών δεδομένων (αν έχουν αναφορές σε αυτό το σύνολο δεδομένων)
+IF EXISTS (SELECT 1 FROM METER WHERE ModelID = 1)
+BEGIN
+    BEGIN TRY EXEC sp_operator_delete_catalog_item 2, 'MeterModel', 1; PRINT 'FAIL used model deleted'; END TRY
+    BEGIN CATCH IF ERROR_NUMBER() = 51632 PRINT 'OK   delete meter model in use -> 51632' ELSE PRINT 'FAIL delete used model: ' + ERROR_MESSAGE(); END CATCH;
+END
+ELSE PRINT 'OK   (skipped) meter model 1 has no meters in this data set';
+IF EXISTS (SELECT 1 FROM SERVICE_PURCHASE WHERE ServiceTypeID = 1)
+BEGIN
+    BEGIN TRY EXEC sp_operator_delete_catalog_item 2, 'ServiceType', 1; PRINT 'FAIL used service deleted'; END TRY
+    BEGIN CATCH IF ERROR_NUMBER() = 51632 PRINT 'OK   delete service type in use -> 51632' ELSE PRINT 'FAIL delete used service: ' + ERROR_MESSAGE(); END CATCH;
+END
+ELSE PRINT 'OK   (skipped) service type 1 has no purchases in this data set';
+IF EXISTS (SELECT 1 FROM SUPPLY_CONTRACT WHERE TariffTypeID = 1)
+BEGIN
+    BEGIN TRY EXEC sp_operator_delete_catalog_item 2, 'TariffType', 1; PRINT 'FAIL used tariff deleted'; END TRY
+    BEGIN CATCH IF ERROR_NUMBER() = 51632 PRINT 'OK   delete tariff type in use -> 51632' ELSE PRINT 'FAIL delete used tariff: ' + ERROR_MESSAGE(); END CATCH;
+END
+ELSE PRINT 'OK   (skipped) tariff type 1 has no contracts in this data set';
+IF EXISTS (SELECT 1 FROM METER_MODEL WHERE ModelID = 1) AND EXISTS (SELECT 1 FROM SERVICE_TYPE WHERE ServiceTypeID = 1) AND EXISTS (SELECT 1 FROM TARIFF_TYPE WHERE TariffTypeID = 1)
+    PRINT 'OK   base catalog rows survived the refused deletes' ELSE PRINT 'FAIL base catalog row missing';
+
+-- αχρησιμοποίητα στοιχεία: διαγράφονται
+EXEC sp_operator_delete_catalog_item 2, 'MeterModel', @mid;
+IF NOT EXISTS (SELECT 1 FROM METER_MODEL WHERE ModelID = @mid) PRINT 'OK   delete unused meter model' ELSE PRINT 'FAIL delete unused model';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER_MODEL' AND ObjectID = CAST(@mid AS VARCHAR(100)) AND Action = 'Delete meter model' AND OldState IS NOT NULL AND PerformedBy = 2)
+    PRINT 'OK   delete meter model -> AUDIT_LOG' ELSE PRINT 'FAIL delete model audit';
+EXEC sp_operator_delete_catalog_item 2, 'ServiceType', @sid;
+IF NOT EXISTS (SELECT 1 FROM SERVICE_TYPE WHERE ServiceTypeID = @sid) PRINT 'OK   delete unused service type' ELSE PRINT 'FAIL delete unused service';
+EXEC sp_operator_delete_catalog_item 2, 'TariffType', @tid;
+IF NOT EXISTS (SELECT 1 FROM TARIFF_TYPE WHERE TariffTypeID = @tid) PRINT 'OK   delete unused tariff type' ELSE PRINT 'FAIL delete unused tariff';
+BEGIN TRY EXEC sp_operator_delete_catalog_item 2, 'TariffType', @tid; PRINT 'FAIL deleted twice'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51631 PRINT 'OK   delete same item twice -> 51631' ELSE PRINT 'FAIL delete twice: ' + ERROR_MESSAGE(); END CATCH;
