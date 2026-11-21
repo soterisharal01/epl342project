@@ -170,11 +170,13 @@ BEGIN TRY EXEC sp_consumer_buy_history 3, 3, @prev, @prev; PRINT 'FAIL bought hi
 BEGIN CATCH IF ERROR_NUMBER() = 51101 PRINT 'OK   buy_history: foreign premise -> 51101' ELSE PRINT 'FAIL buy foreign: ' + ERROR_MESSAGE(); END CATCH;
 BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @cur, @cur; PRINT 'FAIL bought the free current month'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51108 PRINT 'OK   buy_history: current month -> 51108' ELSE PRINT 'FAIL buy current: ' + ERROR_MESSAGE(); END CATCH;
-BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, DATEADD(MONTH, 3, @cur); PRINT 'FAIL bought future month'; END TRY
+-- EXEC arguments must be variables or literals, not expressions: precompute the dates.
+DECLARE @fut DATE = DATEADD(MONTH, 3, @cur), @before DATE = DATEADD(MONTH, -2, @prev), @old37 DATE = DATEADD(MONTH, -37, @cur);
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, @fut; PRINT 'FAIL bought future month'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51108 PRINT 'OK   buy_history: future month -> 51108' ELSE PRINT 'FAIL buy future: ' + ERROR_MESSAGE(); END CATCH;
-BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, DATEADD(MONTH, -2, @prev); PRINT 'FAIL MonthFrom > MonthTo accepted'; END TRY
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, @before; PRINT 'FAIL MonthFrom > MonthTo accepted'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51109 PRINT 'OK   buy_history: MonthFrom > MonthTo -> 51109' ELSE PRINT 'FAIL buy order: ' + ERROR_MESSAGE(); END CATCH;
-BEGIN TRY EXEC sp_consumer_buy_history 3, 1, DATEADD(MONTH, -37, @cur), DATEADD(MONTH, -37, @cur); PRINT 'FAIL bought month beyond retention'; END TRY
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @old37, @old37; PRINT 'FAIL bought month beyond retention'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51111 PRINT 'OK   buy_history: beyond retention -> 51111' ELSE PRINT 'FAIL buy retention: ' + ERROR_MESSAGE(); END CATCH;
 
 DECLARE @bh TABLE (PurchaseID INT, InvoiceID INT, Amount DECIMAL(10,2));
