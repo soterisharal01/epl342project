@@ -49,7 +49,7 @@ Details: [docs/03-workflow.md](docs/03-workflow.md). The AI's exact procedure: [
 | Folder | Content |
 |---|---|
 | `sql/` | `create.sql`, `drop.sql`, `procs_*.sql`, `tests/`, `tools/` (`build_all.py`, `test_local.sh`) |
-| `data/` | `gen/` generators, `small/` demo data (later `large/` and `import.sql`) |
+| `data/` | `gen/` generators, `small/` demo data (later `large/*.dat`; their loader is `sql/import.sql`) |
 | `sources/` | The PHP app (see [12](docs/12-php-web-app.md)) |
 | `docs/` | Everything in the menu above |
 | `er-model/`, `deliverables/phase-a/` | Phase A sources and submission |

@@ -40,7 +40,9 @@ The exact steps the AI follows are in [CLAUDE.md](../CLAUDE.md).
    ⛔ blocked: written in the handoff note's Blockers, told to the group
 ```
 
-- In progress is shown by the **branch**, not by editing `tasks.md` on `main`. That keeps `main` free of conflicts.
+- **Taken tasks are marked in [claims.md](claims.md) on `main`**, one row each, pushed straight to `main` the moment a task is taken.
+  After a minute the session re-reads the file; if two members took the same task, the earliest row wins and the other picks
+  another one. The task's PR removes the row. (In progress is also visible as the pushed branch.)
 - One task, one branch, one PR. Branch name: `task/<ID>-<slug>`, for example `task/TSO-1-tree`.
 - The handoff note has a **Lock** line. `active since <time>` means a session is working on it now; leave it alone
   unless it is more than 12 hours old. `free` means anyone may resume.

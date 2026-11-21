@@ -64,3 +64,17 @@ Example packet:
 - Readings: 18–19/11/2026 validated; 20/11/2026 00:00–05:45 raw and **Pending**, waiting for VEE.
 - An unmatched packet from `EAC-XXX-9999` with its `Unmatched packet` event.
 - Value meaning: decision B2 in [19-conventions.md](19-conventions.md). Raw `1.8.0` is the counter; validated is energy per 15 minutes.
+
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] 3.1 The packet has a network ID, timestamp, communication info (signal, network type) and OBIS/value/unit pairs. The communication info is stored too.
+- [ ] 3.1 **First** match to an existing **and** active/confirmed meter, **then** store with the right 15-minute slot, unit and code.
+- [ ] 3.1 Packets that do not match or have a communication problem are recorded as failures/events (B14), **never** lost silently.
+- [ ] 3.1 At least the 12 appendix OBIS codes. Each packet carries a **variable** set of codes. A new code without redesign.
+- [ ] 3.2 Validation: syntax, supported OBIS, limits, gaps and inconsistencies in the series. Estimation for what is missing or unusable. Editing with original value, new value, origin.
+- [ ] 3.2 The result distinguishes at least validated/estimated and keeps which value is used afterwards.
+- [ ] 3.2 The two spec examples work in the demo: spike 25.4 → suspect; gap at 10:30 → estimate 2.1 with status estimated.
+- [ ] 3.2 After VEE: **immutable**. Finishing VEE triggers the aggregates (day, month, year), which are also final and never recomputed.
+- [ ] II.C Analytics: sags/swells, **technical losses**, phase imbalance, suspected theft (event types in B14).
