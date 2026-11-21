@@ -20,9 +20,9 @@ IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_INVOICE_User_IssueDate' AN
     DROP INDEX IX_INVOICE_User_IssueDate ON INVOICE;
 GO
 DECLARE @u INT = (SELECT TOP 1 UserID FROM INVOICE GROUP BY UserID ORDER BY COUNT(*) DESC, UserID);
-PRINT '=== A1: ΠΡΙΝ (χωρίς ευρετήριο). UserID = ' + CAST(@u AS VARCHAR(10)) + ', τιμολόγια του = '
-      + CAST((SELECT COUNT(*) FROM INVOICE WHERE UserID = @u) AS VARCHAR(10)) + ' από '
-      + CAST((SELECT COUNT(*) FROM INVOICE) AS VARCHAR(10));
+DECLARE @mine INT = (SELECT COUNT(*) FROM INVOICE WHERE UserID = @u), @all INT = (SELECT COUNT(*) FROM INVOICE);
+PRINT N'=== A1: ΠΡΙΝ (χωρίς ευρετήριο). UserID = ' + CAST(@u AS VARCHAR(10)) + N', τιμολόγια του = '
+      + CAST(@mine AS VARCHAR(10)) + N' από ' + CAST(@all AS VARCHAR(10));
 DBCC DROPCLEANBUFFERS WITH NO_INFOMSGS;   -- ψυχρή cache: δίκαιη σύγκριση
 SET STATISTICS IO ON; SET STATISTICS TIME ON;
 SELECT i.InvoiceID, i.IssueDate, i.PeriodFrom, i.PeriodTo, i.Amount, i.Status, i.ContractID
@@ -37,7 +37,7 @@ CREATE NONCLUSTERED INDEX IX_INVOICE_User_IssueDate
     INCLUDE (Amount, Status, PeriodFrom, PeriodTo, ContractID);
 GO
 DECLARE @u INT = (SELECT TOP 1 UserID FROM INVOICE GROUP BY UserID ORDER BY COUNT(*) DESC, UserID);
-PRINT '=== A2: ΜΕΤΑ (με ευρετήριο). UserID = ' + CAST(@u AS VARCHAR(10));
+PRINT N'=== A2: ΜΕΤΑ (με ευρετήριο). UserID = ' + CAST(@u AS VARCHAR(10));
 DBCC DROPCLEANBUFFERS WITH NO_INFOMSGS;
 SET STATISTICS IO ON; SET STATISTICS TIME ON;
 SELECT i.InvoiceID, i.IssueDate, i.PeriodFrom, i.PeriodTo, i.Amount, i.Status, i.ContractID
@@ -77,17 +77,19 @@ IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RAW_READING_Pending' AND o
 GO
 DECLARE @To DATETIME2(0) = DATEADD(SECOND, 1, (SELECT MAX(IntervalStart) FROM RAW_READING));
 DECLARE @From DATETIME2(0) = DATEADD(DAY, -1, @To);
-PRINT '=== B1: ΠΡΙΝ (χωρίς ευρετήριο). Όλες οι raw = ' + CAST((SELECT COUNT(*) FROM RAW_READING) AS VARCHAR(10));
+DECLARE @rawAll INT = (SELECT COUNT(*) FROM RAW_READING), @pend INT;
+PRINT N'=== B1: ΠΡΙΝ (χωρίς ευρετήριο). Όλες οι raw = ' + CAST(@rawAll AS VARCHAR(10));
 BEGIN TRAN;
     UPDATE RAW_READING SET VeeStatus = 'Pending' WHERE IntervalStart >= @From AND IntervalStart < @To AND VeeStatus <> 'Pending';
-    PRINT 'Pending στο τεστ = ' + CAST((SELECT COUNT(*) FROM RAW_READING WHERE VeeStatus = 'Pending') AS VARCHAR(10));
+    SET @pend = (SELECT COUNT(*) FROM RAW_READING WHERE VeeStatus = 'Pending');
+    PRINT N'Pending στο τεστ = ' + CAST(@pend AS VARCHAR(10));
     SET STATISTICS IO ON; SET STATISTICS TIME ON;
     SELECT r.MeterID, r.ObisCode, r.IntervalStart, r.ReceivedValue
     INTO #b1
     FROM RAW_READING r WHERE r.VeeStatus = 'Pending' AND r.IntervalStart >= @From AND r.IntervalStart < @To;
     SET STATISTICS IO OFF; SET STATISTICS TIME OFF;
 ROLLBACK;
-DROP TABLE #b1;
+IF OBJECT_ID('tempdb..#b1') IS NOT NULL DROP TABLE #b1;
 GO
 
 CREATE NONCLUSTERED INDEX IX_RAW_READING_Pending
@@ -97,7 +99,7 @@ CREATE NONCLUSTERED INDEX IX_RAW_READING_Pending
 GO
 DECLARE @To DATETIME2(0) = DATEADD(SECOND, 1, (SELECT MAX(IntervalStart) FROM RAW_READING));
 DECLARE @From DATETIME2(0) = DATEADD(DAY, -1, @To);
-PRINT '=== B2: ΜΕΤΑ (με φιλτραρισμένο ευρετήριο)';
+PRINT N'=== B2: ΜΕΤΑ (με φιλτραρισμένο ευρετήριο)';
 BEGIN TRAN;
     UPDATE RAW_READING SET VeeStatus = 'Pending' WHERE IntervalStart >= @From AND IntervalStart < @To AND VeeStatus <> 'Pending';
     SET STATISTICS IO ON; SET STATISTICS TIME ON;
@@ -106,7 +108,7 @@ BEGIN TRAN;
     FROM RAW_READING r WHERE r.VeeStatus = 'Pending' AND r.IntervalStart >= @From AND r.IntervalStart < @To;
     SET STATISTICS IO OFF; SET STATISTICS TIME OFF;
 ROLLBACK;
-DROP TABLE #b2;
+IF OBJECT_ID('tempdb..#b2') IS NOT NULL DROP TABLE #b2;
 GO
 
 -- Εκτιμώμενα πλάνα ως κείμενο. ΜΕΤΑ:
@@ -135,7 +137,7 @@ IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FIELD_TASK_Technician_Stat
     DROP INDEX IX_FIELD_TASK_Technician_Status ON FIELD_TASK;
 GO
 DECLARE @t INT = (SELECT TOP 1 TechnicianID FROM FIELD_TASK GROUP BY TechnicianID ORDER BY COUNT(*) DESC, TechnicianID);
-PRINT '=== C1: ΠΡΙΝ. TechnicianID = ' + ISNULL(CAST(@t AS VARCHAR(10)), 'NULL (δεν υπάρχουν εργασίες)');
+PRINT N'=== C1: ΠΡΙΝ. TechnicianID = ' + ISNULL(CAST(@t AS VARCHAR(10)), N'NULL (δεν υπάρχουν εργασίες)');
 SET STATISTICS IO ON;
 SELECT t.TaskID, t.TaskType, t.ScheduledFrom, t.ScheduledTo, t.Status, t.PremiseID, t.MeterID, t.RequestID
 INTO #c1 FROM FIELD_TASK t WHERE t.TechnicianID = @t ORDER BY t.ScheduledFrom DESC, t.TaskID DESC;
@@ -147,7 +149,7 @@ CREATE NONCLUSTERED INDEX IX_FIELD_TASK_Technician_Status
     INCLUDE (TaskType, ScheduledFrom, ScheduledTo, PremiseID, MeterID, RequestID);
 GO
 DECLARE @t INT = (SELECT TOP 1 TechnicianID FROM FIELD_TASK GROUP BY TechnicianID ORDER BY COUNT(*) DESC, TechnicianID);
-PRINT '=== C2: ΜΕΤΑ';
+PRINT N'=== C2: ΜΕΤΑ';
 SET STATISTICS IO ON;
 SELECT t.TaskID, t.TaskType, t.ScheduledFrom, t.ScheduledTo, t.Status, t.PremiseID, t.MeterID, t.RequestID
 INTO #c2 FROM FIELD_TASK t WHERE t.TechnicianID = @t ORDER BY t.ScheduledFrom DESC, t.TaskID DESC;

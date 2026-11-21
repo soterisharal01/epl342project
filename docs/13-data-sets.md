@@ -48,3 +48,17 @@ Loads **after** `data/small/00_base.sql`. All IDENTITY IDs start at 100000. User
 **Size cap:** each student database on the department server holds at most 27 MB of data (20 MB log), and system objects (catalog, procedure code) already use 16.5 MB. So the large set must stay under about 7 MB stored. The generator estimates it from measured bytes per row x 1.2 (now 6.8 MB) and refuses to write above 7 MB. Total 78,609 rows, still far above "thousands of rows". Import commits every ~2,000 rows (`GO`).
 
 Import = run `sql/import.sql` in SSMS (`BULK INSERT` on the department server cannot see our files). Decisions B8, B9.
+
+## `sql/select.sql`: queries for the examiner (REL-5, DAT-5)
+
+Read-only, not part of the build. Run it in SSMS on a database that has the build and a data set loaded; every
+parameter (user of each role, meter, day, transformer) is picked from the data, so it works on the small and the large set.
+
+| Part | What it has |
+|---|---|
+| 1 (REL-5) | Q01–Q27: plain `SELECT` queries over the tables (premises, readings, VEE, aggregates, invoices, portfolios, ...) |
+| 2 (DAT-5) | E01–E37: one `EXEC` of the read procedure behind every main page of every role: Consumer (premises, meters, readings, history, thresholds, events, requests, invoices, GDPR), Technician (documents, availability, tasks, notes), Operator (pending technicians, requests, tasks, GDPR, catalogs), Admin (users, audit log, GDPR, retention preview), DSO (packets, VEE runs, suspect readings, meter and leaf aggregates, events, technical losses), TSO (tree, locate, current state, root aggregates per month and quarter, shed orders, map), Supplier and Aggregator (Day-Ahead totals, Intraday, portfolios). Each call `PRINT`s its title first; a refused call prints the reason and the file goes on. |
+
+Procedures that **change** data are not called here (running the file must not change the demo database); each has one
+successful and one refused call in `sql/tests/test_<area>.sql`. Checked 21/11: on a clean build + base data, and on a
+database after all tests, the whole file runs with **0 errors and 0 refused calls**.

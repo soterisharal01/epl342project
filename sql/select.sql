@@ -1,4 +1,4 @@
--- MDMS-Cy, EPL342 Phase B: demo and analytic SELECT queries (task REL-5).
+-- MDMS-Cy, EPL342 Phase B: demo and analytic queries (Part 1: SELECTs, task REL-5; Part 2: one EXEC per main function of every role, task DAT-5).
 -- Read-only. Run on a database that has create.sql, procs and the data sets loaded.
 -- Run the whole file in SSMS, or one query at a time (select it and press Execute).
 -- This file is NOT part of the automatic build (build_all.py); it is a hand-in file and an exam aid.
@@ -405,3 +405,154 @@ LEFT JOIN METER_AGGREGATE a ON a.MeterID = mi.MeterID AND a.ObisCode = '1.8.0'
                            AND a.PeriodType = 'Month' AND a.PeriodStart = @MonthStart
 GROUP BY ag.Name, po.Name
 ORDER BY ag.Name, po.Name;
+
+-- #####################################################################################################
+-- PART 2 (task DAT-5). One EXEC for every main function of every role, plus the analytics.
+-- These are the same stored procedures the PHP pages call, so the examiner sees exactly what each role sees.
+-- Only procedures that READ are called here: running the whole file never changes the data.
+-- The functions that change data (register, pay, submit, ingest, VEE, approve, load shed, ...) are run
+-- with one call that succeeds and one that must be refused in sql/tests/test_<area>.sql.
+-- Each block PRINTs its title, so the Messages tab shows which result grid belongs to which call.
+-- A refused call (for example a role with no data on a small set) prints the reason and the file continues.
+-- #####################################################################################################
+
+-- Users of every role, picked from the data (the first active user of each role).
+DECLARE @Admin INT      = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'Admin'      AND AccountStatus = 'Active');
+DECLARE @Operator INT   = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'Operator'   AND AccountStatus = 'Active');
+DECLARE @Tech INT       = (SELECT MIN(t.TechnicianID) FROM FIELD_TASK t JOIN USER_ACCOUNT u ON u.UserID = t.TechnicianID
+                           WHERE u.AccountStatus = 'Active' AND u.ApprovalStatus = 'Approved');
+DECLARE @DSO INT        = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'DSO'        AND AccountStatus = 'Active');
+DECLARE @TSO INT        = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'TSO'        AND AccountStatus = 'Active');
+DECLARE @SupplierU INT  = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'Supplier'   AND AccountStatus = 'Active');
+DECLARE @AggregatorU INT = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'Aggregator' AND AccountStatus = 'Active');
+-- The consumer who holds the premise where @Meter (the meter with most readings) is installed now.
+DECLARE @Consumer INT   = (SELECT TOP 1 h.UserID FROM METER_INSTALLATION mi
+                           JOIN HOLDING h ON h.PremiseID = mi.PremiseID AND h.EndDate IS NULL
+                           WHERE mi.MeterID = @Meter AND mi.RemovedAt IS NULL ORDER BY h.StartDate DESC);
+DECLARE @Task INT       = (SELECT MAX(TaskID) FROM FIELD_TASK WHERE TechnicianID = @Tech);
+DECLARE @Portfolio INT  = (SELECT MIN(p.PortfolioID) FROM PORTFOLIO p JOIN USER_ACCOUNT u ON u.AggregatorID = p.AggregatorID
+                           WHERE u.UserID = @AggregatorU);
+DECLARE @Root INT       = (SELECT MIN(TransformerID) FROM TRANSFORMER WHERE ParentTransformerID IS NULL);
+DECLARE @PendingTech INT = (SELECT MIN(UserID) FROM USER_ACCOUNT WHERE Role = 'Technician' AND ApprovalStatus = 'Pending');
+DECLARE @DayFrom DATETIME2(0) = CAST(@Day AS DATETIME2(0)), @DayTo DATETIME2(0) = DATEADD(DAY, 1, CAST(@Day AS DATETIME2(0)));
+DECLARE @YearStart DATE = DATEFROMPARTS(YEAR(@Day), 1, 1);
+DECLARE @Lat DECIMAL(9,6), @Lon DECIMAL(9,6);
+SELECT TOP 1 @Lat = (g.MinLat + g.MaxLat) / 2, @Lon = (g.MinLon + g.MaxLon) / 2
+FROM TRANSFORMER t JOIN GEOFENCE g ON g.GeofenceID = t.GeofenceID
+WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER c WHERE c.ParentTransformerID = t.TransformerID) ORDER BY t.TransformerID;
+
+-- =====================================================================================================
+-- E01-E08. CONSUMER (III.1.1-III.1.4)
+-- =====================================================================================================
+PRINT '--- E01 Consumer: my premises (III.1.1)';
+BEGIN TRY EXEC sp_consumer_list_premises @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E02 Consumer: my meters';
+BEGIN TRY EXEC sp_consumer_list_meters @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E03 Consumer: 15-minute readings of one day (III.1.2; current month free, older months need a purchase)';
+BEGIN TRY EXEC sp_consumer_readings @Consumer, @Meter, @DayFrom, @DayTo; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E04 Consumer: monthly history from the aggregates (III.1.2)';
+BEGIN TRY EXEC sp_consumer_history @Consumer, @Meter, 'Month', @YearStart, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E05 Consumer: thresholds and power-quality events (III.1.2)';
+BEGIN TRY EXEC sp_consumer_list_thresholds @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_quality_events @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E06 Consumer: check/fault requests and their history (III.1.3)';
+BEGIN TRY EXEC sp_consumer_list_requests @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E07 Consumer: invoices and payments (III.1.3)';
+BEGIN TRY EXEC sp_consumer_list_invoices @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_list_payments @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E08 Consumer: my GDPR requests (III.1.4)';
+BEGIN TRY EXEC sp_gdpr_list @Consumer; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+
+-- =====================================================================================================
+-- E09-E12. TECHNICIAN (III.2.1-III.2.2)
+-- =====================================================================================================
+PRINT '--- E09 Technician: my documents (III.2.1)';
+BEGIN TRY EXEC sp_tech_list_documents @Tech; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E10 Technician: my availability (III.2.1)';
+BEGIN TRY EXEC sp_tech_list_availability @Tech; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E11 Technician: my field tasks (III.2.2)';
+BEGIN TRY EXEC sp_tech_list_tasks @Tech; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E12 Technician: one task with its notes (III.2.2)';
+BEGIN TRY EXEC sp_task_get @Tech, @Task; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_task_notes @Tech, @Task; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+
+-- =====================================================================================================
+-- E13-E17. OPERATOR (III.2.1-III.2.2, III.1.4, catalogs)
+-- =====================================================================================================
+PRINT '--- E13 Operator: technicians waiting for approval, and the documents of one (III.2.1)';
+BEGIN TRY EXEC sp_operator_list_pending_technicians @Operator; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+IF @PendingTech IS NOT NULL
+BEGIN TRY EXEC sp_operator_list_technician_documents @Operator, @PendingTech; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E14 Operator: consumer requests waiting for a task, and approved technicians (III.2.2)';
+BEGIN TRY EXEC sp_task_list_requests @Operator; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_task_list_technicians @Operator; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E15 Operator: all field tasks (III.2.2)';
+BEGIN TRY EXEC sp_task_list @Operator; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E16 Operator: GDPR requests to pre-approve (III.1.4)';
+BEGIN TRY EXEC sp_gdpr_list @Operator; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E17 Operator catalogs: meter models, service fees, tariffs';
+EXEC sp_ref_list_meter_models;
+EXEC sp_ref_list_service_types;
+EXEC sp_ref_list_tariff_types;
+
+-- =====================================================================================================
+-- E18-E21. ADMIN (users, audit log, GDPR decision, retention)
+-- =====================================================================================================
+PRINT '--- E18 Admin: every user account';
+BEGIN TRY EXEC sp_admin_list_users @Admin; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E19 Admin: audit log (500 newest)';
+BEGIN TRY EXEC sp_admin_audit_log @Admin; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E20 Admin: GDPR requests to decide (III.1.4)';
+BEGIN TRY EXEC sp_gdpr_list @Admin; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E21 Admin: retention preview, what a purge would delete now (III.1.4)';
+BEGIN TRY EXEC sp_retention_preview @Admin; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+
+-- =====================================================================================================
+-- E22-E27. DSO (III.3.1-III.3.2, analytics II.C)
+-- =====================================================================================================
+PRINT '--- E22 DSO: latest telemetry packets (III.3.1)';
+BEGIN TRY EXEC sp_dso_list_packets @DSO, 20; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E23 DSO: VEE runs and suspect readings (III.3.2)';
+BEGIN TRY EXEC sp_dso_list_runs @DSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_dso_list_suspect @DSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E24 DSO: daily aggregates of one meter (III.3.2)';
+BEGIN TRY EXEC sp_dso_list_aggregates @DSO, @Meter, 'Day', @YearStart, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E25 DSO: monthly aggregates of the leaf transformers (III.3.2, professor: leaves only)';
+BEGIN TRY EXEC sp_dso_list_transformer_aggregates @DSO, NULL, 'Month', @YearStart, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E26 Analytics: grid events (under/over-voltage, phase imbalance, suspected theft) (II.C)';
+BEGIN TRY EXEC sp_dso_list_events @DSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E27 Analytics: technical losses per leaf transformer, last 7 days of data (II.C)';
+DECLARE @LossFrom DATE = DATEADD(DAY, -6, @Day);
+BEGIN TRY EXEC sp_dso_losses_report @DSO, @LossFrom, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+
+-- =====================================================================================================
+-- E28-E33. TSO (III.4.1-III.4.2, professor's aggregates per tree level, II.D)
+-- =====================================================================================================
+PRINT '--- E28 TSO: the transformer tree from the root (recursive CTE) (III.4.1)';
+BEGIN TRY EXEC sp_tso_tree @TSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E29 TSO: which leaf transformer covers a point (III.4.1)';
+BEGIN TRY EXEC sp_tso_locate @TSO, @Lat, @Lon; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E30 TSO: current state of every transformer, as last refreshed (III.4.2)';
+BEGIN TRY EXEC sp_tso_current_state @TSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E31 Analytics: aggregates at the ROOT of the tree, per month and per quarter (professor)';
+BEGIN TRY EXEC sp_tso_aggregates @TSO, @Root, 'Month', @YearStart, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_aggregates @TSO, @Root, 'Quarter', @YearStart, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E32 TSO: past load-shedding orders (II.D)';
+BEGIN TRY EXEC sp_tso_list_shed_orders @TSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E33 TSO: data behind the map (bonus)';
+BEGIN TRY EXEC sp_tso_map_data @TSO; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+
+-- =====================================================================================================
+-- E34-E37. SUPPLIER and AGGREGATOR (III.5.1-III.5.2)
+-- =====================================================================================================
+PRINT '--- E34 Supplier: Day-Ahead totals per day, and per day and transformer (validated data only) (III.5.2)';
+BEGIN TRY EXEC sp_supplier_totals @SupplierU, 'Day', @LossFrom, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_supplier_aggregates @SupplierU, 'Day', @LossFrom, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E35 Supplier: Intraday provisional values of one day, from raw readings (III.5.2)';
+BEGIN TRY EXEC sp_market_intraday @SupplierU, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E36 Aggregator: my portfolios and the premises of one (III.5.1)';
+BEGIN TRY EXEC sp_aggregator_list_portfolios @AggregatorU; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+IF @Portfolio IS NOT NULL
+BEGIN TRY EXEC sp_aggregator_list_portfolio_premises @AggregatorU, @Portfolio; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
+PRINT '--- E37 Aggregator: Day-Ahead totals of the portfolio premises (III.5.1)';
+BEGIN TRY EXEC sp_supplier_totals @AggregatorU, 'Day', @LossFrom, @Day; END TRY BEGIN CATCH PRINT 'refused: ' + ERROR_MESSAGE(); END CATCH;
