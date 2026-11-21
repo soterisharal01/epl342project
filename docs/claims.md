@@ -9,5 +9,4 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 
 | Task | Branch | Claimed at (UTC) | Plan |
 |---|---|---|---|
-| TEC-6 | task/TEC-6-install | 2026-11-21 17:20 | TEC-6/7 install + confirm, TEC-8 commands, TEC-9 anti-tamper, TEC-10 pages |
 | SEC-1 | task/SEC-1-page-check | 2026-11-21 18:37 | Page-by-page security check of every PHP page: automatic checker script + fixes + doc 16 |

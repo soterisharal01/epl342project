@@ -502,3 +502,414 @@ IF NOT EXISTS (SELECT 1 FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027
 -- ---------- Καθαρισμός ----------
 DELETE FROM AVAILABILITY WHERE UserID = 5 AND AvailDate = '2027-07-01';
 GO
+
+
+-- =====================================================================
+-- TEC-6..9: εγκατάσταση/αντικατάσταση μετρητή, επιβεβαίωση, εντολές, anti-tamper.
+-- Δεδομένα: ένα δικό μας υποστατικό (consumer1) μέσα στο φύλλο 4, μετρητές SN-TEC6-*,
+-- όλα σβήνονται στο τέλος (οι TSO έλεγχοι μετρούν μετρητές στα φύλλα 4/5/6).
+-- tech1 = 5, operator = 2, consumer1 = 3, tech2 (Pending) = 6.
+-- =====================================================================
+SET NOCOUNT ON;
+
+DECLARE @t6_act0 INT = (SELECT COUNT(*) FROM METER WHERE Status = 'Active' AND TransformerID IN (4, 5, 6));
+DECLARE @t6_rp TABLE (PremiseID INT);
+INSERT @t6_rp EXEC sp_consumer_add_premise 3, N'Δοκιμή TEC-6, Αγλαντζιά', '2108', 35.145, 33.39, 'Residential', 2, 1;
+DECLARE @t6_prem INT = (SELECT PremiseID FROM @t6_rp);
+
+DECLARE @t6_rt TABLE (TaskID INT);
+INSERT @t6_rt EXEC sp_task_create 2, 'Installation', '2027-08-01 09:00:00', '2027-08-01 11:00:00', 5, @t6_prem;
+DECLARE @t6_t1 INT = (SELECT TaskID FROM @t6_rt);
+DELETE @t6_rt;
+INSERT @t6_rt EXEC sp_task_create 2, 'Technical check', '2027-08-02 09:00:00', '2027-08-02 10:00:00', 5, @t6_prem;
+DECLARE @t6_tchk INT = (SELECT TaskID FROM @t6_rt);
+
+-- ---------- sp_tech_install_meter: αρνήσεις ----------
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL install before accepting the task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52131 PRINT 'OK   install on an Assigned task -> 52131' ELSE PRINT 'FAIL install before accept: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_tech_accept_task 5, @t6_t1;
+EXEC sp_tech_accept_task 5, @t6_tchk;
+BEGIN TRY EXEC sp_tech_install_meter 6, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL Pending technician installed'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   install by Pending technician -> 52000' ELSE PRINT 'FAIL install pending tech: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 3, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL consumer installed'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   install by consumer -> 52000' ELSE PRINT 'FAIL install consumer: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_tchk, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL installed on a Technical check task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52132 PRINT 'OK   install on a Technical check task -> 52132' ELSE PRINT 'FAIL install wrong type: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, 999999, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL install on unknown task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52120 PRINT 'OK   install on unknown task -> 52120' ELSE PRINT 'FAIL install unknown task: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1,L2'; PRINT 'FAIL 2 phases for a single-phase model'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52135 PRINT 'OK   phase count differs from the model -> 52135' ELSE PRINT 'FAIL phases: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L9'; PRINT 'FAIL phase L9 accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52135 PRINT 'OK   invalid phase name -> 52135' ELSE PRINT 'FAIL phase name: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 36.5, 33.0, 1, 1, 'L1'; PRINT 'FAIL coordinates without a leaf accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52136 PRINT 'OK   coordinates outside every leaf geofence -> 52136 (X7)' ELSE PRINT 'FAIL no leaf: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-0001', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL duplicate serial accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52134 PRINT 'OK   duplicate serial number -> 52134' ELSE PRINT 'FAIL duplicate serial: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 99, 1, 'L1'; PRINT 'FAIL unknown model accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52138 PRINT 'OK   unknown model -> 52138' ELSE PRINT 'FAIL unknown model: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, '  ', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL blank serial accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52137 PRINT 'OK   blank serial -> 52137' ELSE PRINT 'FAIL blank serial: ' + ERROR_MESSAGE(); END CATCH;
+IF NOT EXISTS (SELECT 1 FROM METER WHERE SerialNumber LIKE 'SN-TEC6-%') AND NOT EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE TaskID = @t6_t1)
+    PRINT 'OK   refused installations left no rows' ELSE PRINT 'FAIL refused installations left rows';
+
+-- ---------- Εγκατάσταση, οι φωτογραφίες, τα έγγραφα ----------
+DECLARE @t6_ri TABLE (MeterID INT, InstallationID INT, TransformerID INT);
+INSERT @t6_ri EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-A', 'EAC-TEC6-A', '3.0', 63, 35.145, 33.39, 1, 1, 'L1';
+DECLARE @t6_mA INT = (SELECT MeterID FROM @t6_ri), @t6_iA INT = (SELECT InstallationID FROM @t6_ri);
+IF EXISTS (SELECT 1 FROM @t6_ri WHERE TransformerID = 4)
+   AND EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mA AND Status = 'Pending confirmation' AND TransformerID = 4 AND ModelID = 1 AND CommTypeID = 1)
+    PRINT 'OK   install -> METER Pending confirmation, transformer 4 from the coordinates (X7)' ELSE PRINT 'FAIL install meter';
+IF EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE InstallationID = @t6_iA AND MeterID = @t6_mA AND PremiseID = @t6_prem
+           AND TaskID = @t6_t1 AND ConfirmationStatus = 'Pending' AND RemovedAt IS NULL)
+   AND (SELECT COUNT(*) FROM METER_CONNECTED_PHASE WHERE MeterID = @t6_mA AND ConnectedPhase = 'L1') = 1
+   AND (SELECT COUNT(*) FROM METER_CONNECTED_PHASE WHERE MeterID = @t6_mA) = 1
+    PRINT 'OK   install -> METER_INSTALLATION Pending + 1 connected phase' ELSE PRINT 'FAIL install rows';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER_INSTALLATION' AND ObjectID = CAST(@t6_iA AS VARCHAR(100)) AND Action = 'Install meter' AND PerformedBy = 5)
+    PRINT 'OK   install -> audit row' ELSE PRINT 'FAIL install audit';
+BEGIN TRY EXEC sp_tech_install_meter 5, @t6_t1, 'SN-TEC6-Z', 'EAC-TEC6-Z', '3.0', 63, 35.145, 33.39, 1, 1, 'L1'; PRINT 'FAIL second install on the same task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52133 PRINT 'OK   second install on the same task -> 52133' ELSE PRINT 'FAIL second install: ' + ERROR_MESSAGE(); END CATCH;
+
+DECLARE @t6_ra TABLE (AttachmentID INT);
+INSERT @t6_ra EXEC sp_tech_add_attachment 5, @t6_t1, N'photos/tec6_meter_front.jpg', N'Μπροστινή όψη';
+IF EXISTS (SELECT 1 FROM ATTACHMENT WHERE TaskID = @t6_t1) PRINT 'OK   installation photo stored via sp_tech_add_attachment' ELSE PRINT 'FAIL photo';
+
+DECLARE @t6_li TABLE (InstallationID INT, TaskID INT, MeterID INT, SerialNumber VARCHAR(40), MeterStatus VARCHAR(20), PremiseID INT,
+                      InstalledAt DATETIME2(0), ConfirmationStatus VARCHAR(9), ConfirmComment NVARCHAR(500), DocTypesPresent INT);
+INSERT @t6_li EXEC sp_tech_list_installs 5;
+IF EXISTS (SELECT 1 FROM @t6_li WHERE InstallationID = @t6_iA AND ConfirmationStatus = 'Pending' AND DocTypesPresent = 0)
+    PRINT 'OK   technician lists own installations' ELSE PRINT 'FAIL list installs';
+BEGIN TRY EXEC sp_tech_list_installs 6; PRINT 'FAIL Pending technician listed installs'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   list installs by Pending technician -> 52000' ELSE PRINT 'FAIL list installs role: ' + ERROR_MESSAGE(); END CATCH;
+
+BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_mA, 'ID card', N'X-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL technician document type accepted for a meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52139 PRINT 'OK   technician document type for a meter -> 52139' ELSE PRINT 'FAIL doc type: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_mA, 'Calibration certificate', N'  ', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL blank document number'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52302 PRINT 'OK   blank document number -> 52302' ELSE PRINT 'FAIL doc number: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_mA, 'Calibration certificate', N'C-1', '2026-01-01', '2025-01-01', N'docs/x.pdf'; PRINT 'FAIL expiry before issue'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52303 PRINT 'OK   expiry before issue -> 52303' ELSE PRINT 'FAIL doc dates: ' + ERROR_MESSAGE(); END CATCH;
+-- Base meters 1-5 were all installed by tech1 (user 5), so no base meter is "foreign" to him:
+-- meter 1 tests an installation already confirmed (52141); a meter with no installation of his tests 52140.
+BEGIN TRY EXEC sp_tech_add_meter_document 5, 1, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL document for an installation already confirmed'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52141 PRINT 'OK   document for an installation already confirmed -> 52141' ELSE PRINT 'FAIL doc confirmed install: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t6_foreign INT = (SELECT ISNULL(MAX(MeterID), 0) + 1000 FROM METER);
+BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_foreign, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL document for a meter the technician did not install'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52140 PRINT 'OK   document for a meter not installed by me -> 52140' ELSE PRINT 'FAIL doc foreign meter: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_meter_document 6, @t6_mA, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL Pending technician added a document'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   meter document by Pending technician -> 52000' ELSE PRINT 'FAIL doc role: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Επιβεβαίωση χωρίς / με λίγα έγγραφα ----------
+BEGIN TRY EXEC sp_operator_confirm_meter 2, @t6_iA, 1, N'Ελέγχθηκε'; PRINT 'FAIL confirmed without documents'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52332 PRINT 'OK   confirm without documents -> 52332' ELSE PRINT 'FAIL confirm no docs: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t6_rd TABLE (DocumentID INT);
+INSERT @t6_rd EXEC sp_tech_add_meter_document 5, @t6_mA, 'Calibration certificate', N'CAL-001', '2026-01-01', '2030-01-01', N'docs/tec6_cal.pdf';
+INSERT @t6_rd EXEC sp_tech_add_meter_document 5, @t6_mA, 'CE and protocol declaration', N'CE-001', '2026-01-01', NULL, N'docs/tec6_ce.pdf';
+IF (SELECT COUNT(*) FROM DOCUMENT WHERE MeterID = @t6_mA AND ReviewStatus = 'Pending' AND TechnicianID IS NULL) = 2
+    PRINT 'OK   2 meter documents stored (Pending)' ELSE PRINT 'FAIL meter documents';
+BEGIN TRY EXEC sp_operator_confirm_meter 2, @t6_iA, 1, NULL; PRINT 'FAIL confirmed with 2 of 3 documents'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52332 PRINT 'OK   confirm with 2 of 3 documents -> 52332' ELSE PRINT 'FAIL confirm 2 docs: ' + ERROR_MESSAGE(); END CATCH;
+IF EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mA AND Status = 'Pending confirmation')
+   AND EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE InstallationID = @t6_iA AND ConfirmationStatus = 'Pending')
+    PRINT 'OK   refused confirmation changed nothing' ELSE PRINT 'FAIL refused confirmation changed rows';
+-- Ληγμένο έγγραφο δεν μετράει
+INSERT @t6_rd EXEC sp_tech_add_meter_document 5, @t6_mA, 'Encryption certificate', N'ENC-OLD', '2020-01-01', '2021-01-01', N'docs/tec6_enc_old.pdf';
+BEGIN TRY EXEC sp_operator_confirm_meter 2, @t6_iA, 1, NULL; PRINT 'FAIL confirmed with an expired third document'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52332 PRINT 'OK   expired document does not count -> 52332' ELSE PRINT 'FAIL expired doc: ' + ERROR_MESSAGE(); END CATCH;
+INSERT @t6_rd EXEC sp_tech_add_meter_document 5, @t6_mA, 'Encryption certificate', N'ENC-001', '2026-01-01', NULL, N'docs/tec6_enc.pdf';
+
+-- ---------- Λίστα, ρόλοι, απόρριψη χωρίς σχόλιο ----------
+DECLARE @t6_pm TABLE (InstallationID INT, MeterID INT, SerialNumber VARCHAR(40), NetworkID VARCHAR(40), Firmware VARCHAR(30), MaxLoadAmps DECIMAL(6,1),
+                      Latitude DECIMAL(9,6), Longitude DECIMAL(9,6), TransformerID INT, PremiseID INT, Address NVARCHAR(200), TaskType VARCHAR(17),
+                      TechnicianID INT, TechnicianUsername NVARCHAR(50), InstalledAt DATETIME2(0), DocTypesPresent INT, Photos INT);
+INSERT @t6_pm EXEC sp_operator_list_pending_meters 2;
+IF EXISTS (SELECT 1 FROM @t6_pm WHERE InstallationID = @t6_iA AND DocTypesPresent = 3 AND Photos = 1 AND TransformerID = 4)
+    PRINT 'OK   operator lists pending installations with documents, photos, transformer' ELSE PRINT 'FAIL list pending meters';
+BEGIN TRY EXEC sp_operator_list_pending_meters 5; PRINT 'FAIL technician listed pending meters'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   list pending meters by technician -> 52100' ELSE PRINT 'FAIL list pending role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_confirm_meter 5, @t6_iA, 1, NULL; PRINT 'FAIL technician confirmed a meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   confirm by technician -> 52100' ELSE PRINT 'FAIL confirm role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_confirm_meter 3, @t6_iA, 1, NULL; PRINT 'FAIL consumer confirmed a meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   confirm by consumer -> 52100' ELSE PRINT 'FAIL confirm consumer: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_confirm_meter 2, @t6_iA, 0, NULL; PRINT 'FAIL rejection without a comment'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52333 PRINT 'OK   reject without comment -> 52333' ELSE PRINT 'FAIL reject no comment: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_confirm_meter 2, 999999, 1, NULL; PRINT 'FAIL confirmed an unknown installation'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52330 PRINT 'OK   unknown installation -> 52330' ELSE PRINT 'FAIL unknown installation: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Επιβεβαίωση: Active ----------
+EXEC sp_operator_confirm_meter 2, @t6_iA, 1, N'Έλεγχος εγγράφων OK';
+IF EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mA AND Status = 'Active')
+   AND EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE InstallationID = @t6_iA AND ConfirmationStatus = 'Confirmed' AND ConfirmedBy = 2
+               AND ConfirmedAt IS NOT NULL AND ConfirmComment = N'Έλεγχος εγγράφων OK')
+    PRINT 'OK   Operator confirms -> installation Confirmed and METER Active' ELSE PRINT 'FAIL confirm meter';
+IF (SELECT COUNT(*) FROM DOCUMENT WHERE MeterID = @t6_mA AND ReviewStatus = 'Accepted' AND ReviewedBy = 2) = 3
+   AND EXISTS (SELECT 1 FROM DOCUMENT WHERE MeterID = @t6_mA AND DocNumber = N'ENC-OLD' AND ReviewStatus = 'Pending')
+    PRINT 'OK   confirmation accepts the 3 valid documents (expired one untouched)' ELSE PRINT 'FAIL documents accepted';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER_INSTALLATION' AND ObjectID = CAST(@t6_iA AS VARCHAR(100)) AND Action = 'Confirm meter' AND OldState = 'Pending' AND NewState = 'Confirmed' AND PerformedBy = 2)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER' AND ObjectID = CAST(@t6_mA AS VARCHAR(100)) AND Action = 'Activate meter' AND NewState = 'Active')
+    PRINT 'OK   confirmation -> 2 audit rows' ELSE PRINT 'FAIL confirm audit';
+BEGIN TRY EXEC sp_operator_confirm_meter 2, @t6_iA, 1, NULL; PRINT 'FAIL confirmed twice'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52331 PRINT 'OK   confirm an already decided installation -> 52331' ELSE PRINT 'FAIL confirm twice: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_mA, 'Calibration certificate', N'CAL-002', '2026-01-01', NULL, N'docs/late.pdf'; PRINT 'FAIL document added after confirmation'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52141 PRINT 'OK   document after the decision -> 52141' ELSE PRINT 'FAIL late document: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Απόρριψη: ο μετρητής δεν γίνεται Active ----------
+DELETE @t6_rt;
+INSERT @t6_rt EXEC sp_task_create 2, 'Installation', '2027-08-03 09:00:00', '2027-08-03 11:00:00', 5, @t6_prem;
+DECLARE @t6_t2 INT = (SELECT TaskID FROM @t6_rt);
+EXEC sp_tech_accept_task 5, @t6_t2;
+DELETE @t6_ri;
+INSERT @t6_ri EXEC sp_tech_install_meter 5, @t6_t2, 'SN-TEC6-R', 'EAC-TEC6-R', '3.0', 40, 35.145, 33.39, 1, 1, 'L2';
+DECLARE @t6_mR INT = (SELECT MeterID FROM @t6_ri), @t6_iR INT = (SELECT InstallationID FROM @t6_ri);
+EXEC sp_operator_confirm_meter 2, @t6_iR, 0, N'Φωτογραφίες ασαφείς';
+IF EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mR AND Status = 'Pending confirmation')
+   AND EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE InstallationID = @t6_iR AND ConfirmationStatus = 'Rejected' AND ConfirmedBy = 2 AND ConfirmComment = N'Φωτογραφίες ασαφείς')
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER_INSTALLATION' AND ObjectID = CAST(@t6_iR AS VARCHAR(100)) AND Action = 'Reject meter' AND ResultComment = N'Φωτογραφίες ασαφείς')
+    PRINT 'OK   rejected installation: meter stays Pending confirmation, audit row' ELSE PRINT 'FAIL reject meter';
+BEGIN TRY EXEC sp_operator_confirm_meter 2, @t6_iR, 1, NULL; PRINT 'FAIL approved a Rejected installation'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52331 PRINT 'OK   approve after rejection -> 52331' ELSE PRINT 'FAIL approve rejected: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Αντικατάσταση: οι παλιές μετρήσεις μένουν ----------
+DECLARE @t6_pk TABLE (PacketID BIGINT);
+INSERT TELEMETRY_PACKET (ReceivedNetworkID, RawPayload, IngestStatus, MeterID) OUTPUT inserted.PacketID INTO @t6_pk
+VALUES ('EAC-TEC6-A', N'{"tec6":1}', 'Accepted', @t6_mA);
+INSERT RAW_READING (MeterID, ObisCode, IntervalStart, ReceivedValue, PacketID)
+SELECT @t6_mA, '1.8.0', '2026-11-20 10:00:00', 12.5, PacketID FROM @t6_pk;
+DELETE @t6_rt;
+INSERT @t6_rt EXEC sp_task_create 2, 'Replacement', '2027-08-04 09:00:00', '2027-08-04 11:00:00', 5, @t6_prem, @t6_mA;
+DECLARE @t6_t3 INT = (SELECT TaskID FROM @t6_rt);
+EXEC sp_tech_accept_task 5, @t6_t3;
+DELETE @t6_ri;
+INSERT @t6_ri EXEC sp_tech_install_meter 5, @t6_t3, 'SN-TEC6-B', 'EAC-TEC6-B', '3.1', 100, 35.145, 33.39, 2, 2, 'L1, L2, L3';
+DECLARE @t6_mB INT = (SELECT MeterID FROM @t6_ri), @t6_iB INT = (SELECT InstallationID FROM @t6_ri);
+IF EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mA AND Status = 'Retired')
+   AND EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE InstallationID = @t6_iA AND RemovedAt IS NOT NULL)
+   AND EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mB AND Status = 'Pending confirmation' AND TransformerID = 4)
+   AND (SELECT COUNT(*) FROM METER_CONNECTED_PHASE WHERE MeterID = @t6_mB) = 3
+   AND EXISTS (SELECT 1 FROM METER_INSTALLATION WHERE InstallationID = @t6_iB AND ConfirmationStatus = 'Pending' AND RemovedAt IS NULL)
+    PRINT 'OK   Replacement: old installation closed, old meter Retired, new meter Pending with 3 phases' ELSE PRINT 'FAIL replacement';
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID = @t6_mA) = 1 AND (SELECT COUNT(*) FROM TELEMETRY_PACKET WHERE MeterID = @t6_mA) = 1
+    PRINT 'OK   Replacement keeps the old meter''s readings' ELSE PRINT 'FAIL replacement readings';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'METER' AND ObjectID = CAST(@t6_mA AS VARCHAR(100)) AND Action = 'Retire meter' AND OldState = 'Active' AND NewState = 'Retired')
+    PRINT 'OK   Replacement -> audit row for the retired meter' ELSE PRINT 'FAIL retire audit';
+DECLARE @t6_rd2 TABLE (DocumentID INT);
+INSERT @t6_rd2 EXEC sp_tech_add_meter_document 5, @t6_mB, 'Calibration certificate', N'CAL-B', '2026-02-01', NULL, N'docs/tec6_calB.pdf';
+INSERT @t6_rd2 EXEC sp_tech_add_meter_document 5, @t6_mB, 'CE and protocol declaration', N'CE-B', '2026-02-01', NULL, N'docs/tec6_ceB.pdf';
+INSERT @t6_rd2 EXEC sp_tech_add_meter_document 5, @t6_mB, 'Encryption certificate', N'ENC-B', '2026-02-01', NULL, N'docs/tec6_encB.pdf';
+DECLARE @t6_dl TABLE (DocumentID INT, DocType VARCHAR(27), DocNumber NVARCHAR(50), IssueDate DATE, ExpiryDate DATE, FilePath NVARCHAR(400),
+                      ReviewStatus VARCHAR(8), ReviewComment NVARCHAR(500), ReviewedAt DATETIME2(0));
+INSERT @t6_dl EXEC sp_operator_list_meter_documents 2, @t6_mB;
+IF (SELECT COUNT(*) FROM @t6_dl) = 3 PRINT 'OK   operator lists the 3 meter documents' ELSE PRINT 'FAIL list meter documents';
+BEGIN TRY EXEC sp_operator_list_meter_documents 5, @t6_mB; PRINT 'FAIL technician listed meter documents via operator procedure'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   operator document list by technician -> 52100' ELSE PRINT 'FAIL doc list role: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_confirm_meter 2, @t6_iB, 1, NULL;
+IF EXISTS (SELECT 1 FROM METER WHERE MeterID = @t6_mB AND Status = 'Active') PRINT 'OK   replacement meter confirmed -> Active' ELSE PRINT 'FAIL confirm replacement';
+
+-- ---------- TEC-8: εντολές ----------
+-- Οι εγκαταστάσεις τελείωσαν: ολοκληρώνονται, ώστε να μην μένει Accepted εργασία στο υποστατικό.
+EXEC sp_tech_complete_task 5, @t6_t1, N'Εγκαταστάθηκε ο SN-TEC6-A';
+EXEC sp_tech_complete_task 5, @t6_t2, N'Εγκαταστάθηκε ο SN-TEC6-R';
+EXEC sp_tech_complete_task 5, @t6_t3, N'Αντικαταστάθηκε από τον SN-TEC6-B';
+EXEC sp_tech_complete_task 5, @t6_tchk, N'Έλεγχος';
+DELETE @t6_rt;
+INSERT @t6_rt EXEC sp_task_create 2, 'Technical check', '2027-08-05 09:00:00', '2027-08-05 10:00:00', 5, NULL, @t6_mB;
+DECLARE @t6_tcm INT = (SELECT TaskID FROM @t6_rt);
+BEGIN TRY EXEC sp_tech_request_command 5, @t6_mB, 'Disconnect', NULL; PRINT 'FAIL command without an Accepted task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52341 PRINT 'OK   command for a meter without an Accepted task -> 52341' ELSE PRINT 'FAIL command no task: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_tech_accept_task 5, @t6_tcm;
+BEGIN TRY EXEC sp_tech_request_command 5, 1, 'Disconnect', NULL; PRINT 'FAIL command for someone else''s meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52341 PRINT 'OK   command for an unrelated meter -> 52341' ELSE PRINT 'FAIL command other meter: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_request_command 5, @t6_mB, 'Load shed', NULL; PRINT 'FAIL Load shed requested by technician'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52340 PRINT 'OK   technician cannot request Load shed -> 52340' ELSE PRINT 'FAIL load shed: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_request_command 5, @t6_mB, 'Firmware upgrade', N'not json'; PRINT 'FAIL bad JSON parameters'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52343 PRINT 'OK   Parameters must be JSON -> 52343' ELSE PRINT 'FAIL json: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_request_command 5, @t6_mA, 'Disconnect', NULL; PRINT 'FAIL command for a Retired meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52342 PRINT 'OK   command for a Retired meter -> 52342' ELSE PRINT 'FAIL retired meter command: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_request_command 3, @t6_mB, 'Disconnect', NULL; PRINT 'FAIL consumer requested a command'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   command request by consumer -> 52000' ELSE PRINT 'FAIL command consumer: ' + ERROR_MESSAGE(); END CATCH;
+
+DECLARE @t6_tg TABLE (MeterID INT, SerialNumber VARCHAR(40), Status VARCHAR(20));
+INSERT @t6_tg EXEC sp_tech_list_command_targets 5;
+IF EXISTS (SELECT 1 FROM @t6_tg WHERE MeterID = @t6_mB) AND NOT EXISTS (SELECT 1 FROM @t6_tg WHERE MeterID = @t6_mA)
+    PRINT 'OK   command targets = meters of my Accepted tasks' ELSE PRINT 'FAIL command targets';
+
+DECLARE @t6_rc TABLE (CommandID INT);
+INSERT @t6_rc EXEC sp_tech_request_command 5, @t6_mB, 'Firmware upgrade', N'{"version":"3.2"}';
+DECLARE @t6_c1 INT = (SELECT CommandID FROM @t6_rc);
+IF EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c1 AND Status = 'Awaiting approval' AND ApprovedBy IS NULL AND RequestedBy = 5 AND MeterID = @t6_mB AND CommandType = 'Firmware upgrade')
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'REMOTE_COMMAND' AND ObjectID = CAST(@t6_c1 AS VARCHAR(100)) AND Action = 'Request command' AND NewState = 'Awaiting approval')
+    PRINT 'OK   technician request -> Awaiting approval + audit' ELSE PRINT 'FAIL request command';
+BEGIN TRY EXEC sp_command_record_attempt 2, @t6_c1, 'ACK'; PRINT 'FAIL attempt on an unapproved command'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52348 PRINT 'OK   attempt before approval -> 52348' ELSE PRINT 'FAIL attempt unapproved: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_approve_command 5, @t6_c1, 1, NULL; PRINT 'FAIL technician approved a command'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   approve by technician -> 52100' ELSE PRINT 'FAIL approve role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_operator_approve_command 2, 999999, 1, NULL; PRINT 'FAIL approved an unknown command'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52344 PRINT 'OK   approve unknown command -> 52344' ELSE PRINT 'FAIL approve unknown: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_approve_command 2, @t6_c1, 1, NULL;
+IF EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c1 AND Status = 'Sent' AND ApprovedBy = 2)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'REMOTE_COMMAND' AND ObjectID = CAST(@t6_c1 AS VARCHAR(100)) AND Action = 'Approve command' AND OldState = 'Awaiting approval' AND NewState = 'Sent')
+    PRINT 'OK   Operator approves -> Sent + audit' ELSE PRINT 'FAIL approve command';
+BEGIN TRY EXEC sp_operator_approve_command 2, @t6_c1, 1, NULL; PRINT 'FAIL approved twice'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52345 PRINT 'OK   approve a Sent command -> 52345' ELSE PRINT 'FAIL approve twice: ' + ERROR_MESSAGE(); END CATCH;
+
+BEGIN TRY EXEC sp_command_record_attempt 2, @t6_c1, 'MAYBE'; PRINT 'FAIL invalid outcome'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52347 PRINT 'OK   invalid outcome -> 52347' ELSE PRINT 'FAIL outcome: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_command_record_attempt 3, @t6_c1, 'ACK'; PRINT 'FAIL consumer recorded an attempt'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52349 PRINT 'OK   attempt by consumer -> 52349' ELSE PRINT 'FAIL attempt role: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t6_ra1 TABLE (AttemptNo SMALLINT, Status VARCHAR(17));
+INSERT @t6_ra1 EXEC sp_command_record_attempt 2, @t6_c1, 'NAK';
+INSERT @t6_ra1 EXEC sp_command_record_attempt 5, @t6_c1, 'Timeout';
+IF EXISTS (SELECT 1 FROM @t6_ra1 WHERE AttemptNo = 1 AND Status = 'Sent') AND EXISTS (SELECT 1 FROM @t6_ra1 WHERE AttemptNo = 2 AND Status = 'Sent')
+   AND EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c1 AND Status = 'Sent')
+   AND EXISTS (SELECT 1 FROM COMMAND_ATTEMPT WHERE CommandID = @t6_c1 AND AttemptNo = 1 AND Outcome = 'NAK' AND RespondedAt IS NOT NULL)
+   AND EXISTS (SELECT 1 FROM COMMAND_ATTEMPT WHERE CommandID = @t6_c1 AND AttemptNo = 2 AND Outcome = 'Timeout' AND RespondedAt IS NULL)
+    PRINT 'OK   NAK and Timeout attempts 1 and 2 keep the command Sent' ELSE PRINT 'FAIL NAK/Timeout attempts';
+INSERT @t6_ra1 EXEC sp_command_record_attempt 2, @t6_c1, 'ACK';
+IF EXISTS (SELECT 1 FROM @t6_ra1 WHERE AttemptNo = 3 AND Status = 'Acknowledged')
+   AND EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c1 AND Status = 'Acknowledged')
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'REMOTE_COMMAND' AND ObjectID = CAST(@t6_c1 AS VARCHAR(100)) AND Action = 'Command result' AND OldState = 'Sent' AND NewState = 'Acknowledged')
+    PRINT 'OK   third attempt ACK -> Acknowledged + audit' ELSE PRINT 'FAIL ACK';
+BEGIN TRY EXEC sp_command_record_attempt 2, @t6_c1, 'ACK'; PRINT 'FAIL attempt on an Acknowledged command'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52348 PRINT 'OK   attempt after ACK -> 52348' ELSE PRINT 'FAIL attempt after ack: ' + ERROR_MESSAGE(); END CATCH;
+
+-- Τρεις αποτυχίες -> Failed
+DELETE @t6_rc;
+INSERT @t6_rc EXEC sp_tech_request_command 5, @t6_mB, 'Disconnect', NULL;
+DECLARE @t6_c2 INT = (SELECT CommandID FROM @t6_rc);
+EXEC sp_operator_approve_command 2, @t6_c2;
+DELETE @t6_ra1;
+INSERT @t6_ra1 EXEC sp_command_record_attempt 2, @t6_c2, 'NAK';
+INSERT @t6_ra1 EXEC sp_command_record_attempt 2, @t6_c2, 'Timeout';
+IF EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c2 AND Status = 'Sent') PRINT 'OK   two failures: still Sent' ELSE PRINT 'FAIL two failures';
+INSERT @t6_ra1 EXEC sp_command_record_attempt 2, @t6_c2, 'NAK';
+IF EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c2 AND Status = 'Failed') AND (SELECT COUNT(*) FROM COMMAND_ATTEMPT WHERE CommandID = @t6_c2) = 3
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'REMOTE_COMMAND' AND ObjectID = CAST(@t6_c2 AS VARCHAR(100)) AND NewState = 'Failed')
+    PRINT 'OK   3 failed attempts -> Failed + audit' ELSE PRINT 'FAIL 3 failures';
+
+-- Απόρριψη εντολής
+DELETE @t6_rc;
+INSERT @t6_rc EXEC sp_tech_request_command 5, @t6_mB, 'Reconnect', NULL;
+DECLARE @t6_c3 INT = (SELECT CommandID FROM @t6_rc);
+BEGIN TRY EXEC sp_operator_approve_command 2, @t6_c3, 0, NULL; PRINT 'FAIL command rejected without comment'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52346 PRINT 'OK   reject command without comment -> 52346' ELSE PRINT 'FAIL reject cmd comment: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_operator_approve_command 2, @t6_c3, 0, N'Δεν χρειάζεται';
+IF EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE CommandID = @t6_c3 AND Status = 'Cancelled' AND ApprovedBy IS NULL)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'REMOTE_COMMAND' AND ObjectID = CAST(@t6_c3 AS VARCHAR(100)) AND Action = 'Reject command' AND ResultComment = N'Δεν χρειάζεται')
+    PRINT 'OK   rejected command -> Cancelled + audit' ELSE PRINT 'FAIL reject command';
+
+-- Λίστες
+DECLARE @t6_cl TABLE (CommandID INT, CommandType VARCHAR(30), Parameters NVARCHAR(1000), RequestedAt DATETIME2(0), Status VARCHAR(17), MeterID INT,
+                      SerialNumber VARCHAR(40), RequestedByUsername NVARCHAR(50), ApprovedBy INT, Attempts INT, LastOutcome VARCHAR(7));
+INSERT @t6_cl EXEC sp_command_list 2, @t6_mB;
+IF (SELECT COUNT(*) FROM @t6_cl) = 3 AND EXISTS (SELECT 1 FROM @t6_cl WHERE CommandID = @t6_c1 AND Attempts = 3 AND LastOutcome = 'ACK' AND Status = 'Acknowledged')
+    PRINT 'OK   operator lists the 3 commands of the meter with attempt counts' ELSE PRINT 'FAIL command list operator';
+DELETE @t6_cl;
+INSERT @t6_cl EXEC sp_command_list 5;
+IF EXISTS (SELECT 1 FROM @t6_cl WHERE CommandID = @t6_c2) AND NOT EXISTS (SELECT 1 FROM @t6_cl WHERE RequestedByUsername <> N'tech1')
+    PRINT 'OK   technician lists only own commands' ELSE PRINT 'FAIL command list technician';
+BEGIN TRY EXEC sp_command_list 3; PRINT 'FAIL consumer listed commands'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52349 PRINT 'OK   command list by consumer -> 52349' ELSE PRINT 'FAIL command list role: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t6_cat TABLE (AttemptNo SMALLINT, AttemptAt DATETIME2(3), RespondedAt DATETIME2(3), Outcome VARCHAR(7));
+INSERT @t6_cat EXEC sp_command_list_attempts 5, @t6_c1;
+IF (SELECT COUNT(*) FROM @t6_cat) = 3 PRINT 'OK   technician sees the attempts of own command' ELSE PRINT 'FAIL list attempts';
+BEGIN TRY EXEC sp_command_list_attempts 3, @t6_c1; PRINT 'FAIL consumer listed attempts'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52349 PRINT 'OK   list attempts by consumer -> 52349' ELSE PRINT 'FAIL attempts role: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- TEC-9: anti-tamper ----------
+DELETE @t6_rt;
+INSERT @t6_rt EXEC sp_task_create 2, 'Anti-tamper check', '2027-08-06 09:00:00', '2027-08-06 10:00:00', 5, NULL, @t6_mB;
+DECLARE @t6_tam INT = (SELECT TaskID FROM @t6_rt);
+BEGIN TRY EXEC sp_tech_record_tamper_check 5, @t6_tam, N'Σφραγίδα εντάξει', 0, NULL; PRINT 'FAIL check recorded on an Assigned task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52361 PRINT 'OK   tamper check before accepting -> 52361' ELSE PRINT 'FAIL tamper not accepted: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_tech_accept_task 5, @t6_tam;
+BEGIN TRY EXEC sp_tech_record_tamper_check 5, @t6_tcm, N'Κάτι', 0, NULL; PRINT 'FAIL tamper check on a Technical check task'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52360 PRINT 'OK   tamper check on another task type -> 52360' ELSE PRINT 'FAIL tamper type: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_record_tamper_check 5, @t6_tam, N'  ', 0, NULL; PRINT 'FAIL empty findings'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52126 PRINT 'OK   empty findings -> 52126' ELSE PRINT 'FAIL empty findings: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_record_tamper_check 5, @t6_tam, N'Κάτι', 0, '999999'; PRINT 'FAIL unknown notify user'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52113 PRINT 'OK   unknown notify user -> 52113' ELSE PRINT 'FAIL notify user: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tech_record_tamper_check 2, @t6_tam, N'Κάτι', 0, NULL; PRINT 'FAIL operator recorded a tamper check'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   tamper check by operator -> 52000' ELSE PRINT 'FAIL tamper role: ' + ERROR_MESSAGE(); END CATCH;
+IF NOT EXISTS (SELECT 1 FROM TASK_NOTE WHERE TaskID = @t6_tam) AND NOT EXISTS (SELECT 1 FROM EVENT WHERE TaskID = @t6_tam)
+    PRINT 'OK   refused tamper checks left no rows' ELSE PRINT 'FAIL refused tamper checks left rows';
+
+DECLARE @t6_rn TABLE (NoteNo SMALLINT, EventID BIGINT);
+INSERT @t6_rn EXEC sp_tech_record_tamper_check 5, @t6_tam, N'Σφραγίδα άθικτη', 0, '3';
+IF EXISTS (SELECT 1 FROM @t6_rn WHERE NoteNo = 1 AND EventID IS NULL)
+   AND EXISTS (SELECT 1 FROM TASK_NOTE WHERE TaskID = @t6_tam AND NoteNo = 1 AND NoteKind = 'Finding' AND WrittenBy = 5)
+   AND EXISTS (SELECT 1 FROM NOTIFIES WHERE TaskID = @t6_tam AND UserID = 3)
+   AND NOT EXISTS (SELECT 1 FROM EVENT WHERE TaskID = @t6_tam)
+    PRINT 'OK   non-critical check: Finding note + NOTIFIES, no event' ELSE PRINT 'FAIL non-critical check';
+DELETE @t6_rn;
+INSERT @t6_rn EXEC sp_tech_record_tamper_check 5, @t6_tam, N'Σπασμένη σφραγίδα, παράκαμψη μετρητή', 1, '2,3';
+DECLARE @t6_ev BIGINT = (SELECT EventID FROM @t6_rn);
+IF EXISTS (SELECT 1 FROM @t6_rn WHERE NoteNo = 2 AND EventID IS NOT NULL)
+   AND EXISTS (SELECT 1 FROM EVENT WHERE EventID = @t6_ev AND EventType = 'Tamper finding' AND Severity = 'Critical' AND Status = 'Open' AND TaskID = @t6_tam AND MeterID = @t6_mB)
+   AND (SELECT COUNT(*) FROM NOTIFIES WHERE TaskID = @t6_tam) = 2
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'EVENT' AND ObjectID = CAST(@t6_ev AS VARCHAR(100)) AND Action = 'Tamper finding')
+    PRINT 'OK   critical check -> EVENT Tamper finding (Open, Critical, meter, task) + 2 notified' ELSE PRINT 'FAIL critical check';
+
+-- ---------- Συμβάν -> νέα εργασία (X4) ----------
+DECLARE @t6_oe TABLE (EventID BIGINT, EventType VARCHAR(30), Severity VARCHAR(8), Description NVARCHAR(1000), OccurredAt DATETIME2(0),
+                      MeterID INT, SerialNumber VARCHAR(40), SourceTaskID INT);
+INSERT @t6_oe EXEC sp_operator_list_open_events 2;
+IF EXISTS (SELECT 1 FROM @t6_oe WHERE EventID = @t6_ev AND SerialNumber = 'SN-TEC6-B' AND SourceTaskID = @t6_tam)
+    PRINT 'OK   operator lists the open tamper event' ELSE PRINT 'FAIL list open events';
+BEGIN TRY EXEC sp_operator_list_open_events 5; PRINT 'FAIL technician listed open events'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   list open events by technician -> 52100' ELSE PRINT 'FAIL events role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_event_create_task 5, @t6_ev, 5, '2027-08-10 09:00:00', '2027-08-10 11:00:00'; PRINT 'FAIL technician created a task from an event'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52100 PRINT 'OK   event task by technician -> 52100' ELSE PRINT 'FAIL event task role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_event_create_task 2, @t6_ev, 6, '2027-08-10 09:00:00', '2027-08-10 11:00:00'; PRINT 'FAIL task for a Pending technician'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52103 PRINT 'OK   event task for a Pending technician -> 52103' ELSE PRINT 'FAIL event task tech: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_event_create_task 2, @t6_ev, 5, '2027-08-10 11:00:00', '2027-08-10 09:00:00'; PRINT 'FAIL reversed schedule'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52102 PRINT 'OK   event task with reversed schedule -> 52102' ELSE PRINT 'FAIL event task schedule: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_event_create_task 2, 999999999, 5, '2027-08-10 09:00:00', '2027-08-10 11:00:00'; PRINT 'FAIL unknown event'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52362 PRINT 'OK   unknown event -> 52362' ELSE PRINT 'FAIL unknown event: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t6_nm TABLE (EventID BIGINT);
+INSERT EVENT (EventType, Severity, Description, OccurredAt, Status) OUTPUT inserted.EventID INTO @t6_nm
+VALUES ('Communication problem', 'Warning', N'TEC6 χωρίς μετρητή', SYSUTCDATETIME(), 'Open');
+DECLARE @t6_evn BIGINT = (SELECT EventID FROM @t6_nm);
+BEGIN TRY EXEC sp_event_create_task 2, @t6_evn, 5, '2027-08-10 09:00:00', '2027-08-10 11:00:00'; PRINT 'FAIL task from an event without a meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52364 PRINT 'OK   event without a meter -> 52364' ELSE PRINT 'FAIL event no meter: ' + ERROR_MESSAGE(); END CATCH;
+IF EXISTS (SELECT 1 FROM EVENT WHERE EventID = @t6_ev AND Status = 'Open') AND NOT EXISTS (SELECT 1 FROM LEADS_TO WHERE EventID = @t6_ev)
+    PRINT 'OK   refused event tasks changed nothing' ELSE PRINT 'FAIL refused event tasks changed rows';
+
+DECLARE @t6_rn2 TABLE (TaskID INT);
+INSERT @t6_rn2 EXEC sp_event_create_task 2, @t6_ev, 5, '2027-08-10 09:00:00', '2027-08-10 11:00:00';
+DECLARE @t6_tn INT = (SELECT TaskID FROM @t6_rn2);
+IF EXISTS (SELECT 1 FROM FIELD_TASK WHERE TaskID = @t6_tn AND TaskType = 'Anti-tamper check' AND Status = 'Assigned' AND TechnicianID = 5 AND MeterID = @t6_mB AND PremiseID = @t6_prem)
+   AND EXISTS (SELECT 1 FROM LEADS_TO WHERE EventID = @t6_ev AND TaskID = @t6_tn)
+   AND EXISTS (SELECT 1 FROM EVENT WHERE EventID = @t6_ev AND Status = 'In progress')
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'EVENT' AND ObjectID = CAST(@t6_ev AS VARCHAR(100)) AND Action = 'Create task from event' AND OldState = 'Open' AND NewState = 'In progress')
+    PRINT 'OK   event -> Anti-tamper task + LEADS_TO + event In progress + audit (X4)' ELSE PRINT 'FAIL event to task';
+BEGIN TRY EXEC sp_event_create_task 2, @t6_ev, 5, '2027-08-11 09:00:00', '2027-08-11 11:00:00'; PRINT 'FAIL second task from the same event'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52363 PRINT 'OK   event already In progress -> 52363' ELSE PRINT 'FAIL event twice: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Καθαρισμός: όλα τα δεδομένα TEC-6 φεύγουν ----------
+DECLARE @t6_ms TABLE (MeterID INT);
+INSERT @t6_ms SELECT MeterID FROM METER WHERE SerialNumber LIKE 'SN-TEC6-%';
+DECLARE @t6_ts TABLE (TaskID INT);
+INSERT @t6_ts SELECT TaskID FROM FIELD_TASK WHERE PremiseID = @t6_prem OR MeterID IN (SELECT MeterID FROM @t6_ms);
+DELETE EVENT WHERE EventID = @t6_evn OR MeterID IN (SELECT MeterID FROM @t6_ms) OR TaskID IN (SELECT TaskID FROM @t6_ts);
+DELETE REMOTE_COMMAND WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+DELETE ATTACHMENT WHERE TaskID IN (SELECT TaskID FROM @t6_ts);
+DELETE METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+DELETE FIELD_TASK WHERE TaskID IN (SELECT TaskID FROM @t6_ts);
+DELETE DOCUMENT WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+DELETE METER_CONNECTED_PHASE WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+EXEC sp_set_session_context N'mdms_purge', 1;
+DELETE RAW_READING WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+EXEC sp_set_session_context N'mdms_purge', 0;
+DELETE TELEMETRY_PACKET WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+DELETE METER WHERE MeterID IN (SELECT MeterID FROM @t6_ms);
+DELETE HOLDING WHERE PremiseID = @t6_prem;
+DELETE PREMISE WHERE PremiseID = @t6_prem;
+IF NOT EXISTS (SELECT 1 FROM METER WHERE SerialNumber LIKE 'SN-TEC6-%') AND NOT EXISTS (SELECT 1 FROM PREMISE WHERE PremiseID = @t6_prem)
+   AND NOT EXISTS (SELECT 1 FROM FIELD_TASK WHERE TaskID IN (SELECT TaskID FROM @t6_ts))
+   AND (SELECT COUNT(*) FROM METER WHERE Status = 'Active' AND TransformerID IN (4, 5, 6)) = @t6_act0
+    PRINT 'OK   TEC-6 test data removed (Active meters on base leaves 4/5/6 are back to the starting count)' ELSE PRINT 'FAIL TEC-6 cleanup';
+GO
+
+-- ---------- sp_ref_list_comm_types ----------
+DECLARE @t6_ct TABLE (CommTypeID INT, Label NVARCHAR(30));
+INSERT @t6_ct EXEC sp_ref_list_comm_types;
+IF (SELECT COUNT(*) FROM @t6_ct) >= 3 PRINT 'OK   list communication types' ELSE PRINT 'FAIL list communication types';
+GO
