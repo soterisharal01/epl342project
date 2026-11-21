@@ -11,6 +11,17 @@
 - One username = one role (the professor's rule). Roles: [19-conventions.md](19-conventions.md), section 5.
 - Every critical change is logged in `AUDIT_LOG`.
 
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] Every person has a **unique** account. One username = one role (professor, 20/11).
+- [ ] Passwords are stored **only** in a non-reversible form (hash), so that not even someone reading the tables can see them.
+- [ ] The Admin is the root role and is inserted by hand in the database (`00_base.sql`).
+- [ ] Operators are created **by an Admin**. `CreatedBy` is set **only** for Operators (`CK_USER_ACCOUNT_Operator`).
+- [ ] The Operator checks technician registrations, technical documents and meters (TEC-4, TEC-7), defines **meter models**, **service types** and **tariff types** (ADM-3), and **records the result** of every check (comment + `AUDIT_LOG`).
+- [ ] The Admin sees the log with filters (object, user, period).
+
 ## What exists
 
 | Procedure (`sql/procs_common.sql`) | What it does |

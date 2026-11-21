@@ -368,3 +368,199 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- =====================================================================
+-- CON-2. Μετρήσεις και ιστορικό (ΙΙΙ.1.2)   THROW 51100-51199
+-- Διαβάζει ΜΟΝΟ VALIDATED_READING / METER_AGGREGATE (συμφωνία X6) και γράφει μόνο
+-- στο SERVICE_PURCHASE / INVOICE / AUDIT_LOG (αγορά ιστορικού).
+-- Απόφαση B2: Value = ενέργεια 15λέπτου για αθροιστικούς κωδικούς (1.8.0, 2.8.0),
+-- μετρούμενη τιμή για στιγμιαίους (32.7.0).
+-- Κανόνες: ο τρέχων μήνας είναι δωρεάν· παλιότεροι μήνες θέλουν αγορασμένη υπηρεσία
+-- (SERVICE_PURCHASE) ΚΑΙ να είναι μέσα στο RawRetentionMonths (μετρώντας από τον τρέχοντα μήνα).
+-- Τα ημερήσια/μηνιαία/ετήσια αθροίσματα (METER_AGGREGATE) μένουν για πάντα και είναι δωρεάν:
+-- η αγορά αφορά μόνο τη σειρά των 15 λεπτών.
+-- Λάθη: 51100 ξένος μετρητής, 51101 ξένο υποστατικό, 51102 μη έγκυρο διάστημα,
+--   51103 εκτός περιόδου εγκατάστασης, 51104 διάστημα > 31 ημέρες, 51105 μήνας χωρίς αγορά,
+--   51106 μήνας εκτός διατήρησης, 51107 μη έγκυρη περίοδος, 51108 τρέχων/μελλοντικός μήνας στην αγορά,
+--   51109 μη έγκυροι μήνες, 51110 επικάλυψη αγοράς, 51111 αγορά εκτός διατήρησης, 51112 δεν υπάρχει υπηρεσία.
+-- =====================================================================
+
+-- Μετρητές που ο χρήστης μπορεί να δει: επιβεβαιωμένες εγκαταστάσεις σε υποστατικά που κρατά ΣΗΜΕΡΑ,
+-- μαζί με τις παλιές (αντικατεστημένος μετρητής: το ιστορικό του μένει ορατό).
+CREATE OR ALTER FUNCTION fn_consumer_meters (@UserID INT)
+RETURNS TABLE
+AS
+RETURN (
+    SELECT mi.MeterID, mi.PremiseID, mi.InstalledAt, mi.RemovedAt
+    FROM METER_INSTALLATION mi
+    WHERE mi.ConfirmationStatus = 'Confirmed'
+      AND EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, mi.PremiseID))
+);
+GO
+
+-- Σειρά 15λέπτου ενός μετρητή: [@From, @To) (το @To δεν περιλαμβάνεται), το πολύ 31 ημέρες.
+-- Μία γραμμή ανά διάστημα: εισαγωγή (1.8.0), εξαγωγή (2.8.0, NULL αν δεν υπάρχει), τάση L1 (32.7.0, NULL αν δεν υπάρχει).
+-- Quality = η χειρότερη των ενεργειακών τιμών: Estimated > Edited > Validated.
+CREATE OR ALTER PROCEDURE sp_consumer_readings
+    @UserID INT, @MeterID INT, @From DATETIME2, @To DATETIME2
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_consumer_assert @UserID;
+    IF @From IS NULL OR @To IS NULL OR @From >= @To
+        THROW 51102, N'Μη έγκυρο διάστημα: η αρχή πρέπει να είναι πριν το τέλος.', 1;
+    IF DATEDIFF(DAY, @From, @To) > 31
+        THROW 51104, N'Το διάστημα μπορεί να είναι το πολύ 31 ημέρες.', 1;
+    IF NOT EXISTS (SELECT 1 FROM fn_consumer_meters(@UserID) WHERE MeterID = @MeterID)
+        THROW 51100, N'Ο μετρητής δεν ανήκει σε υποστατικό σας.', 1;
+    DECLARE @prem INT;
+    SELECT TOP 1 @prem = PremiseID FROM fn_consumer_meters(@UserID)
+    WHERE MeterID = @MeterID AND InstalledAt <= @From AND (RemovedAt IS NULL OR RemovedAt >= @To)
+    ORDER BY InstalledAt DESC;
+    IF @prem IS NULL
+        THROW 51103, N'Το διάστημα δεν βρίσκεται μέσα στην περίοδο εγκατάστασης του μετρητή.', 1;
+
+    DECLARE @cur DATE = DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1);
+    DECLARE @ret INT = (SELECT RawRetentionMonths FROM USER_ACCOUNT WHERE UserID = @UserID);
+    DECLARE @cutoff DATE = DATEADD(MONTH, -@ret, @cur);
+    DECLARE @lastInst DATETIME2 = DATEADD(MICROSECOND, -1, @To);
+    DECLARE @m1 DATE = DATEFROMPARTS(YEAR(@From), MONTH(@From), 1);
+    DECLARE @m2 DATE = DATEFROMPARTS(YEAR(@lastInst), MONTH(@lastInst), 1);
+    DECLARE @bad DATE, @msg NVARCHAR(400);
+
+    -- Μήνας πιο παλιός από τη διατήρηση: δεν αγοράζεται, δεν υπάρχει πια.
+    SELECT TOP 1 @bad = x.m FROM (SELECT DATEADD(MONTH, [value], @m1) AS m
+                                  FROM GENERATE_SERIES(0, DATEDIFF(MONTH, @m1, @m2))) x
+    WHERE x.m < @cutoff ORDER BY x.m;
+    IF @bad IS NOT NULL
+        BEGIN SET @msg = CONCAT(N'Ο μήνας ', CONVERT(NVARCHAR(7), @bad, 23), N' είναι εκτός της περιόδου διατήρησης (', @ret, N' μήνες)· τα αναλυτικά δεδομένα του δεν υπάρχουν πια.'); THROW 51106, @msg, 1; END;
+
+    SELECT TOP 1 @bad = x.m FROM (SELECT DATEADD(MONTH, [value], @m1) AS m
+                                  FROM GENERATE_SERIES(0, DATEDIFF(MONTH, @m1, @m2))) x
+    WHERE x.m < @cur
+      AND NOT EXISTS (SELECT 1 FROM SERVICE_PURCHASE sp
+                      WHERE sp.PremiseID = @prem AND sp.ServiceTypeID = 1
+                        AND sp.MonthFrom <= x.m AND sp.MonthTo >= x.m)
+    ORDER BY x.m;
+    IF @bad IS NOT NULL
+        BEGIN SET @msg = CONCAT(N'Για τον μήνα ', CONVERT(NVARCHAR(7), @bad, 23), N' πρέπει να αγοράσετε πρόσβαση στο ιστορικό (υπηρεσία ανά μήνα).'); THROW 51105, @msg, 1; END;
+
+    SELECT vr.IntervalStart,
+           MAX(CASE WHEN vr.ObisCode = '1.8.0'  THEN vr.Value END) AS ImportKWh,
+           MAX(CASE WHEN vr.ObisCode = '2.8.0'  THEN vr.Value END) AS ExportKWh,
+           MAX(CASE WHEN vr.ObisCode = '32.7.0' THEN vr.Value END) AS VoltageL1,
+           CASE MAX(CASE WHEN vr.ObisCode IN ('1.8.0', '2.8.0')
+                         THEN CASE vr.Quality WHEN 'Estimated' THEN 3 WHEN 'Edited' THEN 2 ELSE 1 END END)
+                WHEN 3 THEN 'Estimated' WHEN 2 THEN 'Edited' ELSE 'Validated' END AS Quality
+    FROM VALIDATED_READING vr
+    WHERE vr.MeterID = @MeterID AND vr.ObisCode IN ('1.8.0', '2.8.0', '32.7.0')
+      AND vr.IntervalStart >= @From AND vr.IntervalStart < @To
+    GROUP BY vr.IntervalStart
+    ORDER BY vr.IntervalStart;
+END;
+GO
+
+-- Ιστορικό από τα αθροίσματα (METER_AGGREGATE): @PeriodType 'Day' | 'Month' | 'Year', @From..@To περιλαμβάνονται.
+-- Δωρεάν και χωρίς όριο διατήρησης (τα αθροίσματα μένουν για πάντα).
+CREATE OR ALTER PROCEDURE sp_consumer_history
+    @UserID INT, @MeterID INT, @PeriodType VARCHAR(5), @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_consumer_assert @UserID;
+    IF @PeriodType IS NULL OR @PeriodType NOT IN ('Day', 'Month', 'Year')
+        THROW 51107, N'Διαλέξτε περίοδο: Ημέρα, Μήνας ή Έτος.', 1;
+    IF @From IS NULL OR @To IS NULL OR @From > @To
+        THROW 51102, N'Μη έγκυρο διάστημα: η αρχή πρέπει να είναι πριν το τέλος.', 1;
+    IF NOT EXISTS (SELECT 1 FROM fn_consumer_meters(@UserID) WHERE MeterID = @MeterID)
+        THROW 51100, N'Ο μετρητής δεν ανήκει σε υποστατικό σας.', 1;
+    SELECT a.PeriodStart,
+           ISNULL(SUM(CASE WHEN a.ObisCode = '1.8.0' THEN a.SumValue END), 0) AS ImportKWh,
+           ISNULL(SUM(CASE WHEN a.ObisCode = '2.8.0' THEN a.SumValue END), 0) AS ExportKWh,
+           ISNULL(SUM(CASE WHEN a.ObisCode = '1.8.0' THEN a.SumValue END), 0)
+             - ISNULL(SUM(CASE WHEN a.ObisCode = '2.8.0' THEN a.SumValue END), 0) AS NetKWh,
+           SUM(a.EstimatedCount) AS EstimatedCount
+    FROM METER_AGGREGATE a
+    WHERE a.MeterID = @MeterID AND a.PeriodType = @PeriodType AND a.ObisCode IN ('1.8.0', '2.8.0')
+      AND a.PeriodStart >= @From AND a.PeriodStart <= @To
+    GROUP BY a.PeriodStart
+    ORDER BY a.PeriodStart;
+END;
+GO
+
+-- Αγορά πρόσβασης στο ιστορικό 15λέπτου για ένα υποστατικό, για μήνες @MonthFrom..@MonthTo (οποιαδήποτε
+-- ημέρα του μήνα· κανονικοποιείται στην 1η). Μόνο παρελθοντικοί μήνες (ο τρέχων είναι δωρεάν),
+-- μέσα στη διατήρηση, και χωρίς επικάλυψη με προηγούμενη αγορά του ίδιου υποστατικού.
+-- Τιμολόγιο + αγορά + AUDIT_LOG σε μία συναλλαγή.
+CREATE OR ALTER PROCEDURE sp_consumer_buy_history
+    @UserID INT, @PremiseID INT, @MonthFrom DATE, @MonthTo DATE
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_consumer_assert @UserID;
+    IF @MonthFrom IS NULL OR @MonthTo IS NULL
+        THROW 51109, N'Δώστε μήνα έναρξης και λήξης.', 1;
+    IF NOT EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID))
+        THROW 51101, N'Δεν κρατάτε αυτό το υποστατικό.', 1;
+    SET @MonthFrom = DATEFROMPARTS(YEAR(@MonthFrom), MONTH(@MonthFrom), 1);
+    SET @MonthTo = DATEFROMPARTS(YEAR(@MonthTo), MONTH(@MonthTo), 1);
+    IF @MonthFrom > @MonthTo
+        THROW 51109, N'Ο μήνας έναρξης είναι μετά τον μήνα λήξης.', 1;
+    DECLARE @cur DATE = DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1);
+    DECLARE @ret INT = (SELECT RawRetentionMonths FROM USER_ACCOUNT WHERE UserID = @UserID);
+    DECLARE @msg NVARCHAR(400);
+    IF @MonthTo >= @cur
+        THROW 51108, N'Αγοράζονται μόνο προηγούμενοι μήνες· ο τρέχων μήνας είναι δωρεάν και οι μελλοντικοί δεν υπάρχουν.', 1;
+    IF @MonthFrom < DATEADD(MONTH, -@ret, @cur)
+        BEGIN SET @msg = CONCAT(N'Ο μήνας ', CONVERT(NVARCHAR(7), @MonthFrom, 23), N' είναι εκτός της περιόδου διατήρησης (', @ret, N' μήνες).'); THROW 51111, @msg, 1; END;
+    DECLARE @fee DECIMAL(10,2) = (SELECT Fee FROM SERVICE_TYPE WHERE ServiceTypeID = 1);
+    IF @fee IS NULL
+        THROW 51112, N'Η υπηρεσία ιστορικού δεν είναι διαθέσιμη.', 1;
+    DECLARE @months INT = DATEDIFF(MONTH, @MonthFrom, @MonthTo) + 1;
+    DECLARE @amount DECIMAL(10,2) = @months * @fee;
+    BEGIN TRY
+        BEGIN TRAN;
+        IF EXISTS (SELECT 1 FROM SERVICE_PURCHASE WITH (UPDLOCK, HOLDLOCK)
+                   WHERE PremiseID = @PremiseID AND ServiceTypeID = 1
+                     AND MonthFrom <= @MonthTo AND MonthTo >= @MonthFrom)
+            THROW 51110, N'Έχετε ήδη αγοράσει ένα ή περισσότερους από αυτούς τους μήνες για το υποστατικό.', 1;
+        DECLARE @contract INT = (SELECT TOP 1 ContractID FROM SUPPLY_CONTRACT
+                                 WHERE PremiseID = @PremiseID AND UserID = @UserID AND EndDate IS NULL
+                                 ORDER BY StartDate DESC);
+        INSERT INVOICE (IssueDate, PeriodFrom, PeriodTo, Amount, Status, UserID, ContractID)
+        VALUES (CAST(SYSUTCDATETIME() AS DATE), @MonthFrom, EOMONTH(@MonthTo), @amount, 'Issued', @UserID, @contract);
+        DECLARE @inv INT = SCOPE_IDENTITY();
+        INSERT SERVICE_PURCHASE (MonthFrom, MonthTo, Amount, ServiceTypeID, PremiseID, InvoiceID)
+        VALUES (@MonthFrom, @MonthTo, @amount, 1, @PremiseID, @inv);
+        DECLARE @pur INT = SCOPE_IDENTITY();
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, ResultComment, PerformedBy)
+        VALUES ('SERVICE_PURCHASE', @pur, 'Buy history',
+                CONCAT(CONVERT(VARCHAR(7), @MonthFrom, 23), '..', CONVERT(VARCHAR(7), @MonthTo, 23)),
+                CONCAT(N'Υποστατικό ', @PremiseID, N', τιμολόγιο ', @inv, N', ποσό ', @amount), @UserID);
+        COMMIT;
+        SELECT @pur AS PurchaseID, @inv AS InvoiceID, @amount AS Amount;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Οι αγορές ιστορικού μου, με διεύθυνση και κατάσταση τιμολογίου.
+CREATE OR ALTER PROCEDURE sp_consumer_list_purchases
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_consumer_assert @UserID;
+    SELECT sp.PurchaseID, sp.PurchasedAt, p.Address, sp.MonthFrom, sp.MonthTo, sp.Amount, sp.InvoiceID,
+           CASE i.Status WHEN 'Issued' THEN N'Εκδόθηκε' WHEN 'Partially paid' THEN N'Μερικώς πληρωμένο'
+                         WHEN 'Paid' THEN N'Εξοφλήθηκε' ELSE N'Ακυρώθηκε' END AS InvoiceStatus
+    FROM SERVICE_PURCHASE sp
+    JOIN INVOICE i ON i.InvoiceID = sp.InvoiceID
+    JOIN PREMISE p ON p.PremiseID = sp.PremiseID
+    WHERE i.UserID = @UserID
+    ORDER BY sp.PurchasedAt DESC, sp.PurchaseID DESC;
+END;
+GO
