@@ -31,7 +31,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
 | CON-1 | ★ Premises + bank accounts | III.1.1 | | 24/11 | ✓ | `sp_consumer_add_premise`, `list_premises`, `end_holding`, `add_bank_account`, `list_bank_accounts`, pages `10_premises`, `20_bank` (PR #4) |
-| CON-2 | ★ Readings: current month free, history through a purchased service, within retention | III.1.2 | | 26/11 | ○ | |
+| CON-2 | ★ Readings: current month free, history through a purchased service, within retention | III.1.2 | | 26/11 | 👀 | |
 | CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | ○ | |
 | CON-4 | ★ Check/fault requests + history | III.1.3 | | 25/11 | ✓ | `sp_consumer_submit_request`, `list_requests`, `cancel_request`, `list_meters`, page `30_requests` (PR #4) |
 | CON-5 | ★ Invoices, payments, paying an invoice | III.1.3 | | 26/11 | ✓ | `sp_consumer_list_invoices`, `list_payments`, `pay_invoice`, page `40_billing` (PR #4) |
