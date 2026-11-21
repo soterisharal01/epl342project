@@ -238,4 +238,125 @@ BEGIN TRY EXEC sp_consumer_history 3, 1, 'Week', '2026-11-18', '2026-11-19'; PRI
 BEGIN CATCH IF ERROR_NUMBER() = 51107 PRINT 'OK   history: bad period type -> 51107' ELSE PRINT 'FAIL period type: ' + ERROR_MESSAGE(); END CATCH;
 
 
+-- =====================================================================
+-- CON-3: όρια, κανάλια, συμβάντα ποιότητας
+-- =====================================================================
+DECLARE @thr TABLE (ThresholdID INT);
+INSERT @thr EXEC sp_consumer_set_threshold 3, 1, 'Day', 5.000;
+DECLARE @tid INT = (SELECT ThresholdID FROM @thr);
+IF EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD WHERE ThresholdID = @tid AND UserID = 3 AND PremiseID = 1
+                                                  AND PeriodType = 'Day' AND LimitKWh = 5 AND IsActive = 1)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'CONSUMPTION_THRESHOLD' AND ObjectID = CAST(@tid AS VARCHAR(100)) AND Action = 'Create threshold')
+    PRINT 'OK   set_threshold: Day threshold created + audit' ELSE PRINT 'FAIL set_threshold create';
+
+DECLARE @thr2 TABLE (ThresholdID INT);
+INSERT @thr2 EXEC sp_consumer_set_threshold 3, 1, 'Day', 0.001;   -- ίδιο υποστατικό+περίοδος: ενημέρωση, όχι διπλό
+IF (SELECT ThresholdID FROM @thr2) = @tid
+   AND (SELECT COUNT(*) FROM CONSUMPTION_THRESHOLD WHERE UserID = 3 AND PremiseID = 1 AND PeriodType = 'Day' AND IsActive = 1) = 1
+   AND EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD WHERE ThresholdID = @tid AND LimitKWh = 0.001)
+    PRINT 'OK   set_threshold: second call updates the same threshold' ELSE PRINT 'FAIL set_threshold update';
+
+DECLARE @lt TABLE (ThresholdID INT, PremiseID INT, Address NVARCHAR(200), PeriodType VARCHAR(5), LimitKWh DECIMAL(12,3),
+                   CurrentKWh DECIMAL(18,4), Exceeded BIT);
+INSERT @lt EXEC sp_consumer_list_thresholds 3;
+DECLARE @todayStart DATETIME2(0) = CAST(CAST(SYSUTCDATETIME() AS DATE) AS DATETIME2(0));
+DECLARE @expKWh DECIMAL(18,4) = ISNULL((SELECT SUM(Value) FROM VALIDATED_READING
+                                        WHERE MeterID = 1 AND ObisCode = '1.8.0'
+                                          AND IntervalStart >= @todayStart AND IntervalStart < DATEADD(DAY, 1, @todayStart)), 0);
+IF EXISTS (SELECT 1 FROM @lt WHERE ThresholdID = @tid AND Address IS NOT NULL AND CurrentKWh = @expKWh
+                               AND Exceeded = CASE WHEN @expKWh > 0.001 THEN 1 ELSE 0 END)
+    PRINT 'OK   list_thresholds: current consumption and Exceeded computed' ELSE PRINT 'FAIL list_thresholds';
+DECLARE @lt2 TABLE (ThresholdID INT, PremiseID INT, Address NVARCHAR(200), PeriodType VARCHAR(5), LimitKWh DECIMAL(12,3),
+                    CurrentKWh DECIMAL(18,4), Exceeded BIT);
+INSERT @lt2 EXEC sp_consumer_list_thresholds 4;
+IF NOT EXISTS (SELECT 1 FROM @lt2 WHERE ThresholdID = @tid) PRINT 'OK   list_thresholds: other consumer does not see it'
+ELSE PRINT 'FAIL list_thresholds isolation';
+
+BEGIN TRY EXEC sp_consumer_set_threshold 3, 3, 'Day', 5; PRINT 'FAIL threshold on foreign premise'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51200 PRINT 'OK   threshold foreign premise -> 51200' ELSE PRINT 'FAIL foreign premise: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_set_threshold 3, 1, 'Day', 0; PRINT 'FAIL limit 0 accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51202 PRINT 'OK   limit 0 -> 51202' ELSE PRINT 'FAIL limit 0: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_set_threshold 3, 1, 'Week', 5; PRINT 'FAIL bad period accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51201 PRINT 'OK   bad period -> 51201' ELSE PRINT 'FAIL bad period: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_set_threshold 4, 1, 'Day', 5, @tid; PRINT 'FAIL changed foreign threshold'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() IN (51200, 51203) PRINT 'OK   foreign threshold id refused' ELSE PRINT 'FAIL foreign threshold: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_set_threshold 2, 1, 'Day', 5; PRINT 'FAIL operator set threshold'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   threshold by operator -> 51000' ELSE PRINT 'FAIL operator threshold: ' + ERROR_MESSAGE(); END CATCH;
+
+BEGIN TRY EXEC sp_consumer_remove_threshold 4, @tid; PRINT 'FAIL removed foreign threshold'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51203 PRINT 'OK   remove foreign threshold -> 51203' ELSE PRINT 'FAIL remove foreign: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_consumer_remove_threshold 3, @tid;
+IF EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD WHERE ThresholdID = @tid AND IsActive = 0)
+    PRINT 'OK   remove_threshold: IsActive = 0' ELSE PRINT 'FAIL remove_threshold';
+BEGIN TRY EXEC sp_consumer_remove_threshold 3, @tid; PRINT 'FAIL removed twice'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51205 PRINT 'OK   remove twice -> 51205' ELSE PRINT 'FAIL remove twice: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @lt3 TABLE (ThresholdID INT, PremiseID INT, Address NVARCHAR(200), PeriodType VARCHAR(5), LimitKWh DECIMAL(12,3),
+                    CurrentKWh DECIMAL(18,4), Exceeded BIT);
+INSERT @lt3 EXEC sp_consumer_list_thresholds 3;
+IF NOT EXISTS (SELECT 1 FROM @lt3 WHERE ThresholdID = @tid) PRINT 'OK   list_thresholds: removed one is gone' ELSE PRINT 'FAIL list after remove';
+
+-- ---------- κανάλια ----------
+EXEC sp_consumer_set_channels 3, 'Email,SMS';
+IF (SELECT COUNT(*) FROM CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = 3) = 2
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'CONSUMER_NOTIFICATION_CHANNEL' AND ObjectID = '3' AND Action = 'Set channels' AND NewState = 'Email,SMS')
+    PRINT 'OK   set_channels: Email,SMS + audit' ELSE PRINT 'FAIL set_channels';
+DECLARE @lch TABLE (NotificationChannel VARCHAR(5));
+INSERT @lch EXEC sp_consumer_list_channels 3;
+IF (SELECT COUNT(*) FROM @lch) = 2 PRINT 'OK   list_channels' ELSE PRINT 'FAIL list_channels';
+
+-- Δοκιμαστικός καταναλωτής ΧΩΡΙΣ τηλέφωνο (μένει στη βάση δοκιμών, όπως οι test_tec_*).
+INSERT USER_ACCOUNT (Username, PasswordHash, Role, Email, Phone, FirstName, LastName, AccountStatus)
+VALUES (N'test_con3_nophone', '$2y$10$abcdefghijklmnopqrstuv', 'Consumer', 'con3@test.cy', NULL, N'Δοκιμή', N'Χωρίς τηλέφωνο', 'Active');
+DECLARE @nophone INT = SCOPE_IDENTITY();
+BEGIN TRY EXEC sp_consumer_set_channels @nophone, 'SMS'; PRINT 'FAIL SMS without phone accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51207 PRINT 'OK   SMS without phone -> 51207' ELSE PRINT 'FAIL sms no phone: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_consumer_set_channels @nophone, 'Email';
+IF EXISTS (SELECT 1 FROM CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = @nophone AND NotificationChannel = 'Email')
+    PRINT 'OK   Email without phone is fine' ELSE PRINT 'FAIL email without phone';
+BEGIN TRY EXEC sp_consumer_set_channels 3, ''; PRINT 'FAIL empty channels accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51206 PRINT 'OK   no channel -> 51206' ELSE PRINT 'FAIL empty channels: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_set_channels 3, 'Fax'; PRINT 'FAIL bad channel accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51206 PRINT 'OK   bad channel -> 51206' ELSE PRINT 'FAIL bad channel: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_set_channels 2, 'Email'; PRINT 'FAIL operator set channels'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   channels by operator -> 51000' ELSE PRINT 'FAIL operator channels: ' + ERROR_MESSAGE(); END CATCH;
+EXEC sp_consumer_set_channels 3, 'Email';   -- επαναφορά του consumer1
+IF (SELECT COUNT(*) FROM CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = 3) = 1 PRINT 'OK   consumer1 channels restored to Email'
+ELSE PRINT 'FAIL channels restore';
+
+-- ---------- συμβάντα ποιότητας ----------
+-- Δοκιμαστικά EVENT (μόνο στο τεστ): δύο στον μετρητή 1 (consumer1) και ένα στον μετρητή 3 (consumer2).
+INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+VALUES ('Undervoltage', 'Warning', N'test_con3 υπόταση μετρητή 1', '2026-11-21 10:00:00', 'Open', 1),
+       ('Overvoltage',  'Warning', N'test_con3 υπέρταση μετρητή 1', '2026-11-21 11:00:00', 'Open', 1),
+       ('Undervoltage', 'Warning', N'test_con3 υπόταση μετρητή 3', '2026-11-21 10:30:00', 'Open', 3);
+DECLARE @qe TABLE (RowNo INT IDENTITY(1,1), EventID BIGINT, EventType VARCHAR(30), Severity VARCHAR(8), Description NVARCHAR(1000),
+                   OccurredAt DATETIME2(0), Status VARCHAR(11), MeterID INT, SerialNumber NVARCHAR(100), PremiseID INT, Address NVARCHAR(200));
+INSERT @qe (EventID, EventType, Severity, Description, OccurredAt, Status, MeterID, SerialNumber, PremiseID, Address)
+EXEC sp_consumer_quality_events 3;
+IF (SELECT COUNT(*) FROM @qe WHERE Description LIKE N'test_con3%') = 2
+   AND NOT EXISTS (SELECT 1 FROM @qe WHERE Description LIKE N'test_con3%' AND MeterID <> 1)
+   AND NOT EXISTS (SELECT 1 FROM @qe q WHERE NOT EXISTS (SELECT 1 FROM fn_consumer_meters(3) f WHERE f.MeterID = q.MeterID))
+   AND NOT EXISTS (SELECT 1 FROM @qe WHERE SerialNumber IS NULL OR Address IS NULL)
+    PRINT 'OK   quality_events: only own meters, with serial and address' ELSE PRINT 'FAIL quality_events isolation';
+IF NOT EXISTS (SELECT 1 FROM @qe a JOIN @qe b ON a.RowNo < b.RowNo AND a.OccurredAt < b.OccurredAt)
+    PRINT 'OK   quality_events: newest first' ELSE PRINT 'FAIL quality_events order';
+DECLARE @qe2 TABLE (EventID BIGINT, EventType VARCHAR(30), Severity VARCHAR(8), Description NVARCHAR(1000), OccurredAt DATETIME2(0),
+                    Status VARCHAR(11), MeterID INT, SerialNumber NVARCHAR(100), PremiseID INT, Address NVARCHAR(200));
+INSERT @qe2 EXEC sp_consumer_quality_events 3, '2026-11-21 10:30:00', '2026-11-21 12:00:00';
+IF (SELECT COUNT(*) FROM @qe2 WHERE Description LIKE N'test_con3%') = 1 PRINT 'OK   quality_events: date range filter'
+ELSE PRINT 'FAIL quality_events range';
+DECLARE @qe3 TABLE (EventID BIGINT, EventType VARCHAR(30), Severity VARCHAR(8), Description NVARCHAR(1000), OccurredAt DATETIME2(0),
+                    Status VARCHAR(11), MeterID INT, SerialNumber NVARCHAR(100), PremiseID INT, Address NVARCHAR(200));
+INSERT @qe3 EXEC sp_consumer_quality_events 4;
+IF (SELECT COUNT(*) FROM @qe3 WHERE Description LIKE N'test_con3%') = 1
+   AND NOT EXISTS (SELECT 1 FROM @qe3 WHERE Description LIKE N'test_con3%' AND MeterID <> 3)
+    PRINT 'OK   quality_events: consumer2 sees only its own meter' ELSE PRINT 'FAIL quality_events consumer2';
+BEGIN TRY EXEC sp_consumer_quality_events 2; PRINT 'FAIL operator saw events'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   quality_events by operator -> 51000' ELSE PRINT 'FAIL operator events: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_quality_events 3, '2026-11-22', '2026-11-21'; PRINT 'FAIL bad range accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51208 PRINT 'OK   quality_events bad range -> 51208' ELSE PRINT 'FAIL events range: ' + ERROR_MESSAGE(); END CATCH;
+-- καθαρισμός των δοκιμαστικών συμβάντων
+DELETE FROM EVENT WHERE Description LIKE N'test_con3%';
+
+
 PRINT 'test_consumer.sql: τέλος';
