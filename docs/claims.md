@@ -9,5 +9,4 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 
 | Task | Branch | Claimed at (UTC) | Plan |
 |---|---|---|---|
-| DOC-2 | task/DOC-2-er | 2026-11-21 22:11 | final ER + relational diagram from create.sql |
 | REL-1 | task/REL-1-release-pack | 2026-11-21 22:11 | runbook + deploy/build scripts for sharal01; REL-3 demo script; REL-4 zip script |
