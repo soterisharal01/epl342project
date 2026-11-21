@@ -98,4 +98,144 @@ INSERT @lpay EXEC sp_consumer_list_payments 3;
 IF (SELECT COUNT(*) FROM @lpay) = 3 AND NOT EXISTS (SELECT 1 FROM @lpay WHERE IBAN NOT LIKE '%****%')
     PRINT 'OK   list payments -> 3, IBAN masked' ELSE PRINT 'FAIL list payments';
 
+-- =====================================================================
+-- CON-2 μετρήσεις / ιστορικό / αγορά ιστορικού
+-- =====================================================================
+DECLARE @cur DATE = DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1);
+DECLARE @prev DATE = DATEADD(MONTH, -1, @cur);
+DECLARE @fee DECIMAL(10,2) = (SELECT Fee FROM SERVICE_TYPE WHERE ServiceTypeID = 1);
+
+-- ---------- ρόλος ----------
+BEGIN TRY EXEC sp_consumer_readings 2, 1, '2026-11-18', '2026-11-19'; PRINT 'FAIL operator read meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   readings: operator -> 51000' ELSE PRINT 'FAIL readings role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_buy_history 2, 1, @prev, @prev; PRINT 'FAIL operator bought history'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   buy_history: operator -> 51000' ELSE PRINT 'FAIL buy role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_history 2, 1, 'Day', '2026-11-18', '2026-11-19'; PRINT 'FAIL operator read history'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   history: operator -> 51000' ELSE PRINT 'FAIL history role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_list_purchases 2; PRINT 'FAIL operator listed purchases'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   list_purchases: operator -> 51000' ELSE PRINT 'FAIL list_purchases role: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- fn_consumer_meters ----------
+IF (SELECT COUNT(*) FROM fn_consumer_meters(3)) = 2 AND NOT EXISTS (SELECT 1 FROM fn_consumer_meters(3) WHERE MeterID NOT IN (1, 2))
+   AND EXISTS (SELECT 1 FROM fn_consumer_meters(3) WHERE MeterID = 1 AND PremiseID = 1)
+    PRINT 'OK   fn_consumer_meters: consumer1 sees only meters 1 and 2' ELSE PRINT 'FAIL fn_consumer_meters';
+
+-- ---------- ανάγνωση 15λέπτου, τρέχων μήνας (δωρεάν) ----------
+DECLARE @rd TABLE (IntervalStart DATETIME2(0), ImportKWh DECIMAL(15,4), ExportKWh DECIMAL(15,4), VoltageL1 DECIMAL(15,4), Quality VARCHAR(9));
+IF @cur = '2026-11-01'
+BEGIN
+    INSERT @rd EXEC sp_consumer_readings 3, 1, '2026-11-18', '2026-11-19';
+    DECLARE @expected INT = (SELECT COUNT(DISTINCT IntervalStart) FROM VALIDATED_READING
+                             WHERE MeterID = 1 AND ObisCode IN ('1.8.0', '2.8.0', '32.7.0')
+                               AND IntervalStart >= '2026-11-18' AND IntervalStart < '2026-11-19');
+    IF @expected > 0 AND (SELECT COUNT(*) FROM @rd) = @expected
+        PRINT 'OK   readings: current month free, ' + CAST(@expected AS VARCHAR(10)) + ' rows' ELSE PRINT 'FAIL readings count';
+    IF (SELECT SUM(ImportKWh) FROM @rd) = (SELECT SUM(Value) FROM VALIDATED_READING
+                                           WHERE MeterID = 1 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-18' AND IntervalStart < '2026-11-19')
+        PRINT 'OK   readings: import values equal VALIDATED_READING' ELSE PRINT 'FAIL readings import values';
+END
+ELSE
+BEGIN
+    PRINT 'OK   readings: (skipped, base data is not in the current month)';
+    PRINT 'OK   readings: (skipped, base data is not in the current month)';
+END;
+
+-- prosumer (consumer2, meter 3 = premise 3): import and export side by side
+IF @cur = '2026-11-01'
+BEGIN
+    DECLARE @rd2 TABLE (IntervalStart DATETIME2(0), ImportKWh DECIMAL(15,4), ExportKWh DECIMAL(15,4), VoltageL1 DECIMAL(15,4), Quality VARCHAR(9));
+    INSERT @rd2 EXEC sp_consumer_readings 4, 3, '2026-11-18', '2026-11-19';
+    IF (SELECT SUM(ExportKWh) FROM @rd2) = (SELECT SUM(Value) FROM VALIDATED_READING
+                                            WHERE MeterID = 3 AND ObisCode = '2.8.0' AND IntervalStart >= '2026-11-18' AND IntervalStart < '2026-11-19')
+       AND (SELECT SUM(ExportKWh) FROM @rd2) > 0
+        PRINT 'OK   readings: prosumer export (2.8.0) shown separately' ELSE PRINT 'FAIL prosumer export';
+END
+ELSE PRINT 'OK   readings: (skipped, base data is not in the current month)';
+
+-- ---------- άρνηση ----------
+BEGIN TRY EXEC sp_consumer_readings 3, 3, '2026-11-18', '2026-11-19'; PRINT 'FAIL consumer1 read consumer2 meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51100 PRINT 'OK   readings: foreign meter -> 51100' ELSE PRINT 'FAIL foreign meter: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_readings 3, 1, '2026-11-19', '2026-11-18'; PRINT 'FAIL reversed range accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51102 PRINT 'OK   readings: reversed range -> 51102' ELSE PRINT 'FAIL reversed range: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_readings 3, 1, '2026-11-01', '2026-12-15'; PRINT 'FAIL range > 31 days accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51104 PRINT 'OK   readings: range > 31 days -> 51104' ELSE PRINT 'FAIL long range: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_readings 3, 1, '2026-09-01', '2026-09-02'; PRINT 'FAIL read before installation'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51103 PRINT 'OK   readings: before installation -> 51103' ELSE PRINT 'FAIL before install: ' + ERROR_MESSAGE(); END CATCH;
+-- προηγούμενος μήνας (εντός εγκατάστασης: 2026-10-05) χωρίς αγορά: 51105 (ή 51106 αν έχει περάσει η διατήρηση)
+BEGIN TRY EXEC sp_consumer_readings 3, 1, '2026-10-05', '2026-10-06'; PRINT 'FAIL earlier month without purchase accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() IN (51105, 51106) PRINT 'OK   readings: earlier month without purchase -> ' + CAST(ERROR_NUMBER() AS VARCHAR(10)) ELSE PRINT 'FAIL no purchase: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- αγορά ιστορικού ----------
+BEGIN TRY EXEC sp_consumer_buy_history 3, 3, @prev, @prev; PRINT 'FAIL bought history for foreign premise'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51101 PRINT 'OK   buy_history: foreign premise -> 51101' ELSE PRINT 'FAIL buy foreign: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @cur, @cur; PRINT 'FAIL bought the free current month'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51108 PRINT 'OK   buy_history: current month -> 51108' ELSE PRINT 'FAIL buy current: ' + ERROR_MESSAGE(); END CATCH;
+-- EXEC arguments must be variables or literals, not expressions: precompute the dates.
+DECLARE @fut DATE = DATEADD(MONTH, 3, @cur), @before DATE = DATEADD(MONTH, -2, @prev), @old37 DATE = DATEADD(MONTH, -37, @cur);
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, @fut; PRINT 'FAIL bought future month'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51108 PRINT 'OK   buy_history: future month -> 51108' ELSE PRINT 'FAIL buy future: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, @before; PRINT 'FAIL MonthFrom > MonthTo accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51109 PRINT 'OK   buy_history: MonthFrom > MonthTo -> 51109' ELSE PRINT 'FAIL buy order: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @old37, @old37; PRINT 'FAIL bought month beyond retention'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51111 PRINT 'OK   buy_history: beyond retention -> 51111' ELSE PRINT 'FAIL buy retention: ' + ERROR_MESSAGE(); END CATCH;
+
+DECLARE @bh TABLE (PurchaseID INT, InvoiceID INT, Amount DECIMAL(10,2));
+INSERT @bh EXEC sp_consumer_buy_history 3, 1, @prev, @prev;
+DECLARE @pur INT = (SELECT PurchaseID FROM @bh), @inv INT = (SELECT InvoiceID FROM @bh);
+IF EXISTS (SELECT 1 FROM INVOICE WHERE InvoiceID = @inv AND UserID = 3 AND Status = 'Issued' AND Amount = @fee
+                                     AND PeriodFrom = @prev AND PeriodTo = EOMONTH(@prev) AND IssueDate = CAST(SYSUTCDATETIME() AS DATE))
+   AND EXISTS (SELECT 1 FROM SERVICE_PURCHASE WHERE PurchaseID = @pur AND InvoiceID = @inv AND PremiseID = 1 AND ServiceTypeID = 1
+                                                AND MonthFrom = @prev AND MonthTo = @prev AND Amount = @fee)
+    PRINT 'OK   buy_history: invoice + purchase created, amount = fee' ELSE PRINT 'FAIL buy_history rows';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'SERVICE_PURCHASE' AND ObjectID = CAST(@pur AS VARCHAR(100)) AND PerformedBy = 3)
+    PRINT 'OK   buy_history: AUDIT_LOG row' ELSE PRINT 'FAIL buy_history audit';
+
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @prev, @prev; PRINT 'FAIL overlapping purchase accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51110 PRINT 'OK   buy_history: overlap -> 51110' ELSE PRINT 'FAIL overlap: ' + ERROR_MESSAGE(); END CATCH;
+IF (SELECT COUNT(*) FROM SERVICE_PURCHASE WHERE PremiseID = 1) = 1
+    PRINT 'OK   buy_history: refused overlap left no extra purchase' ELSE PRINT 'FAIL overlap rollback';
+
+-- μετά την αγορά το διάστημα του προηγούμενου μήνα επιτρέπεται (αν πέφτει μέσα στην εγκατάσταση)
+IF @prev = '2026-10-01'
+BEGIN
+    DECLARE @rd3 TABLE (IntervalStart DATETIME2(0), ImportKWh DECIMAL(15,4), ExportKWh DECIMAL(15,4), VoltageL1 DECIMAL(15,4), Quality VARCHAR(9));
+    BEGIN TRY
+        INSERT @rd3 EXEC sp_consumer_readings 3, 1, '2026-10-05', '2026-10-06';
+        PRINT 'OK   readings: purchased earlier month is readable';
+    END TRY
+    BEGIN CATCH PRINT 'FAIL purchased month refused: ' + ERROR_MESSAGE(); END CATCH;
+END
+ELSE PRINT 'OK   readings: (skipped, previous month is not Oct 2026)';
+
+DECLARE @lpu TABLE (PurchaseID INT, PurchasedAt DATETIME2(0), Address NVARCHAR(200), MonthFrom DATE, MonthTo DATE,
+                    Amount DECIMAL(10,2), InvoiceID INT, InvoiceStatus NVARCHAR(30));
+INSERT @lpu EXEC sp_consumer_list_purchases 3;
+IF (SELECT COUNT(*) FROM @lpu) = 1 AND EXISTS (SELECT 1 FROM @lpu WHERE PurchaseID = @pur AND Address IS NOT NULL)
+    PRINT 'OK   list_purchases: own purchase listed' ELSE PRINT 'FAIL list_purchases';
+DECLARE @lpu2 TABLE (PurchaseID INT, PurchasedAt DATETIME2(0), Address NVARCHAR(200), MonthFrom DATE, MonthTo DATE,
+                     Amount DECIMAL(10,2), InvoiceID INT, InvoiceStatus NVARCHAR(30));
+INSERT @lpu2 EXEC sp_consumer_list_purchases 4;
+IF (SELECT COUNT(*) FROM @lpu2) = 0 PRINT 'OK   list_purchases: other consumer sees none' ELSE PRINT 'FAIL list_purchases isolation';
+
+-- ---------- ιστορικό από METER_AGGREGATE ----------
+DECLARE @hd TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), EstimatedCount INT);
+INSERT @hd EXEC sp_consumer_history 3, 1, 'Day', '2026-11-18', '2026-11-19';
+IF (SELECT COUNT(*) FROM @hd) = 2
+   AND NOT EXISTS (SELECT 1 FROM @hd h LEFT JOIN METER_AGGREGATE a
+                     ON a.MeterID = 1 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = h.PeriodStart
+                   WHERE a.SumValue IS NULL OR a.SumValue <> h.ImportKWh OR h.ExportKWh <> 0 OR h.NetKWh <> h.ImportKWh)
+    PRINT 'OK   history: Day rows match METER_AGGREGATE' ELSE PRINT 'FAIL history day';
+DECLARE @hd2 TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), EstimatedCount INT);
+INSERT @hd2 EXEC sp_consumer_history 4, 3, 'Day', '2026-11-18', '2026-11-18';
+IF (SELECT COUNT(*) FROM @hd2) = 1
+   AND EXISTS (SELECT 1 FROM @hd2 h WHERE h.ImportKWh = (SELECT SumValue FROM METER_AGGREGATE WHERE MeterID = 3 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-18')
+                                      AND h.ExportKWh = (SELECT SumValue FROM METER_AGGREGATE WHERE MeterID = 3 AND ObisCode = '2.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-18')
+                                      AND h.NetKWh = h.ImportKWh - h.ExportKWh)
+    PRINT 'OK   history: prosumer import/export/net side by side' ELSE PRINT 'FAIL history prosumer';
+BEGIN TRY EXEC sp_consumer_history 3, 3, 'Day', '2026-11-18', '2026-11-19'; PRINT 'FAIL history of foreign meter'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51100 PRINT 'OK   history: foreign meter -> 51100' ELSE PRINT 'FAIL history foreign: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_consumer_history 3, 1, 'Week', '2026-11-18', '2026-11-19'; PRINT 'FAIL bad period type accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51107 PRINT 'OK   history: bad period type -> 51107' ELSE PRINT 'FAIL period type: ' + ERROR_MESSAGE(); END CATCH;
+
+
 PRINT 'test_consumer.sql: τέλος';
