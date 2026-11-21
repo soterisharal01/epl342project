@@ -3,6 +3,7 @@
 --   CON-1 υποστατικά + τραπεζικοί λογαριασμοί
 --   CON-4 αιτήματα ελέγχου/βλάβης
 --   CON-5 τιμολόγια, πληρωμές, εξόφληση
+--   CON-3 όρια κατανάλωσης, κανάλια ειδοποίησης, συμβάντα ποιότητας
 -- Τρέχει μετά το procs_common.sql. Λάθη: 51000-51999 (απόφαση Α4).
 -- Κάθε procedure παίρνει πρώτο το @UserID και ελέγχει ότι είναι ενεργός Καταναλωτής.
 -- Ο καταναλωτής βλέπει/αλλάζει ΜΟΝΟ τα δικά του (υποστατικά που κρατά, δικά του τιμολόγια).
@@ -562,5 +563,199 @@ BEGIN
     JOIN PREMISE p ON p.PremiseID = sp.PremiseID
     WHERE i.UserID = @UserID
     ORDER BY sp.PurchasedAt DESC, sp.PurchaseID DESC;
+END;
+GO
+
+-- =====================================================================
+-- CON-3. Όρια κατανάλωσης, κανάλια ειδοποίησης, συμβάντα ποιότητας (ΙΙΙ.1.2)
+--   Λάθη 51200-51299:
+--   51200 υποστατικό που δεν κρατάτε, 51201 μη έγκυρη περίοδος, 51202 όριο <= 0, 51203 όριο που δεν είναι δικό σας,
+--   51204 υπάρχει ήδη ενεργό όριο για το ίδιο υποστατικό και περίοδο, 51205 το όριο έχει ήδη αφαιρεθεί,
+--   51206 μη έγκυρα κανάλια, 51207 το SMS θέλει τηλέφωνο, 51208 μη έγκυρο διάστημα.
+-- Η αποστολή email/SMS γίνεται ΕΞΩ από τη βάση (απόφαση B19): η βάση υπολογίζει μόνο αν το όριο ξεπεράστηκε.
+-- Διαβάζουμε μόνο VALIDATED_READING και EVENT (X6).
+-- =====================================================================
+
+-- Δημιουργία/αλλαγή ορίου. Ένα ΕΝΕΡΓΟ όριο ανά υποστατικό + περίοδο (Day/Month):
+--  * χωρίς @ThresholdID: αν υπάρχει ήδη ενεργό για αυτό το ζεύγος, ενημερώνεται (όχι διπλό)· αλλιώς δημιουργείται.
+--  * με @ThresholdID: αλλάζει το δικό σας όριο (και το ενεργοποιεί ξανά αν είχε αφαιρεθεί)·
+--    51204 αν άλλο ενεργό όριο έχει ήδη το ίδιο υποστατικό + περίοδο.
+CREATE OR ALTER PROCEDURE sp_consumer_set_threshold
+    @UserID INT, @PremiseID INT, @PeriodType VARCHAR(5), @LimitKWh DECIMAL(12,3), @ThresholdID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_consumer_assert @UserID;
+    IF NOT EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, @PremiseID))
+        THROW 51200, N'Το υποστατικό δεν είναι δικό σας.', 1;
+    IF @PeriodType IS NULL OR @PeriodType NOT IN ('Day', 'Month')
+        THROW 51201, N'Διαλέξτε περίοδο ορίου: Ημέρα ή Μήνας.', 1;
+    IF @LimitKWh IS NULL OR @LimitKWh <= 0
+        THROW 51202, N'Το όριο πρέπει να είναι μεγαλύτερο από 0 kWh.', 1;
+    IF @ThresholdID IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD WHERE ThresholdID = @ThresholdID AND UserID = @UserID)
+        THROW 51203, N'Το όριο δεν είναι δικό σας.', 1;
+    IF @ThresholdID IS NOT NULL
+       AND EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD
+                   WHERE UserID = @UserID AND PremiseID = @PremiseID AND PeriodType = @PeriodType
+                     AND IsActive = 1 AND ThresholdID <> @ThresholdID)
+        THROW 51204, N'Υπάρχει ήδη ενεργό όριο για αυτό το υποστατικό και την ίδια περίοδο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @old NVARCHAR(400) = NULL, @act VARCHAR(50);
+        IF @ThresholdID IS NULL
+            SELECT @ThresholdID = ThresholdID FROM CONSUMPTION_THRESHOLD WITH (UPDLOCK)
+            WHERE UserID = @UserID AND PremiseID = @PremiseID AND PeriodType = @PeriodType AND IsActive = 1;
+        IF @ThresholdID IS NULL
+        BEGIN
+            INSERT CONSUMPTION_THRESHOLD (LimitKWh, PeriodType, IsActive, UserID, PremiseID)
+            VALUES (@LimitKWh, @PeriodType, 1, @UserID, @PremiseID);
+            SET @ThresholdID = SCOPE_IDENTITY();
+            SET @act = 'Create threshold';
+        END
+        ELSE
+        BEGIN
+            SELECT @old = CONCAT(PeriodType, N' ', LimitKWh, N' kWh, premise ', PremiseID, N', active ', IsActive)
+            FROM CONSUMPTION_THRESHOLD WITH (UPDLOCK) WHERE ThresholdID = @ThresholdID;
+            UPDATE CONSUMPTION_THRESHOLD
+            SET LimitKWh = @LimitKWh, PeriodType = @PeriodType, PremiseID = @PremiseID, IsActive = 1
+            WHERE ThresholdID = @ThresholdID;
+            SET @act = 'Update threshold';
+        END
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy)
+        VALUES ('CONSUMPTION_THRESHOLD', CAST(@ThresholdID AS VARCHAR(100)), @act, @old,
+                CONCAT(@PeriodType, N' ', @LimitKWh, N' kWh, premise ', @PremiseID, N', active 1'), @UserID);
+        COMMIT;
+        SELECT @ThresholdID AS ThresholdID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Αφαίρεση ορίου (IsActive = 0, η γραμμή μένει για το ιστορικό).
+CREATE OR ALTER PROCEDURE sp_consumer_remove_threshold
+    @UserID INT, @ThresholdID INT
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_consumer_assert @UserID;
+    IF NOT EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD WHERE ThresholdID = @ThresholdID AND UserID = @UserID)
+        THROW 51203, N'Το όριο δεν είναι δικό σας.', 1;
+    IF EXISTS (SELECT 1 FROM CONSUMPTION_THRESHOLD WHERE ThresholdID = @ThresholdID AND IsActive = 0)
+        THROW 51205, N'Το όριο έχει ήδη αφαιρεθεί.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        UPDATE CONSUMPTION_THRESHOLD SET IsActive = 0 WHERE ThresholdID = @ThresholdID;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy)
+        VALUES ('CONSUMPTION_THRESHOLD', CAST(@ThresholdID AS VARCHAR(100)), 'Remove threshold', N'active 1', N'active 0', @UserID);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Τα ενεργά όρια μου με τρέχουσα κατανάλωση της περιόδου (σήμερα / τρέχων μήνας, UTC):
+-- άθροισμα των επικυρωμένων 1.8.0 όλων των μετρητών του υποστατικού. Exceeded = 1 όταν CurrentKWh > LimitKWh.
+-- Η ειδοποίηση υπολογίζεται εδώ κατά την ανάγνωση· η αποστολή email/SMS γίνεται εκτός βάσης.
+CREATE OR ALTER PROCEDURE sp_consumer_list_thresholds
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_consumer_assert @UserID;
+    DECLARE @today DATETIME2(0) = CAST(CAST(SYSUTCDATETIME() AS DATE) AS DATETIME2(0));
+    DECLARE @tomorrow DATETIME2(0) = DATEADD(DAY, 1, @today);
+    DECLARE @monthStart DATETIME2(0) = DATEADD(DAY, 1 - DAY(@today), @today);
+    DECLARE @nextMonth DATETIME2(0) = DATEADD(MONTH, 1, @monthStart);
+    SELECT t.ThresholdID, t.PremiseID, p.Address, t.PeriodType, t.LimitKWh,
+           ISNULL(c.KWh, 0) AS CurrentKWh,
+           CAST(CASE WHEN ISNULL(c.KWh, 0) > t.LimitKWh THEN 1 ELSE 0 END AS BIT) AS Exceeded
+    FROM CONSUMPTION_THRESHOLD t
+    JOIN PREMISE p ON p.PremiseID = t.PremiseID
+    OUTER APPLY (
+        SELECT SUM(vr.Value) AS KWh
+        FROM VALIDATED_READING vr
+        WHERE vr.ObisCode = '1.8.0'
+          AND vr.MeterID IN (SELECT mi.MeterID FROM METER_INSTALLATION mi
+                             WHERE mi.PremiseID = t.PremiseID AND mi.ConfirmationStatus = 'Confirmed')
+          AND vr.IntervalStart >= CASE WHEN t.PeriodType = 'Day' THEN @today ELSE @monthStart END
+          AND vr.IntervalStart <  CASE WHEN t.PeriodType = 'Day' THEN @tomorrow ELSE @nextMonth END
+    ) c
+    WHERE t.UserID = @UserID AND t.IsActive = 1
+      AND EXISTS (SELECT 1 FROM fn_consumer_holds(@UserID, t.PremiseID))
+    ORDER BY t.PremiseID, t.PeriodType;
+END;
+GO
+
+-- Κανάλια ειδοποίησης: 'Email', 'SMS' ή 'Email,SMS' (τουλάχιστον ένα). Το SMS θέλει τηλέφωνο στο προφίλ.
+-- Αντικαθιστά το σύνολο των καναλιών.
+CREATE OR ALTER PROCEDURE sp_consumer_set_channels
+    @UserID INT, @Channels VARCHAR(20)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_consumer_assert @UserID;
+    DECLARE @want TABLE (Channel VARCHAR(5) PRIMARY KEY);
+    INSERT @want (Channel)
+    SELECT DISTINCT LTRIM(RTRIM(value)) FROM STRING_SPLIT(ISNULL(@Channels, ''), ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+    IF NOT EXISTS (SELECT 1 FROM @want) OR EXISTS (SELECT 1 FROM @want WHERE Channel NOT IN ('Email', 'SMS'))
+        THROW 51206, N'Διαλέξτε κανάλια: Email, SMS ή και τα δύο.', 1;
+    IF EXISTS (SELECT 1 FROM @want WHERE Channel = 'SMS')
+       AND NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @UserID AND Phone IS NOT NULL AND LTRIM(RTRIM(Phone)) <> '')
+        THROW 51207, N'Για ειδοποιήσεις SMS χρειάζεται τηλέφωνο στο προφίλ σας.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @old NVARCHAR(400) = (SELECT STRING_AGG(NotificationChannel, ',') WITHIN GROUP (ORDER BY NotificationChannel)
+                                      FROM CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = @UserID);
+        DECLARE @new NVARCHAR(400) = (SELECT STRING_AGG(Channel, ',') WITHIN GROUP (ORDER BY Channel) FROM @want);
+        DELETE FROM CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = @UserID;
+        INSERT CONSUMER_NOTIFICATION_CHANNEL (UserID, NotificationChannel) SELECT @UserID, Channel FROM @want;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy)
+        VALUES ('CONSUMER_NOTIFICATION_CHANNEL', CAST(@UserID AS VARCHAR(100)), 'Set channels', @old, @new, @UserID);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Τα κανάλια μου (βοηθητικό για τη σελίδα): μία γραμμή ανά κανάλι.
+CREATE OR ALTER PROCEDURE sp_consumer_list_channels
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_consumer_assert @UserID;
+    SELECT NotificationChannel FROM CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = @UserID ORDER BY NotificationChannel;
+END;
+GO
+
+-- Συμβάντα (EVENT) στους μετρητές μου, νεότερα πρώτα. Διάστημα [@From, @To) προαιρετικό (UTC).
+-- Δείχνει μόνο μετρητές των υποστατικών που κρατώ (fn_consumer_meters).
+CREATE OR ALTER PROCEDURE sp_consumer_quality_events
+    @UserID INT, @From DATETIME2 = NULL, @To DATETIME2 = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_consumer_assert @UserID;
+    IF @From IS NOT NULL AND @To IS NOT NULL AND @From >= @To
+        THROW 51208, N'Μη έγκυρο διάστημα: η αρχή πρέπει να είναι πριν το τέλος.', 1;
+    SELECT e.EventID, e.EventType, e.Severity, e.Description, e.OccurredAt, e.Status,
+           e.MeterID, me.SerialNumber, p.PremiseID, p.Address
+    FROM EVENT e
+    JOIN METER me ON me.MeterID = e.MeterID
+    JOIN PREMISE p ON p.PremiseID = (SELECT MIN(f.PremiseID) FROM fn_consumer_meters(@UserID) f WHERE f.MeterID = e.MeterID)
+    WHERE (@From IS NULL OR e.OccurredAt >= @From)
+      AND (@To IS NULL OR e.OccurredAt < @To)
+    ORDER BY e.OccurredAt DESC, e.EventID DESC;
 END;
 GO

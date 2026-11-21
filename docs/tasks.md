@@ -53,10 +53,10 @@ change them only through the schema-change process or in the coordinating sessio
 |---|---|---|---|---|---|---|
 | CON-1 | ★ Premises + bank accounts | III.1.1 | | 24/11 | ✓ | `sp_consumer_add_premise`, `list_premises`, `end_holding`, `add_bank_account`, `list_bank_accounts`, pages `10_premises`, `20_bank` (PR #4) |
 | CON-2 | ★ Readings: current month free, history through a purchased service, within retention | III.1.2 | | 26/11 | 👀 | |
-| CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | ○ | |
+| CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | 👀 | |
 | CON-4 | ★ Check/fault requests + history | III.1.3 | | 25/11 | ✓ | `sp_consumer_submit_request`, `list_requests`, `cancel_request`, `list_meters`, page `30_requests` (PR #4) |
 | CON-5 | ★ Invoices, payments, paying an invoice | III.1.3 | | 26/11 | ✓ | `sp_consumer_list_invoices`, `list_payments`, `pay_invoice`, page `40_billing` (PR #4) |
-| CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | ○ | |
+| CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | 👀 | |
 | CON-7 | Fix: consumer procedures call `dbo.fn_consumer_holds`, which fails on the department server (per-user schemas) | Bug | | 22/11 | 👀 | Now an inline table-valued function; 37/37 OK on a member database; PR #8 |
 
 ## GDP: GDPR and retention ([07](07-gdpr-and-retention.md))
