@@ -50,7 +50,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| TEC-1 | ★ Technician registration + categories | III.2.1 | | 24/11 | ○ | |
+| TEC-1 | ★ Technician registration + categories | III.2.1 | | 24/11 | 👀 | |
 | TEC-2 | Technician documents | III.2.1 | | 24/11 | ○ | |
 | TEC-3 | Availability (time + area) | III.2.1 | | 25/11 | ○ | |
 | TEC-4 | ★ Operator: approve/reject technician, review documents | III.2.1 | TEC-1, TEC-2 | 25/11 | ○ | |
