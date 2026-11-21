@@ -267,3 +267,499 @@ BEGIN
     ORDER BY r.IntervalStart, r.ObisCode;
 END;
 GO
+
+-- =====================================================================
+-- DSO-2 / DSO-3 : VEE (Validation, Estimation, Editing)
+-- Αριθμοί λάθους (DSO-2/3):
+--   53100 sp_dso_run_vee: λάθος περίοδος (κενή ημερομηνία ή @From >= @To)
+--   53101 sp_dso_run_vee: τρέχει ήδη άλλο VEE (sp_getapplock)
+--   53110 sp_dso_list_suspect: δεν υπάρχει ο μετρητής
+--   53120 sp_dso_edit_reading: δεν υπάρχει τέτοια μέτρηση
+--   53121 sp_dso_edit_reading: η μέτρηση δεν είναι Suspect
+--   53122 sp_dso_edit_reading: η νέα τιμή λείπει ή είναι εκτός ορίων του κωδικού OBIS
+--   53123 sp_dso_edit_reading: ο λόγος διόρθωσης είναι υποχρεωτικός
+--   53124 sp_dso_edit_reading: υπάρχει ήδη επικυρωμένη τιμή για το διάστημα
+--
+-- ΠΩΣ ΔΟΥΛΕΥΕΙ ΤΟ VEE (απόφαση B2, docs/19-conventions.md):
+--  * RAW_READING.ReceivedValue των σωρευτικών κωδικών (1.8.0, 2.8.0 ...) είναι ο ΜΕΤΡΗΤΗΣ
+--    (counter από την εγκατάσταση). Η ΕΠΙΚΥΡΩΜΕΝΗ τιμή (VALIDATED_READING.Value) είναι η ΕΝΕΡΓΕΙΑ
+--    του 15λέπτου = μετρητής - μετρητής του προηγούμενου διαστήματος. Για στιγμιαίους κωδικούς
+--    (τάση, ένταση) η τιμή είναι αυτή που στάλθηκε.
+--  * Κάθε σειρά (μετρητής + κωδικός) επεξεργάζεται κατά χρονική σειρά, γιατί κάθε τιμή εξαρτάται
+--    από την προηγούμενη (διαφορά μετρητή, μέσος όρος για spike, παρεμβολή κενού).
+--  * Έλεγχοι ανά κωδικό, μόνο από ΕΝΕΡΓΟΥΣ κανόνες που συνδέονται με τον κωδικό στον RULE_FOR:
+--      Range    η τιμή ανάμεσα σε MinValid/MaxValid του OBIS_CODE
+--      Spike    τιμή > factor x μέσος όρος των τελευταίων `window` επικυρωμένων τιμών (παράμετροι JSON
+--               του κανόνα, προεπιλογή 5 και 3). Δάπεδο: 10% του MaxValid, ώστε ένας "ήσυχος" μέσος
+--               όρος κοντά στο 0 (π.χ. φωτοβολταϊκά τα ξημερώματα) να μη θεωρεί κάθε αύξηση spike.
+--      Gap+LinearEstimate  λείπουν 1..4 διαστήματα ανάμεσα σε δύο έγκυρες τιμές -> εκτίμηση.
+--      VoltageBand  τάση εκτός ζώνης: η τιμή μένει έγκυρη, γράφεται μόνο EVENT.
+--    Αρνητική διαφορά μετρητή είναι ΠΑΝΤΑ Suspect (ο μετρητής δεν γυρίζει πίσω).
+--  * Suspect = η raw γραμμή γίνεται 'Suspect', ΔΕΝ γράφεται VALIDATED_READING, γράφεται EVENT
+--    'Suspect reading' με τον λόγο. Ένας άνθρωπος το λύνει με sp_dso_edit_reading.
+--  * ΚΑΝΟΝΑΣ ΠΡΩΤΗΣ ΜΕΤΡΗΣΗΣ: χωρίς προηγούμενο μετρητή (πρώτη μέτρηση της σειράς) ή με κενό
+--    μεγαλύτερο από 4 διαστήματα (μακρά διακοπή, αλλαγή μετρητή) δεν υπάρχει ενέργεια να βγει.
+--    Η raw γραμμή γίνεται 'Validated' ως ΒΑΣΗ (baseline) χωρίς VALIDATED_READING: αρχίζει νέα
+--    αλυσίδα διαφορών από εκεί. Το πλήθος τους μπαίνει στο AUDIT_LOG.
+--  * Μετά το VEE τα VALIDATED_READING δεν αλλάζουν ποτέ (trigger): μόνο INSERT.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- DSO-2 ★: τρέξιμο VEE για Pending μετρήσεις με IntervalStart στο [@From, @To) (UTC).
+-- Επιστρέφει ΜΙΑ γραμμή: RunID, Validated, Estimated, Suspect, Events.
+--   Validated = νέες επικυρωμένες (ενέργεια ή τιμή), Estimated = νέες εκτιμήσεις,
+--   Suspect = raw γραμμές που περιμένουν άνθρωπο, Events = νέα EVENT (Suspect reading, Undervoltage, Overvoltage).
+--
+-- Εκτίμηση κενού (γραμμική παρεμβολή της ΕΝΕΡΓΕΙΑΣ): ανάμεσα στον προηγούμενο μετρητή P (ενέργεια
+-- e0 στο προηγούμενο διάστημα) και τον μετρητή C υπάρχουν g διαστήματα χωρίς μέτρηση. Η διαφορά
+-- D = C - P είναι η ενέργεια των g+1 διαστημάτων. Ζητάμε ευθεία e_i = e0 + i*s (i = 1..g+1) με
+-- άθροισμα D:  s = 2*(D - (g+1)*e0) / ((g+1)*(g+2)). Τα i=1..g είναι οι εκτιμήσεις (Quality
+-- 'Estimated'), το i=g+1 η επικυρωμένη τιμή της πραγματικής μέτρησης. Παράδειγμα της εκφώνησης:
+-- e0 = 2.0, D = 4.3, g = 1 -> s = 0.1 -> κενό 2.1 και επόμενο 2.2 (το κενό είναι ο μέσος όρος
+-- των γειτόνων). Ο συνολικός μετρητής διατηρείται: 2.1 + 2.2 = D.
+--
+-- Ταυτοχρονισμός (docs/15-concurrency.md):
+--  * sp_getapplock (Exclusive, ανά συναλλαγή, χωρίς αναμονή): μόνο ένα VEE τη φορά. Το δεύτερο
+--    παίρνει αμέσως 53101 αντί να περιμένει και να διπλο-επεξεργαστεί τις ίδιες γραμμές.
+--  * Οι Pending γραμμές διαβάζονται WITH (UPDLOCK, READPAST): κλειδώνουμε αυτές που θα
+--    επεξεργαστούμε, και προσπερνάμε (δεν περιμένουμε) γραμμές που κλειδώνει εκείνη τη στιγμή
+--    άλλη συναλλαγή, π.χ. η sp_dso_ingest_packet που γράφει νέο πακέτο. Έτσι η λήψη
+--    τηλεμετρίας συνεχίζεται όσο τρέχει το VEE και το VEE δεν μπλοκάρει. Ό,τι προσπεράστηκε
+--    ή ήρθε αργότερα μένει Pending για το επόμενο τρέξιμο.
+--  * Όλα γίνονται σε ΜΙΑ συναλλαγή: ή γράφονται όλα (VEE_RUN, VALIDATED, READING_EDIT, raw status,
+--    EVENT, AUDIT_LOG) ή τίποτα.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_run_vee
+    @UserID INT,
+    @From DATETIME2(0),
+    @To DATETIME2(0)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @From IS NULL OR @To IS NULL OR @From >= @To
+        THROW 53100, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν από το τέλος.', 1;
+
+    DECLARE @MaxGap INT = 4;                         -- μέγιστο πλήθος διαστημάτων που εκτιμάται (1 ώρα)
+    DECLARE @RunID INT, @rc INT, @k INT, @maxK INT;
+    DECLARE @nVal INT = 0, @nEst INT = 0, @nSus INT = 0, @nBase INT = 0, @nLate INT = 0, @nEv INT = 0, @c INT = 0;
+    DECLARE @EstRuleID INT = (SELECT TOP 1 RuleID FROM VEE_RULE WHERE RuleType = 'LinearEstimate' AND IsActive = 1 ORDER BY RuleID);
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        -- Ένα VEE τη φορά (κλείδωμα εφαρμογής, ελευθερώνεται στο COMMIT/ROLLBACK).
+        EXEC @rc = sp_getapplock @Resource = N'mdms_vee_run', @LockMode = N'Exclusive',
+                                 @LockOwner = N'Transaction', @LockTimeout = 0;
+        IF @rc < 0
+            THROW 53101, N'Τρέχει ήδη άλλο VEE. Δοκιμάστε ξανά όταν τελειώσει.', 1;
+
+        INSERT VEE_RUN (PeriodFrom, PeriodTo) VALUES (@From, @To);
+        SET @RunID = SCOPE_IDENTITY();
+
+        -- Πίνακας εργασίας: μία γραμμή ανά διάστημα που επεξεργαζόμαστε + γραμμές "πλαισίου"
+        -- (ctx) = ο τελευταίος μετρητής πριν την περίοδο και οι τελευταίες 10 επικυρωμένες τιμές.
+        -- Verdict: pending (δεν κρίθηκε ακόμη), ok, suspect, base (πρώτη μέτρηση/μακρά διακοπή),
+        --          late (υπάρχει ήδη επικυρωμένη τιμή), est (εκτίμηση), ctx/anchor (πλαίσιο).
+        CREATE TABLE #w (
+            Id INT IDENTITY(1,1) NOT NULL, MeterID INT NOT NULL, Obis VARCHAR(20) NOT NULL,
+            Slot DATETIME2(0) NOT NULL, IsPending BIT NOT NULL, Verdict VARCHAR(8) NOT NULL,
+            Reason NVARCHAR(200) NULL, Counter DECIMAL(15,4) NULL, Val DECIMAL(15,4) NULL,
+            Rk INT NULL, PrevSlot DATETIME2(0) NULL, PrevCounter DECIMAL(15,4) NULL,
+            PrevVal DECIMAL(15,4) NULL, PrevVerdict VARCHAR(8) NULL, Gap INT NULL,
+            Delta DECIMAL(16,4) NULL, EstS DECIMAL(18,8) NULL,
+            UseEst BIT NOT NULL DEFAULT 0, BandOut BIT NOT NULL DEFAULT 0);
+        CREATE INDEX IX_w ON #w (MeterID, Obis, Slot);
+        CREATE TABLE #n (n INT NOT NULL PRIMARY KEY);
+        WHILE @c < @MaxGap BEGIN SET @c += 1; INSERT #n (n) VALUES (@c); END;
+
+        -- 1. Οι Pending γραμμές της περιόδου (δες την ιστορία ταυτοχρονισμού παραπάνω).
+        INSERT #w (MeterID, Obis, Slot, Counter, IsPending, Verdict)
+        SELECT r.MeterID, r.ObisCode, r.IntervalStart, r.ReceivedValue, 1, 'pending'
+        FROM RAW_READING r WITH (UPDLOCK, READPAST)
+        WHERE r.VeeStatus = 'Pending' AND r.IntervalStart >= @From AND r.IntervalStart < @To;
+
+        -- Αργοπορημένη raw για διάστημα που έχει ήδη επικυρωμένη τιμή (π.χ. εκτίμηση): τα
+        -- επικυρωμένα είναι αμετάβλητα, άρα η raw κλείνει χωρίς να αλλάξει τίποτα.
+        UPDATE w SET Verdict = 'late', Counter = NULL
+        FROM #w w
+        WHERE EXISTS (SELECT 1 FROM VALIDATED_READING v
+                       WHERE v.MeterID = w.MeterID AND v.ObisCode = w.Obis AND v.IntervalStart = w.Slot);
+
+        -- 2. Ρυθμίσεις ανά κωδικό: ποιοι ενεργοί κανόνες ισχύουν (RULE_FOR) και οι παράμετροί τους.
+        SELECT o.ObisCode, o.Kind, o.MinValid, o.MaxValid,
+               CASE WHEN EXISTS (SELECT 1 FROM RULE_FOR f JOIN VEE_RULE r ON r.RuleID = f.RuleID
+                                  WHERE f.ObisCode = o.ObisCode AND r.IsActive = 1 AND r.RuleType = 'Range') THEN 1 ELSE 0 END AS HasRange,
+               CASE WHEN sp.Parameters IS NOT NULL THEN 1 ELSE 0 END AS HasSpike,
+               ISNULL(TRY_CONVERT(DECIMAL(9,4), JSON_VALUE(sp.Parameters, '$.factor')), 5) AS SpFactor,
+               CASE WHEN ISNULL(TRY_CONVERT(INT, JSON_VALUE(sp.Parameters, '$.window')), 3) BETWEEN 1 AND 10
+                    THEN ISNULL(TRY_CONVERT(INT, JSON_VALUE(sp.Parameters, '$.window')), 3) ELSE 3 END AS SpWindow,
+               CASE WHEN bd.Parameters IS NOT NULL THEN 1 ELSE 0 END AS HasBand,
+               ISNULL(TRY_CONVERT(DECIMAL(9,4), JSON_VALUE(bd.Parameters, '$.min')), 207) AS BandMin,
+               ISNULL(TRY_CONVERT(DECIMAL(9,4), JSON_VALUE(bd.Parameters, '$.max')), 253) AS BandMax,
+               CASE WHEN EXISTS (SELECT 1 FROM RULE_FOR f JOIN VEE_RULE r ON r.RuleID = f.RuleID
+                                  WHERE f.ObisCode = o.ObisCode AND r.IsActive = 1 AND r.RuleType = 'Gap')
+                     AND EXISTS (SELECT 1 FROM RULE_FOR f JOIN VEE_RULE r ON r.RuleID = f.RuleID
+                                  WHERE f.ObisCode = o.ObisCode AND r.IsActive = 1 AND r.RuleType = 'LinearEstimate')
+                    THEN 1 ELSE 0 END AS GapOn
+        INTO #code
+        FROM OBIS_CODE o
+        OUTER APPLY (SELECT TOP 1 r.Parameters FROM RULE_FOR f JOIN VEE_RULE r ON r.RuleID = f.RuleID
+                      WHERE f.ObisCode = o.ObisCode AND r.IsActive = 1 AND r.RuleType = 'Spike' ORDER BY r.RuleID) sp
+        OUTER APPLY (SELECT TOP 1 r.Parameters FROM RULE_FOR f JOIN VEE_RULE r ON r.RuleID = f.RuleID
+                      WHERE f.ObisCode = o.ObisCode AND r.IsActive = 1 AND r.RuleType = 'VoltageBand' ORDER BY r.RuleID) bd
+        WHERE o.ObisCode IN (SELECT Obis FROM #w);
+
+        -- 3. Πλαίσιο: για κάθε σειρά ο τελευταίος raw μετρητής και οι 10 τελευταίες επικυρωμένες τιμές πριν την πρώτη Pending.
+        ;WITH s AS (SELECT MeterID, Obis, MIN(Slot) AS FirstSlot FROM #w WHERE Verdict = 'pending' GROUP BY MeterID, Obis),
+        vv AS (SELECT v.MeterID, v.ObisCode AS Obis, v.IntervalStart AS Slot,
+                      ROW_NUMBER() OVER (PARTITION BY v.MeterID, v.ObisCode ORDER BY v.IntervalStart DESC) AS rn
+                 FROM VALIDATED_READING v JOIN s ON s.MeterID = v.MeterID AND s.Obis = v.ObisCode
+                WHERE v.IntervalStart < s.FirstSlot),
+        rr AS (SELECT r.MeterID, r.ObisCode AS Obis, r.IntervalStart AS Slot,
+                      ROW_NUMBER() OVER (PARTITION BY r.MeterID, r.ObisCode ORDER BY r.IntervalStart DESC) AS rn
+                 FROM RAW_READING r JOIN s ON s.MeterID = r.MeterID AND s.Obis = r.ObisCode
+                WHERE r.IntervalStart < s.FirstSlot)
+        INSERT #w (MeterID, Obis, Slot, IsPending, Verdict)
+        SELECT MeterID, Obis, Slot, 0, 'ctx' FROM vv WHERE rn <= 10
+        UNION
+        SELECT MeterID, Obis, Slot, 0, 'ctx' FROM rr WHERE rn = 1;
+
+        UPDATE w SET Counter = r.ReceivedValue
+          FROM #w w JOIN RAW_READING r ON r.MeterID = w.MeterID AND r.ObisCode = w.Obis AND r.IntervalStart = w.Slot
+         WHERE w.Verdict = 'ctx';
+        UPDATE w SET Val = v.Value
+          FROM #w w JOIN VALIDATED_READING v ON v.MeterID = w.MeterID AND v.ObisCode = w.Obis AND v.IntervalStart = w.Slot
+         WHERE w.Verdict = 'ctx';
+        UPDATE #w SET Verdict = CASE WHEN Val IS NOT NULL THEN 'ok' ELSE 'anchor' END WHERE Verdict = 'ctx';
+
+        -- Σειρά επεξεργασίας: Rk = 1, 2, 3 ... ανά σειρά (μετρητής + κωδικός).
+        ;WITH x AS (SELECT Rk, ROW_NUMBER() OVER (PARTITION BY MeterID, Obis ORDER BY Slot) AS n
+                      FROM #w WHERE IsPending = 1 AND Verdict = 'pending')
+        UPDATE x SET Rk = n;
+
+        -- 4. Ο βρόχος: ένα "κύμα" ανά Rk, και μέσα σε κάθε κύμα όλες οι σειρές μαζί (set-based).
+        -- Χρειάζεται βρόχος γιατί το αποτέλεσμα μιας γραμμής (ok/suspect/εκτίμηση) επηρεάζει την επόμενη.
+        SELECT @maxK = ISNULL(MAX(Rk), 0) FROM #w;
+        SET @k = 1;
+        WHILE @k <= @maxK
+        BEGIN
+            -- 4a. Η προηγούμενη γραμμή με μετρητή (οποιασδήποτε κατάστασης: ο μετρητής είναι αλήθεια του μετρητή).
+            UPDATE w SET PrevSlot = p.Slot, PrevCounter = p.Counter, PrevVal = p.Val, PrevVerdict = p.Verdict
+            FROM #w w
+            OUTER APPLY (SELECT TOP 1 q.Slot, q.Counter, q.Val, q.Verdict FROM #w q
+                          WHERE q.MeterID = w.MeterID AND q.Obis = w.Obis AND q.Slot < w.Slot AND q.Counter IS NOT NULL
+                          ORDER BY q.Slot DESC) p
+            WHERE w.Rk = @k;
+
+            -- 4b. Τιμή: στιγμιαίοι = όπως στάλθηκε.
+            UPDATE w SET Val = w.Counter
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+             WHERE w.Rk = @k AND c.Kind = 'Instantaneous';
+
+            -- 4c. Σωρευτικοί: κενό (g διαστήματα που λείπουν) και διαφορά μετρητή D.
+            UPDATE w SET Gap = CASE WHEN w.PrevSlot IS NULL THEN NULL ELSE DATEDIFF(MINUTE, w.PrevSlot, w.Slot) / 15 - 1 END,
+                         Delta = w.Counter - w.PrevCounter
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+             WHERE w.Rk = @k AND c.Kind = 'Cumulative register';
+
+            -- 4d. Πρώτη μέτρηση ή μακρά διακοπή: βάση (baseline), όχι ενέργεια.
+            UPDATE w SET Verdict = 'base', Reason = N'Πρώτη μέτρηση ή μεγάλο κενό: νέα βάση μετρητή'
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+             WHERE w.Rk = @k AND w.Verdict = 'pending' AND c.Kind = 'Cumulative register'
+               AND (w.PrevSlot IS NULL OR w.Gap > @MaxGap);
+
+            -- 4e. Αρνητική διαφορά: ο μετρητής δεν γυρίζει πίσω (πάντα Suspect, ανεξάρτητα από κανόνες).
+            UPDATE #w SET Verdict = 'suspect', Reason = N'Αρνητική διαφορά μετρητή'
+             WHERE Rk = @k AND Verdict = 'pending' AND Delta < 0;
+
+            -- 4f. Χωρίς κενό: ενέργεια = D.
+            UPDATE #w SET Val = Delta WHERE Rk = @k AND Verdict = 'pending' AND Gap = 0;
+
+            -- 4g. Με κενό (1..@MaxGap): γραμμική παρεμβολή αν οι κανόνες Gap+LinearEstimate είναι ενεργοί
+            --     και υπάρχει έγκυρη προηγούμενη ενέργεια e0. Αλλιώς Suspect (θέλει άνθρωπο).
+            UPDATE w SET EstS = CAST(2 * (w.Delta - (w.Gap + 1) * w.PrevVal) AS DECIMAL(18,8)) / ((w.Gap + 1) * (w.Gap + 2)),
+                         UseEst = 1
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+             WHERE w.Rk = @k AND w.Verdict = 'pending' AND w.Gap >= 1 AND c.GapOn = 1
+               AND w.PrevVal IS NOT NULL AND w.PrevVerdict = 'ok';
+            UPDATE #w SET Val = ROUND(PrevVal + (Gap + 1) * EstS, 4) WHERE Rk = @k AND Verdict = 'pending' AND UseEst = 1;
+            UPDATE #w SET Verdict = 'suspect', Reason = N'Κενό που δεν μπορεί να εκτιμηθεί (λείπει προηγούμενη έγκυρη τιμή ή κανόνας)'
+             WHERE Rk = @k AND Verdict = 'pending' AND Gap >= 1 AND UseEst = 0;
+            UPDATE #w SET Verdict = 'suspect', Reason = N'Αρνητική τιμή μετά την παρεμβολή του κενού'
+             WHERE Rk = @k AND Verdict = 'pending' AND UseEst = 1 AND Val < 0;
+
+            -- 4h. Κανόνας Range (MinValid/MaxValid).
+            UPDATE w SET Verdict = 'suspect', Reason = N'Εκτός ορίων τιμής (Range)'
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+             WHERE w.Rk = @k AND w.Verdict = 'pending' AND w.Val IS NOT NULL AND c.HasRange = 1
+               AND ((c.MinValid IS NOT NULL AND w.Val < c.MinValid) OR (c.MaxValid IS NOT NULL AND w.Val > c.MaxValid));
+
+            -- 4i. Κανόνας Spike: > factor x μέσος όρος των τελευταίων `window` επικυρωμένων/εκτιμημένων τιμών,
+            --     και πάνω από το δάπεδο (10% του MaxValid). Οι Suspect τιμές δεν μετράνε στον μέσο όρο.
+            UPDATE w SET Verdict = 'suspect', Reason = N'Αιχμή (Spike): υπερβολικά μεγαλύτερη από τις προηγούμενες τιμές'
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+              CROSS APPLY (SELECT AVG(x.Val) AS Av
+                             FROM (SELECT q.Val, ROW_NUMBER() OVER (ORDER BY q.Slot DESC) AS rn
+                                     FROM #w q
+                                    WHERE q.MeterID = w.MeterID AND q.Obis = w.Obis AND q.Slot < w.Slot
+                                      AND q.Verdict IN ('ok', 'est') AND q.Val IS NOT NULL) x
+                            WHERE x.rn <= c.SpWindow) a
+             WHERE w.Rk = @k AND w.Verdict = 'pending' AND w.Val IS NOT NULL AND c.HasSpike = 1 AND a.Av IS NOT NULL
+               AND w.Val > CASE WHEN c.SpFactor * a.Av > 0.1 * ISNULL(c.MaxValid, 0) THEN c.SpFactor * a.Av
+                                ELSE 0.1 * ISNULL(c.MaxValid, 0) END;
+
+            -- 4j. Ό,τι έμεινε είναι έγκυρο. Τάση εκτός ζώνης: έγκυρη, αλλά σημειώνεται για EVENT.
+            UPDATE #w SET Verdict = 'ok' WHERE Rk = @k AND Verdict = 'pending';
+            UPDATE w SET BandOut = 1
+              FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+             WHERE w.Rk = @k AND w.Verdict = 'ok' AND c.HasBand = 1 AND (w.Val < c.BandMin OR w.Val > c.BandMax);
+
+            -- 4k. Οι εκτιμήσεις των κενών μπαίνουν ως γραμμές 'est' (μετράνε στον μέσο όρο του spike μετά).
+            INSERT #w (MeterID, Obis, Slot, IsPending, Verdict, Val)
+            SELECT w.MeterID, w.Obis, DATEADD(MINUTE, 15 * n.n, w.PrevSlot), 0, 'est', ROUND(w.PrevVal + n.n * w.EstS, 4)
+              FROM #w w JOIN #n n ON n.n <= w.Gap
+             WHERE w.Rk = @k AND w.Verdict = 'ok' AND w.UseEst = 1;
+
+            SET @k += 1;
+        END;
+
+        -- Μια εκτίμηση δεν γράφεται πάνω σε διάστημα που έχει ήδη επικυρωμένη τιμή (αμετάβλητη).
+        DELETE w FROM #w w
+         WHERE w.Verdict = 'est'
+           AND EXISTS (SELECT 1 FROM VALIDATED_READING v
+                        WHERE v.MeterID = w.MeterID AND v.ObisCode = w.Obis AND v.IntervalStart = w.Slot);
+
+        -- 5. Εγγραφές. Μόνο INSERT στα VALIDATED_READING (αμετάβλητα).
+        INSERT VALIDATED_READING (MeterID, ObisCode, IntervalStart, Value, Quality, RunID)
+        SELECT MeterID, Obis, Slot, Val, CASE WHEN Verdict = 'ok' THEN 'Validated' ELSE 'Estimated' END, @RunID
+          FROM #w
+         WHERE (IsPending = 1 AND Verdict = 'ok') OR (IsPending = 0 AND Verdict = 'est');
+
+        -- Κάθε αυτόματη εκτίμηση αφήνει ίχνος: READING_EDIT 'Automatic estimate' με τον κανόνα, OldValue NULL.
+        INSERT READING_EDIT (MeterID, ObisCode, IntervalStart, EditNo, OldValue, NewValue, Origin, Reason, EditedBy, RuleID)
+        SELECT w.MeterID, w.Obis, w.Slot,
+               (SELECT ISNULL(MAX(e.EditNo), 0) + 1 FROM READING_EDIT e
+                 WHERE e.MeterID = w.MeterID AND e.ObisCode = w.Obis AND e.IntervalStart = w.Slot),
+               NULL, w.Val, 'Automatic estimate', N'Γραμμική παρεμβολή κενού (VEE)', NULL, @EstRuleID
+          FROM #w w WHERE w.Verdict = 'est';
+
+        -- Κατάσταση της raw γραμμής: έγκυρη/βάση/αργοπορημένη -> Validated, ύποπτη -> Suspect.
+        UPDATE r SET VeeStatus = CASE WHEN w.Verdict = 'suspect' THEN 'Suspect' ELSE 'Validated' END
+          FROM RAW_READING r
+          JOIN #w w ON w.MeterID = r.MeterID AND w.Obis = r.ObisCode AND w.Slot = r.IntervalStart
+         WHERE w.IsPending = 1 AND w.Verdict IN ('ok', 'suspect', 'base', 'late');
+
+        SELECT @nVal = COUNT(*) FROM #w WHERE IsPending = 1 AND Verdict = 'ok';
+        SELECT @nEst = COUNT(*) FROM #w WHERE Verdict = 'est';
+        SELECT @nSus = COUNT(*) FROM #w WHERE IsPending = 1 AND Verdict = 'suspect';
+        SELECT @nBase = COUNT(*) FROM #w WHERE IsPending = 1 AND Verdict = 'base';
+        SELECT @nLate = COUNT(*) FROM #w WHERE IsPending = 1 AND Verdict = 'late';
+
+        -- Συμβάντα (B14): ύποπτη μέτρηση (με τον λόγο) και τάση εκτός ζώνης.
+        INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+        SELECT 'Suspect reading', 'Warning',
+               LEFT(CONCAT(N'Ύποπτη μέτρηση ', Obis, N' (', CONVERT(NVARCHAR(30), ISNULL(Val, Counter)), N'): ', Reason), 1000),
+               Slot, 'Open', MeterID
+          FROM #w WHERE IsPending = 1 AND Verdict = 'suspect';
+        SET @nEv += @@ROWCOUNT;
+        INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+        SELECT CASE WHEN w.Val < c.BandMin THEN 'Undervoltage' ELSE 'Overvoltage' END, 'Warning',
+               LEFT(CONCAT(N'Τάση ', w.Obis, N' = ', CONVERT(NVARCHAR(30), w.Val), N' V εκτός ζώνης ',
+                           CONVERT(NVARCHAR(30), c.BandMin), N'-', CONVERT(NVARCHAR(30), c.BandMax)), 1000),
+               w.Slot, 'Open', w.MeterID
+          FROM #w w JOIN #code c ON c.ObisCode = w.Obis
+         WHERE w.IsPending = 1 AND w.Verdict = 'ok' AND w.BandOut = 1;
+        SET @nEv += @@ROWCOUNT;
+
+        UPDATE VEE_RUN SET FinishedAt = SYSUTCDATETIME() WHERE RunID = @RunID;
+
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('VEE_RUN', CAST(@RunID AS VARCHAR(100)), 'Run VEE', NULL, 'Finished',
+                CONCAT(N'Περίοδος ', CONVERT(VARCHAR(19), @From, 120), N' - ', CONVERT(VARCHAR(19), @To, 120),
+                       N'. Validated: ', @nVal, N', Estimated: ', @nEst, N', Suspect: ', @nSus,
+                       N', βάσεις: ', @nBase, N', αργοπορημένες: ', @nLate, N', συμβάντα: ', @nEv), @UserID);
+
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH;
+
+    SELECT @RunID AS RunID, @nVal AS Validated, @nEst AS Estimated, @nSus AS Suspect, @nEv AS Events;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-3: ύποπτες μετρήσεις (raw 'Suspect') με γείτονες και λόγο. @MeterID NULL = όλοι οι μετρητές.
+-- Ο λόγος ΔΕΝ αποθηκεύεται σε στήλη (δεν αλλάζει το create.sql): ξαναϋπολογίζεται εδώ από τα
+-- δεδομένα, με τους ίδιους κανόνες με το VEE (το VEE γράφει τον λόγο και στο EVENT 'Suspect reading').
+-- Σειρά ελέγχου: αρνητική διαφορά, κενό, εκτός ορίων, αλλιώς αιχμή.
+-- ComputedValue = η ενέργεια (σωρευτικοί: μετρητής - προηγούμενος μετρητής) ή η τιμή (στιγμιαίοι).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_list_suspect
+    @UserID INT,
+    @MeterID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @MeterID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM METER WHERE MeterID = @MeterID)
+        THROW 53110, N'Δεν υπάρχει ο μετρητής.', 1;
+
+    ;WITH r AS (
+        SELECT x.MeterID, x.ObisCode, x.IntervalStart, x.ReceivedValue, x.VeeStatus,
+               LAG(x.IntervalStart) OVER (PARTITION BY x.MeterID, x.ObisCode ORDER BY x.IntervalStart) AS PrevSlot,
+               LAG(x.ReceivedValue) OVER (PARTITION BY x.MeterID, x.ObisCode ORDER BY x.IntervalStart) AS PrevReceived,
+               LEAD(x.IntervalStart) OVER (PARTITION BY x.MeterID, x.ObisCode ORDER BY x.IntervalStart) AS NextSlot,
+               LEAD(x.ReceivedValue) OVER (PARTITION BY x.MeterID, x.ObisCode ORDER BY x.IntervalStart) AS NextReceived
+          FROM RAW_READING x
+         WHERE (@MeterID IS NULL OR x.MeterID = @MeterID)
+           AND EXISTS (SELECT 1 FROM RAW_READING s WHERE s.MeterID = x.MeterID AND s.ObisCode = x.ObisCode AND s.VeeStatus = 'Suspect')
+    ), c AS (
+        SELECT r.MeterID, r.ObisCode, r.IntervalStart, r.ReceivedValue, r.PrevSlot, r.PrevReceived, r.NextSlot, r.NextReceived,
+               o.Kind, o.MinValid, o.MaxValid, m.SerialNumber,
+               CASE WHEN o.Kind = 'Cumulative register' THEN r.ReceivedValue - r.PrevReceived ELSE r.ReceivedValue END AS ComputedValue
+          FROM r JOIN OBIS_CODE o ON o.ObisCode = r.ObisCode JOIN METER m ON m.MeterID = r.MeterID
+         WHERE r.VeeStatus = 'Suspect'
+    )
+    SELECT c.MeterID, c.SerialNumber, c.ObisCode, c.IntervalStart, c.ReceivedValue, c.ComputedValue,
+           c.PrevSlot AS PrevIntervalStart, c.PrevReceived, pv.Value AS PrevValidatedValue,
+           c.NextSlot AS NextIntervalStart, c.NextReceived,
+           CASE WHEN c.Kind = 'Cumulative register' AND c.ComputedValue < 0 THEN N'Αρνητική διαφορά μετρητή'
+                WHEN c.Kind = 'Cumulative register' AND (c.PrevSlot IS NULL OR DATEDIFF(MINUTE, c.PrevSlot, c.IntervalStart) > 15)
+                     THEN N'Κενό που δεν μπορεί να εκτιμηθεί'
+                WHEN (c.MinValid IS NOT NULL AND c.ComputedValue < c.MinValid) OR (c.MaxValid IS NOT NULL AND c.ComputedValue > c.MaxValid)
+                     THEN N'Εκτός ορίων τιμής (Range)'
+                ELSE CONCAT(N'Αιχμή (Spike): μέσος όρος προηγούμενων ', CONVERT(NVARCHAR(30), a.Av)) END AS Reason
+    FROM c
+    OUTER APPLY (SELECT v.Value FROM VALIDATED_READING v
+                  WHERE v.MeterID = c.MeterID AND v.ObisCode = c.ObisCode AND v.IntervalStart = c.PrevSlot) pv
+    OUTER APPLY (SELECT AVG(t.Value) AS Av
+                   FROM (SELECT TOP (3) v.Value FROM VALIDATED_READING v
+                          WHERE v.MeterID = c.MeterID AND v.ObisCode = c.ObisCode AND v.IntervalStart < c.IntervalStart
+                          ORDER BY v.IntervalStart DESC) t) a
+    ORDER BY c.MeterID, c.ObisCode, c.IntervalStart;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-3: χειροκίνητη διόρθωση ύποπτης μέτρησης. Μόνο raw 'Suspect'.
+--  * @NewValue = η ΔΙΟΡΘΩΜΕΝΗ επικυρωμένη τιμή (ενέργεια 15λέπτου για σωρευτικούς), μέσα στα όρια του κωδικού.
+--  * Γράφει READING_EDIT 'Manual edit' (OldValue = η ύποπτη τιμή που υπολογίστηκε, NewValue, λόγος, χρήστης,
+--    EditNo = επόμενος αριθμός με UPDLOCK ώστε δύο ταυτόχρονες διορθώσεις να μη πάρουν τον ίδιο),
+--    νέο VALIDATED_READING Quality 'Edited' (INSERT, όχι UPDATE: αμετάβλητα), raw -> 'Validated',
+--    κλείνει το EVENT 'Suspect reading' και γράφει AUDIT_LOG. Όλα σε μία συναλλαγή.
+--  * RunID του VALIDATED_READING (στήλη NOT NULL): το πιο πρόσφατο VEE_RUN που καλύπτει το διάστημα,
+--    αλλιώς το πιο πρόσφατο run.
+-- Επιστρέφει ΜΙΑ γραμμή: MeterID, ObisCode, IntervalStart, OldValue, NewValue, EditNo.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_edit_reading
+    @UserID INT,
+    @MeterID INT,
+    @ObisCode VARCHAR(20),
+    @IntervalStart DATETIME2(0),
+    @NewValue DECIMAL(15,4),
+    @Reason NVARCHAR(500)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @Reason IS NULL OR LEN(LTRIM(RTRIM(@Reason))) = 0
+        THROW 53123, N'Ο λόγος της διόρθωσης είναι υποχρεωτικός.', 1;
+
+    DECLARE @Status VARCHAR(9), @Received DECIMAL(15,4), @Kind VARCHAR(19), @Min DECIMAL(15,4), @Max DECIMAL(15,4);
+    DECLARE @Prev DECIMAL(15,4), @Old DECIMAL(15,4), @EditNo SMALLINT, @RunID INT;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        -- Κλειδώνουμε τη raw γραμμή: δύο διορθωτές της ίδιας μέτρησης δεν περνούν μαζί.
+        SELECT @Status = r.VeeStatus, @Received = r.ReceivedValue
+          FROM RAW_READING r WITH (UPDLOCK, HOLDLOCK)
+         WHERE r.MeterID = @MeterID AND r.ObisCode = @ObisCode AND r.IntervalStart = @IntervalStart;
+        IF @Status IS NULL
+            THROW 53120, N'Δεν υπάρχει τέτοια μέτρηση.', 1;
+        IF @Status <> 'Suspect'
+            THROW 53121, N'Διορθώνονται μόνο ύποπτες (Suspect) μετρήσεις.', 1;
+
+        SELECT @Kind = Kind, @Min = MinValid, @Max = MaxValid FROM OBIS_CODE WHERE ObisCode = @ObisCode;
+        IF @NewValue IS NULL OR (@Min IS NOT NULL AND @NewValue < @Min) OR (@Max IS NOT NULL AND @NewValue > @Max)
+            THROW 53122, N'Η νέα τιμή λείπει ή είναι εκτός των ορίων του κωδικού OBIS.', 1;
+        IF EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @MeterID AND ObisCode = @ObisCode AND IntervalStart = @IntervalStart)
+            THROW 53124, N'Υπάρχει ήδη επικυρωμένη τιμή για το διάστημα.', 1;
+
+        -- Παλιά τιμή = αυτή που θα είχε επικυρωθεί (σωρευτικοί: διαφορά από τον προηγούμενο raw μετρητή).
+        IF @Kind = 'Cumulative register'
+        BEGIN
+            SELECT TOP 1 @Prev = r.ReceivedValue FROM RAW_READING r
+             WHERE r.MeterID = @MeterID AND r.ObisCode = @ObisCode AND r.IntervalStart < @IntervalStart
+             ORDER BY r.IntervalStart DESC;
+            SET @Old = @Received - @Prev;          -- NULL αν δεν υπάρχει προηγούμενος
+        END
+        ELSE SET @Old = @Received;
+
+        SELECT @EditNo = ISNULL(MAX(e.EditNo), 0) + 1
+          FROM READING_EDIT e WITH (UPDLOCK, HOLDLOCK)
+         WHERE e.MeterID = @MeterID AND e.ObisCode = @ObisCode AND e.IntervalStart = @IntervalStart;
+
+        SELECT TOP 1 @RunID = RunID FROM VEE_RUN
+         ORDER BY CASE WHEN PeriodFrom <= @IntervalStart AND @IntervalStart < PeriodTo THEN 0 ELSE 1 END, RunID DESC;
+
+        INSERT READING_EDIT (MeterID, ObisCode, IntervalStart, EditNo, OldValue, NewValue, Origin, Reason, EditedBy, RuleID)
+        VALUES (@MeterID, @ObisCode, @IntervalStart, @EditNo, @Old, @NewValue, 'Manual edit', LTRIM(RTRIM(@Reason)), @UserID, NULL);
+
+        INSERT VALIDATED_READING (MeterID, ObisCode, IntervalStart, Value, Quality, RunID)
+        VALUES (@MeterID, @ObisCode, @IntervalStart, @NewValue, 'Edited', @RunID);
+
+        UPDATE RAW_READING SET VeeStatus = 'Validated'
+         WHERE MeterID = @MeterID AND ObisCode = @ObisCode AND IntervalStart = @IntervalStart;
+
+        UPDATE EVENT SET Status = 'Closed'
+         WHERE EventType = 'Suspect reading' AND MeterID = @MeterID AND OccurredAt = @IntervalStart
+           AND Description LIKE N'%' + @ObisCode + N'%' AND Status <> 'Closed';
+
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('VALIDATED_READING',
+                CONCAT(@MeterID, '/', @ObisCode, '/', CONVERT(VARCHAR(19), @IntervalStart, 120)),
+                'Manual edit', 'Suspect', 'Edited',
+                LEFT(CONCAT(N'Παλιά τιμή: ', ISNULL(CONVERT(NVARCHAR(30), @Old), N'-'), N', νέα: ', CONVERT(NVARCHAR(30), @NewValue),
+                            N'. Λόγος: ', @Reason), 1000), @UserID);
+
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH;
+
+    SELECT @MeterID AS MeterID, @ObisCode AS ObisCode, @IntervalStart AS IntervalStart,
+           @Old AS OldValue, @NewValue AS NewValue, @EditNo AS EditNo;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-3: τα τρεξίματα VEE (νεότερο πρώτο) με πλήθη επικυρωμένων/εκτιμημένων/διορθωμένων
+-- τιμών ανά run, και πόσες ύποπτες μένουν ακόμη μέσα στην περίοδό του.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_list_runs
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+
+    SELECT u.RunID, u.PeriodFrom, u.PeriodTo, u.StartedAt, u.FinishedAt,
+           ISNULL(q.Validated, 0) AS Validated, ISNULL(q.Estimated, 0) AS Estimated, ISNULL(q.Edited, 0) AS Edited,
+           s.SuspectNow
+    FROM VEE_RUN u
+    OUTER APPLY (SELECT SUM(CASE WHEN v.Quality = 'Validated' THEN 1 ELSE 0 END) AS Validated,
+                        SUM(CASE WHEN v.Quality = 'Estimated' THEN 1 ELSE 0 END) AS Estimated,
+                        SUM(CASE WHEN v.Quality = 'Edited' THEN 1 ELSE 0 END) AS Edited
+                   FROM VALIDATED_READING v WHERE v.RunID = u.RunID) q
+    OUTER APPLY (SELECT COUNT(*) AS SuspectNow FROM RAW_READING r
+                  WHERE r.VeeStatus = 'Suspect' AND r.IntervalStart >= u.PeriodFrom AND r.IntervalStart < u.PeriodTo) s
+    ORDER BY u.RunID DESC;
+END;
+GO
