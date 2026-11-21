@@ -1025,3 +1025,219 @@ BEGIN
     ORDER BY a.PeriodStart DESC, a.TransformerID, a.ObisCode;
 END;
 GO
+
+-- =====================================================================
+-- DSO-5: αναλυτικά συμβάντα δικτύου -> EVENT. Λάθη 53310-53399.
+--   53310 sp_dso_detect_events: λάθος περίοδος (κενή ή @From >= @To)
+--   53311 sp_dso_detect_events: περίοδος μεγαλύτερη από 31 ημέρες
+--   53312 sp_dso_losses_report: λάθος περίοδος
+--   53320 sp_dso_list_events: άγνωστη κατάσταση
+--
+-- Οι κανόνες δουλεύουν πάνω σε VALIDATED_READING (επικυρωμένα, αμετάβλητα δεδομένα), για
+-- διαστήματα IntervalStart μέσα στο [@From, @To). Όλες οι ώρες UTC. Τα συμβάντα παίρνουν
+-- OccurredAt = την αρχή του διαστήματος και ΔΕΝ διπλογράφονται: δεν γράφεται συμβάν αν υπάρχει
+-- ήδη EVENT με ίδιο μετρητή, ίδιο EventType και ίδιο OccurredAt (έτσι δεν διπλογράφονται ούτε
+-- όσα έγραψε ήδη το VEE για την τάση). Άρα η επανάληψη της ίδιας περιόδου δίνει 0 νέα.
+--
+-- ΚΑΝΟΝΕΣ (σταθερές στην αρχή της procedure, αλλάζουν εύκολα):
+--  1. Undervoltage / Overvoltage: τάση 32.7.0, 52.7.0 ή 72.7.0 εκτός της ζώνης του VEE_RULE
+--     'VoltageBand' (ενεργός κανόνας, JSON min/max). Αν δεν υπάρχει: 207-253 V (230 V -10%/+10%).
+--     ΕΝΑ συμβάν ανά μετρητή και διάστημα (η πιο ακραία φάση). Severity Warning.
+--  2. Phase unbalance: και οι τρεις ένταση 31.7.0, 51.7.0, 71.7.0 υπάρχουν στο διάστημα, η
+--     μεγαλύτερη >= 1 A, και (max - min) / max > 25%. Severity Warning.
+--  3. Suspected theft: ο μετρητής έχει >= 8 ΣΥΝΕΧΟΜΕΝΑ διαστήματα (2 ώρες) με ενέργεια 1.8.0
+--     <= 0.01 kWh (πρακτικά μηδέν), ενώ οι ΑΛΛΟΙ μετρητές του ίδιου μετασχηματιστή έχουν στο ίδιο
+--     χρονικό εύρος μέση ενέργεια >= 0.05 kWh ανά διάστημα (δηλαδή το δίκτυο λειτουργεί κανονικά).
+--     Ένα συμβάν ανά ακολουθία, με OccurredAt την αρχή της. Severity Critical.
+--     Όριο: τρέχει μέσα στην περίοδο που ζητήθηκε, άρα ακολουθία που κόβεται από τα άκρα μπορεί
+--     να μη φτάσει τα 8 διαστήματα. Είναι ένδειξη για έλεγχο πεδίου, όχι απόδειξη.
+--  4. Τεχνικές απώλειες: δεν είναι συμβάν. Δες sp_dso_losses_report.
+-- Επιστρέφει μία γραμμή: Undervoltage, Overvoltage, PhaseUnbalance, SuspectedTheft, Total (νέα συμβάντα).
+-- =====================================================================
+CREATE OR ALTER PROCEDURE sp_dso_detect_events
+    @UserID INT,
+    @From DATETIME2(0),
+    @To DATETIME2(0)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @From IS NULL OR @To IS NULL OR @From >= @To
+        THROW 53310, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν από το τέλος.', 1;
+    IF DATEDIFF(DAY, @From, @To) > 31
+        THROW 53311, N'Η περίοδος δεν μπορεί να είναι μεγαλύτερη από 31 ημέρες.', 1;
+
+    -- Σταθερές των κανόνων
+    DECLARE @d5_ImbalancePct DECIMAL(5,2) = 25;      -- ανισορροπία φάσεων %
+    DECLARE @d5_MinAmps DECIMAL(9,2) = 1;            -- κάτω από αυτό το ρεύμα δεν ελέγχουμε
+    DECLARE @d5_TheftN INT = 8;                      -- διαστήματα στη σειρά
+    DECLARE @d5_ZeroKwh DECIMAL(9,4) = 0.01;         -- "μηδέν"
+    DECLARE @d5_PeerKwh DECIMAL(9,4) = 0.05;         -- "κανονικός" γείτονας
+    DECLARE @d5_VMin DECIMAL(9,2) = 207, @d5_VMax DECIMAL(9,2) = 253;
+    DECLARE @d5_RuleMin DECIMAL(9,2) = NULL, @d5_RuleMax DECIMAL(9,2) = NULL;
+    DECLARE @d5_Under INT = 0, @d5_Over INT = 0, @d5_Phase INT = 0, @d5_Theft INT = 0;
+
+    SELECT TOP (1) @d5_RuleMin = TRY_CONVERT(DECIMAL(9,2), JSON_VALUE(Parameters, '$.min')),
+                   @d5_RuleMax = TRY_CONVERT(DECIMAL(9,2), JSON_VALUE(Parameters, '$.max'))
+      FROM VEE_RULE WHERE RuleType = 'VoltageBand' AND IsActive = 1 ORDER BY RuleID;
+    IF @d5_RuleMin IS NOT NULL AND @d5_RuleMax IS NOT NULL AND @d5_RuleMin < @d5_RuleMax
+        SELECT @d5_VMin = @d5_RuleMin, @d5_VMax = @d5_RuleMax;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        -- 1a. Υπόταση
+        INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+        SELECT 'Undervoltage', 'Warning',
+               LEFT(CONCAT(N'Χαμηλή τάση ', CONVERT(NVARCHAR(30), g.MinV), N' V (ζώνη ',
+                           CONVERT(NVARCHAR(30), @d5_VMin), N'-', CONVERT(NVARCHAR(30), @d5_VMax), N' V)'), 1000),
+               g.IntervalStart, 'Open', g.MeterID
+          FROM (SELECT MeterID, IntervalStart, MIN(Value) AS MinV
+                  FROM VALIDATED_READING
+                 WHERE ObisCode IN ('32.7.0', '52.7.0', '72.7.0') AND IntervalStart >= @From AND IntervalStart < @To
+                 GROUP BY MeterID, IntervalStart
+                HAVING MIN(Value) < @d5_VMin) g
+         WHERE NOT EXISTS (SELECT 1 FROM EVENT e WHERE e.MeterID = g.MeterID AND e.EventType = 'Undervoltage' AND e.OccurredAt = g.IntervalStart);
+        SET @d5_Under = @@ROWCOUNT;
+
+        -- 1b. Υπέρταση
+        INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+        SELECT 'Overvoltage', 'Warning',
+               LEFT(CONCAT(N'Υψηλή τάση ', CONVERT(NVARCHAR(30), g.MaxV), N' V (ζώνη ',
+                           CONVERT(NVARCHAR(30), @d5_VMin), N'-', CONVERT(NVARCHAR(30), @d5_VMax), N' V)'), 1000),
+               g.IntervalStart, 'Open', g.MeterID
+          FROM (SELECT MeterID, IntervalStart, MAX(Value) AS MaxV
+                  FROM VALIDATED_READING
+                 WHERE ObisCode IN ('32.7.0', '52.7.0', '72.7.0') AND IntervalStart >= @From AND IntervalStart < @To
+                 GROUP BY MeterID, IntervalStart
+                HAVING MAX(Value) > @d5_VMax) g
+         WHERE NOT EXISTS (SELECT 1 FROM EVENT e WHERE e.MeterID = g.MeterID AND e.EventType = 'Overvoltage' AND e.OccurredAt = g.IntervalStart);
+        SET @d5_Over = @@ROWCOUNT;
+
+        -- 2. Ανισορροπία φάσεων
+        INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+        SELECT 'Phase unbalance', 'Warning',
+               LEFT(CONCAT(N'Ανισορροπία φάσεων: ρεύμα max ', CONVERT(NVARCHAR(30), g.MaxA), N' A, min ',
+                           CONVERT(NVARCHAR(30), g.MinA), N' A (διαφορά > ', CONVERT(NVARCHAR(30), @d5_ImbalancePct), N'%)'), 1000),
+               g.IntervalStart, 'Open', g.MeterID
+          FROM (SELECT MeterID, IntervalStart, MAX(Value) AS MaxA, MIN(Value) AS MinA
+                  FROM VALIDATED_READING
+                 WHERE ObisCode IN ('31.7.0', '51.7.0', '71.7.0') AND IntervalStart >= @From AND IntervalStart < @To
+                 GROUP BY MeterID, IntervalStart
+                HAVING COUNT(*) = 3 AND MAX(Value) >= @d5_MinAmps
+                   AND (MAX(Value) - MIN(Value)) > (@d5_ImbalancePct / 100.0) * MAX(Value)) g
+         WHERE NOT EXISTS (SELECT 1 FROM EVENT e WHERE e.MeterID = g.MeterID AND e.EventType = 'Phase unbalance' AND e.OccurredAt = g.IntervalStart);
+        SET @d5_Phase = @@ROWCOUNT;
+
+        -- 3. Ύποπτη κλοπή (gaps-and-islands: διαδοχικά 15λεπτα μηδενικής κατανάλωσης)
+        ;WITH z AS (
+            SELECT MeterID, IntervalStart,
+                   ROW_NUMBER() OVER (PARTITION BY MeterID ORDER BY IntervalStart) AS rn
+              FROM VALIDATED_READING
+             WHERE ObisCode = '1.8.0' AND IntervalStart >= @From AND IntervalStart < @To AND Value <= @d5_ZeroKwh),
+        isl AS (
+            SELECT MeterID, IntervalStart,
+                   DATEDIFF(MINUTE, CAST('2000-01-01' AS DATETIME2(0)), IntervalStart) / 15 - rn AS grp
+              FROM z),
+        runs AS (
+            SELECT MeterID, MIN(IntervalStart) AS StartAt, MAX(IntervalStart) AS EndAt, COUNT(*) AS n
+              FROM isl GROUP BY MeterID, grp
+            HAVING COUNT(*) >= @d5_TheftN)
+        INSERT EVENT (EventType, Severity, Description, OccurredAt, Status, MeterID)
+        SELECT 'Suspected theft', 'Critical',
+               LEFT(CONCAT(N'Μηδενική κατανάλωση για ', r.n, N' διαδοχικά διαστήματα (έως ',
+                           CONVERT(NVARCHAR(19), r.EndAt, 120), N'), ενώ οι υπόλοιποι μετρητές του μετασχηματιστή καταναλώνουν (μέσος όρος ',
+                           CONVERT(NVARCHAR(30), CAST(pe.AvgPeer AS DECIMAL(9,4))), N' kWh)'), 1000),
+               r.StartAt, 'Open', r.MeterID
+          FROM runs r
+          JOIN METER me ON me.MeterID = r.MeterID
+         CROSS APPLY (SELECT AVG(p.Value) AS AvgPeer, COUNT(*) AS PeerN
+                        FROM VALIDATED_READING p
+                        JOIN METER pm ON pm.MeterID = p.MeterID
+                       WHERE pm.TransformerID = me.TransformerID AND p.MeterID <> r.MeterID AND p.ObisCode = '1.8.0'
+                         AND p.IntervalStart >= r.StartAt AND p.IntervalStart <= r.EndAt) pe
+         WHERE pe.PeerN > 0 AND pe.AvgPeer >= @d5_PeerKwh
+           AND NOT EXISTS (SELECT 1 FROM EVENT e WHERE e.MeterID = r.MeterID AND e.EventType = 'Suspected theft' AND e.OccurredAt = r.StartAt);
+        SET @d5_Theft = @@ROWCOUNT;
+
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('EVENT', CONCAT(CONVERT(VARCHAR(19), @From, 120), N' / ', CONVERT(VARCHAR(19), @To, 120)), 'Detect events', NULL, 'Open',
+                CONCAT(N'Υπόταση: ', @d5_Under, N', υπέρταση: ', @d5_Over, N', ανισορροπία: ', @d5_Phase, N', ύποπτη κλοπή: ', @d5_Theft), @UserID);
+
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH;
+
+    SELECT @d5_Under AS Undervoltage, @d5_Over AS Overvoltage, @d5_Phase AS PhaseUnbalance,
+           @d5_Theft AS SuspectedTheft, @d5_Under + @d5_Over + @d5_Phase + @d5_Theft AS Total;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-5: λίστα συμβάντων (νεότερα πρώτα, έως 500). @Status NULL = όλα, αλλιώς Open / In progress / Closed.
+-- @Type NULL = όλοι οι τύποι (B14), αλλιώς ακριβής τύπος, π.χ. 'Suspected theft'. Λάθος: 53320 (κατάσταση).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_list_events
+    @UserID INT,
+    @Status VARCHAR(11) = NULL,
+    @Type VARCHAR(30) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @Status IS NOT NULL AND @Status NOT IN ('Open', 'In progress', 'Closed')
+        THROW 53320, N'Άγνωστη κατάσταση συμβάντος.', 1;
+
+    SELECT TOP (500) e.EventID, e.EventType, e.Severity, e.Description, e.OccurredAt, e.Status,
+           e.MeterID, m.SerialNumber, e.PacketID, e.TaskID
+    FROM EVENT e
+    LEFT JOIN METER m ON m.MeterID = e.MeterID
+    WHERE (@Status IS NULL OR e.Status = @Status)
+      AND (@Type IS NULL OR e.EventType = @Type)
+    ORDER BY e.OccurredAt DESC, e.EventID DESC;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- DSO-5: τεχνικές απώλειες (αναφορά, όχι συμβάντα). Για κάθε φύλλο και ημέρα της περιόδου
+-- (@From..@To, PeriodStart, και τα δύο μέσα) συγκρίνει το TRANSFORMER_AGGREGATE (Day) με το άθροισμα
+-- των METER_AGGREGATE (Day) των μετρητών που ανήκουν τώρα στον μετασχηματιστή.
+-- Difference = aggregate μετασχηματιστή - άθροισμα μετρητών. ΕΙΛΙΚΡΙΝΕΙΑ: το σχήμα δεν έχει
+-- ανεξάρτητη μέτρηση στον ίδιο τον μετασχηματιστή (και το TRANSFORMER_CURRENT_STATE προκύπτει από
+-- τους μετρητές), άρα οι πραγματικές απώλειες γραμμής/πυρήνα δεν μετριούνται. Η αναφορά δείχνει
+-- ασυμφωνίες δεδομένων (μετρητής που άλλαξε μετασχηματιστή, ύστερα επικυρωμένες τιμές, μετρητές
+-- χωρίς δεδομένα: MetersWithData < ActiveMeters). Αν προστεθεί μέτρηση στον μετασχηματιστή, η
+-- ίδια σύγκριση δίνει τις απώλειες. Λάθος: 53312 (περίοδος).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_dso_losses_report
+    @UserID INT,
+    @From DATE,
+    @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_dso_assert @UserID;
+    IF @From IS NULL OR @To IS NULL OR @From > @To
+        THROW 53312, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν ή ίση με το τέλος.', 1;
+
+    SELECT a.TransformerID, t.Name, a.ObisCode, a.PeriodStart,
+           a.SumValue AS TransformerSum,
+           ISNULL(m.MetersSum, 0) AS MetersSum,
+           a.SumValue - ISNULL(m.MetersSum, 0) AS Difference,
+           CASE WHEN a.SumValue = 0 THEN NULL ELSE CAST(100.0 * (a.SumValue - ISNULL(m.MetersSum, 0)) / a.SumValue AS DECIMAL(9,2)) END AS DifferencePct,
+           a.MeterCount, ISNULL(m.MetersWithData, 0) AS MetersWithData, ac.ActiveMeters
+    FROM TRANSFORMER_AGGREGATE a
+    JOIN TRANSFORMER t ON t.TransformerID = a.TransformerID
+    OUTER APPLY (SELECT SUM(ma.SumValue) AS MetersSum, COUNT(DISTINCT ma.MeterID) AS MetersWithData
+                   FROM METER_AGGREGATE ma
+                   JOIN METER mm ON mm.MeterID = ma.MeterID
+                  WHERE mm.TransformerID = a.TransformerID AND ma.ObisCode = a.ObisCode
+                    AND ma.PeriodType = 'Day' AND ma.PeriodStart = a.PeriodStart) m
+    OUTER APPLY (SELECT COUNT(*) AS ActiveMeters FROM METER x WHERE x.TransformerID = a.TransformerID AND x.Status = 'Active') ac
+    WHERE a.PeriodType = 'Day' AND a.PeriodStart >= @From AND a.PeriodStart <= @To
+    ORDER BY a.PeriodStart, a.TransformerID, a.ObisCode;
+END;
+GO
