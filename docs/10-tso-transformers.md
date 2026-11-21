@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: TSO-1 … TSO-6 in [tasks.md](tasks.md)
 
-> **Status: TSO-1 written (in review, not yet run on a database). TSO-2 … TSO-6 are plans.**
+> **Status: TSO-1 … TSO-4 written (in review, not yet run on a database). TSO-5, TSO-6 are plans.**
 
 ## Requirements (spec III.4 + the professor's changes)
 
@@ -42,16 +42,39 @@ Validation in `sp_tso_add_transformer` (checked before anything is written):
 Design choices: a new transformer is always a leaf; its parent stops being a leaf. Test transformers `T-TEST-*` stay in the database
 (under T-LIM, in an area without meters). The page `tso/10_tree.php` shows the indented tree, a locate form and an add form (CSRF, `call_proc` only).
 
+### TSO-2: current state (`sql/procs_tso.sql`, page `sources/tso/20_state.php`)
+
+| Procedure | What it does |
+|---|---|
+| `sp_tso_refresh_current_state(@UserID)` | Button, no scheduler. **Reference interval** = the latest `IntervalStart` that has a validated `1.8.0` or `2.8.0` reading (`MAX` over `VALIDATED_READING`); 53600 if there are none. For every **leaf** and both codes: `SUM(Value)` of its meters at that interval and the number of meters that contributed (`B2`: `Value` is 15-minute energy). Missing readings are ignored; meter status is not filtered, because a reading exists only if VEE accepted it. A leaf with no reading gets a row with `SumValue 0`, `MeterCount 0`. `MERGE` into `TRANSFORMER_CURRENT_STATE`, which also deletes rows of nodes that are no longer leaves. One transaction, one `AUDIT_LOG` row. Returns `RefInterval, LeafCount, RowsAffected`. |
+| `sp_tso_current_state(@UserID, @TransformerID = NULL)` | Every node (or the given node and its subtree), in tree order: `TransformerID, Name, Level, Path, RefInterval, ImportKWh` (1.8.0)`, ExportKWh` (2.8.0)`, NetKWh, MeterCount` (meters that contributed to 1.8.0). Higher levels are the sum of the leaf rows below, computed with a recursive CTE for ancestor/descendant pairs and a separate `SUM` (a recursive part cannot aggregate). Before any refresh the numbers are 0 and `RefInterval` is `NULL`. 53601 if the node does not exist. |
+
+### TSO-3: aggregates at any level (`sql/procs_tso.sql`, page `sources/tso/30_aggregates.php`)
+
+| Procedure | What it does |
+|---|---|
+| `sp_tso_aggregates(@UserID, @TransformerID, @PeriodType, @From, @To)` | Reads the stored `TRANSFORMER_AGGREGATE` rows of the **leaves** under the node (recursive CTE) and sums them per period for `1.8.0` and `2.8.0`. Returns `PeriodStart, ImportKWh, ExportKWh, NetKWh, LeafCount` (leaves with data in that period). **Never writes** to the table (DSO-4 does). |
+
+Roll-up choice: `Day` returns the stored Day rows in `[@From, @To]`. `Month`, `Quarter`, `Year` use the **month per leaf and code** as the base: a stored `Month` row if there is one, otherwise the sum of that month's `Day` rows (so nothing is counted twice). The month then goes into its quarter (`DATEFROMPARTS(YEAR, (DATEPART(QUARTER)-1)*3+1, 1)`) or year. Stored `Year` rows are not used. For these three types the range is widened to **whole periods** (the start of the period of `@From` to the end of the period of `@To`). Errors: 53610 bad period type, 53611 `@From > @To`, 53612 unknown transformer.
+
+### TSO-4: load shedding (`sql/procs_tso.sql`, page `sources/tso/40_shed.php`)
+
+| Procedure | What it does |
+|---|---|
+| `sp_tso_load_shed(@UserID, @TransformerID, @Reason)` | One transaction: `LOAD_SHED_ORDER` (`Status 'Issued'`, `OrderedBy`) + one `REMOTE_COMMAND` per **Active** meter on every leaf under the node (`CommandType 'Load shed'`, `Status 'Sent'`, `ShedOrderID`, `RequestedBy`, `Parameters = {"shedOrderID": n}`; agreement X3) + `AUDIT_LOG`. `Pending confirmation` and `Retired` meters are skipped. Refused (nothing written) with 53620 empty reason, 53621 unknown transformer, 53622 no Active meter below. Returns `ShedOrderID, CommandCount`. |
+| `sp_tso_list_shed_orders(@UserID)` | Orders, newest first: reason, status, transformer name, who ordered, and command counts (total and per status). |
+
+Tests for TSO-2/3/4 are appended to `sql/tests/test_tso.sql` (role checks, refresh against a direct `SUM`, root = sum of leaves, Day/Quarter/Month/Year,
+load shed on transformer 2 gives 3 commands for meters 1, 2, 4, refusals leave nothing behind). They create real shed orders and commands in the test database.
+
+THROW numbers used by the area so far: 53500–53509 (TSO-1), 53600–53601 (TSO-2), 53610–53612 (TSO-3), 53620–53622 (TSO-4).
+
 ## Planned
 
-| Task | Procedures | Tables | Page |
-|---|---|---|---|
-|---|---|---|---|
-| TSO-2 ★ | `sp_tso_refresh_current_state(@UserID)`: `MERGE` into `TRANSFORMER_CURRENT_STATE` for leaves. `sp_tso_current_state(@TransformerID)`: for a non-leaf, sums the leaves below with a CTE | `TRANSFORMER_CURRENT_STATE`, `VALIDATED_READING` | `tso/state.php` |
-| TSO-3 ★ | `sp_tso_aggregates(@UserID, @TransformerID, @PeriodType, @From, @To)`: CTE over the tree, `GROUP BY` quarter when asked | `TRANSFORMER_AGGREGATE` | `tso/aggregates.php` |
-| TSO-4 ★ | `sp_tso_load_shed(@UserID, @TransformerID, @Reason)`: `LOAD_SHED_ORDER` and one `REMOTE_COMMAND` per meter on the leaves below, all in **one transaction** (agreement X3: `CommandType = 'Load shed'`) | `LOAD_SHED_ORDER`, `REMOTE_COMMAND` | `tso/shed.php` |
-| TSO-5 | Pages for the tasks above | | |
-| TSO-6 | Bonus: Leaflet map of transformers, geofences and meters, `sp_tso_map_data` | | `tso/map.php` |
+| Task | What | Page |
+|---|---|---|
+| TSO-5 | Review of the pages above | |
+| TSO-6 | Bonus: Leaflet map of transformers, geofences and meters, `sp_tso_map_data` | `tso/map.php` |
 
 ## Spec checklist
 

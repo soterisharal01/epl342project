@@ -1,6 +1,9 @@
 -- =====================================================================
 -- procs_tso.sql : ΙΙΙ.4 Δέντρο μετασχηματιστών (περιοχή TSO)
 --   TSO-1 νέος μετασχηματιστής + γεωφράκτης, δέντρο (αναδρομικό CTE), εύρεση φύλλου από συντεταγμένες
+--   TSO-2 τρέχουσα κατάσταση (refresh φύλλων + άθροισμα προς τα πάνω)
+--   TSO-3 aggregates σε οποιοδήποτε επίπεδο (Day/Month/Quarter/Year)
+--   TSO-4 load shedding (εντολή + μία REMOTE_COMMAND ανά ενεργό μετρητή)
 -- Τρέχει μετά το procs_common.sql. Λάθη: 53500-53999 (υποπεριοχή TSO).
 -- Κανόνες: αυστηρό δέντρο (ένας γονέας), μετρητές ΜΟΝΟ σε φύλλα, ένας ορθογώνιος γεωφράκτης ανά μετασχηματιστή.
 -- Κάθε procedure παίρνει πρώτο το @UserID και ελέγχει ότι είναι ενεργός TSO.
@@ -11,6 +14,9 @@
 --   53502 μη έγκυρο ορθογώνιο         53507 ο γεωφράκτης του παιδιού δεν είναι μέσα στου γονέα
 --   53503 το σημείο εκτός γεωφράκτη   53508 μη έγκυρες συντεταγμένες
 --   53504 ο γονέας δεν υπάρχει        53509 ο κόμβος του δέντρου δεν υπάρχει
+--   TSO-2: 53600 δεν υπάρχουν επικυρωμένες μετρήσεις 1.8.0/2.8.0   53601 ο μετασχηματιστής δεν υπάρχει
+--   TSO-3: 53610 άγνωστος τύπος περιόδου   53611 μη έγκυρο διάστημα ημερομηνιών   53612 ο μετασχηματιστής δεν υπάρχει
+--   TSO-4: 53620 λείπει αιτιολογία   53621 ο μετασχηματιστής δεν υπάρχει   53622 κανένας ενεργός μετρητής από κάτω
 -- =====================================================================
 
 CREATE OR ALTER PROCEDURE sp_tso_assert
@@ -216,5 +222,336 @@ BEGIN
         ORDER BY (g.MaxLat - g.MinLat) * (g.MaxLon - g.MinLon), t.TransformerID
     ) f
     ORDER BY m.MeterID;
+END;
+GO
+
+-- =====================================================================
+-- TSO-2: ΤΡΕΧΟΥΣΑ ΚΑΤΑΣΤΑΣΗ
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Ανανέωση (κουμπί, όχι scheduler). Κοινό διάστημα αναφοράς: το ΤΕΛΕΥΤΑΙΟ IntervalStart που έχει
+-- επικυρωμένη μέτρηση 1.8.0 ή 2.8.0 (MAX του VALIDATED_READING για τους δύο κωδικούς).
+-- Για κάθε ΦΥΛΛΟ και κάθε κωδικό: SUM(Value) των μετρητών του στο διάστημα αυτό και πόσοι μετρητές συνεισέφεραν
+-- (Value = ενέργεια 15λέπτου, απόφαση B2). Όσοι μετρητές δεν έχουν μέτρηση απλώς δεν μετράνε.
+-- Φύλλο χωρίς καμία μέτρηση παίρνει γραμμή με SumValue 0 και MeterCount 0 (ώστε η σελίδα να δείχνει όλα τα φύλλα).
+-- MERGE μόνο για φύλλα: γραμμές κόμβων που δεν είναι πια φύλλα σβήνονται (WHEN NOT MATCHED BY SOURCE).
+-- Μία συναλλαγή + μία γραμμή AUDIT_LOG. Επιστρέφει: RefInterval, LeafCount, RowsAffected.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tso_refresh_current_state
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tso_assert @UserID;
+
+    DECLARE @Ref DATETIME2(0) =
+        (SELECT MAX(IntervalStart) FROM VALIDATED_READING WHERE ObisCode IN ('1.8.0', '2.8.0'));
+    IF @Ref IS NULL
+        THROW 53600, N'Δεν υπάρχουν επικυρωμένες μετρήσεις 1.8.0/2.8.0 για υπολογισμό.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @Src TABLE (TransformerID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL,
+                            SumValue DECIMAL(18,4) NOT NULL, MeterCount INT NOT NULL,
+                            PRIMARY KEY (TransformerID, ObisCode));
+        INSERT @Src (TransformerID, ObisCode, SumValue, MeterCount)
+        SELECT l.TransformerID, c.ObisCode,
+               CAST(ISNULL(SUM(vr.Value), 0) AS DECIMAL(18,4)),
+               COUNT(DISTINCT vr.MeterID)
+        FROM TRANSFORMER l
+        CROSS JOIN (VALUES ('1.8.0'), ('2.8.0')) AS c (ObisCode)
+        LEFT JOIN METER m ON m.TransformerID = l.TransformerID
+        LEFT JOIN VALIDATED_READING vr ON vr.MeterID = m.MeterID AND vr.ObisCode = c.ObisCode AND vr.IntervalStart = @Ref
+        WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = l.TransformerID)
+        GROUP BY l.TransformerID, c.ObisCode;
+
+        DECLARE @Leaves INT = (SELECT COUNT(DISTINCT TransformerID) FROM @Src), @Rows INT;
+
+        MERGE TRANSFORMER_CURRENT_STATE AS t
+        USING @Src AS s ON t.TransformerID = s.TransformerID AND t.ObisCode = s.ObisCode
+        WHEN MATCHED THEN
+            UPDATE SET RefInterval = @Ref, SumValue = s.SumValue, MeterCount = s.MeterCount, ComputedAt = SYSUTCDATETIME()
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT (TransformerID, ObisCode, RefInterval, SumValue, MeterCount, ComputedAt)
+            VALUES (s.TransformerID, s.ObisCode, @Ref, s.SumValue, s.MeterCount, SYSUTCDATETIME())
+        WHEN NOT MATCHED BY SOURCE THEN
+            DELETE;
+        SET @Rows = @@ROWCOUNT;
+
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy)
+        VALUES ('TRANSFORMER_CURRENT_STATE', 'all', 'Refresh', NULL,
+                N'RefInterval=' + CONVERT(NVARCHAR(19), @Ref, 120) + N'; Leaves=' + CAST(@Leaves AS NVARCHAR(20))
+                + N'; Rows=' + CAST(@Rows AS NVARCHAR(20)), @UserID);
+        COMMIT;
+        SELECT @Ref AS RefInterval, @Leaves AS LeafCount, @Rows AS RowsAffected;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- Τρέχουσα κατάσταση ανά κόμβο: για κάθε κόμβο (ή τον @TransformerID και το υποδέντρο του) το άθροισμα
+-- των φύλλων από κάτω, από τον πίνακα TRANSFORMER_CURRENT_STATE. Τα ανώτερα επίπεδα υπολογίζονται εδώ, δεν αποθηκεύονται.
+-- Level: 0 για τη ρίζα (ή για τον κόμβο που ζητήθηκε). ImportKWh = 1.8.0, ExportKWh = 2.8.0, NetKWh = Import - Export.
+-- MeterCount = μετρητές που συνεισέφεραν στο 1.8.0. RefInterval = το πιο πρόσφατο διάστημα των φύλλων (NULL αν δεν έγινε ανανέωση).
+-- Το αναδρομικό CTE δεν έχει aggregates: πρώτα ζεύγη (πρόγονος, απόγονος), μετά το SUM.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tso_current_state
+    @UserID INT, @TransformerID INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tso_assert @UserID;
+    IF @TransformerID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM TRANSFORMER WHERE TransformerID = @TransformerID)
+        THROW 53601, N'Ο μετασχηματιστής δεν υπάρχει στο δέντρο.', 1;
+
+    DECLARE @Closure TABLE (AncestorID INT NOT NULL, DescendantID INT NOT NULL);
+    WITH down AS (
+        SELECT t.TransformerID AS AncestorID, t.TransformerID AS DescendantID, 0 AS Depth FROM TRANSFORMER t
+        UNION ALL
+        SELECT d.AncestorID, c.TransformerID, d.Depth + 1
+        FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.DescendantID
+        WHERE d.Depth < 100
+    )
+    INSERT @Closure (AncestorID, DescendantID)
+    SELECT AncestorID, DescendantID FROM down OPTION (MAXRECURSION 100);
+
+    DECLARE @Sums TABLE (TransformerID INT PRIMARY KEY, RefInterval DATETIME2(0) NULL,
+                         ImportKWh DECIMAL(18,4) NOT NULL, ExportKWh DECIMAL(18,4) NOT NULL, MeterCount INT NOT NULL);
+    INSERT @Sums (TransformerID, RefInterval, ImportKWh, ExportKWh, MeterCount)
+    SELECT c.AncestorID, MAX(cs.RefInterval),
+           CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '1.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4)),
+           CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '2.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4)),
+           ISNULL(SUM(CASE WHEN cs.ObisCode = '1.8.0' THEN cs.MeterCount END), 0)
+    FROM @Closure c
+    LEFT JOIN TRANSFORMER_CURRENT_STATE cs ON cs.TransformerID = c.DescendantID
+    GROUP BY c.AncestorID;
+
+    WITH tree AS (
+        SELECT t.TransformerID, t.Name, 0 AS Level,
+               CAST(t.Name AS NVARCHAR(4000)) AS Path,
+               CONVERT(VARCHAR(1000), RIGHT('000000' + CAST(t.TransformerID AS VARCHAR(10)), 7)) AS SortKey
+        FROM TRANSFORMER t
+        WHERE (@TransformerID IS NULL AND t.ParentTransformerID IS NULL) OR t.TransformerID = @TransformerID
+        UNION ALL
+        SELECT c.TransformerID, c.Name, tr.Level + 1,
+               CAST(tr.Path + N' > ' + c.Name AS NVARCHAR(4000)),
+               CONVERT(VARCHAR(1000), tr.SortKey + RIGHT('000000' + CAST(c.TransformerID AS VARCHAR(10)), 7))
+        FROM tree tr JOIN TRANSFORMER c ON c.ParentTransformerID = tr.TransformerID
+        WHERE tr.Level < 100
+    )
+    SELECT tr.TransformerID, tr.Name, tr.Level, tr.Path, s.RefInterval,
+           s.ImportKWh, s.ExportKWh, CAST(s.ImportKWh - s.ExportKWh AS DECIMAL(18,4)) AS NetKWh, s.MeterCount
+    FROM tree tr
+    JOIN @Sums s ON s.TransformerID = tr.TransformerID
+    ORDER BY tr.SortKey
+    OPTION (MAXRECURSION 100);
+END;
+GO
+
+-- =====================================================================
+-- TSO-3: AGGREGATES ΣΕ ΟΠΟΙΟΔΗΠΟΤΕ ΕΠΙΠΕΔΟ
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Aggregates ενός κόμβου και του υποδέντρου του, ανά περίοδο. Διαβάζει ΜΟΝΟ τις αποθηκευμένες γραμμές των ΦΥΛΛΩΝ
+-- (TRANSFORMER_AGGREGATE, κωδικοί 1.8.0 και 2.8.0) και τις αθροίζει. ΔΕΝ γράφει ποτέ στον πίνακα (αυτό είναι δουλειά του DSO-4).
+-- @PeriodType: 'Day', 'Month', 'Quarter', 'Year'. Το @From/@To είναι ημερομηνίες (συμπεριλαμβανόμενες).
+-- Επιλογή roll-up:
+--   Day     : οι γραμμές Day των φύλλων με PeriodStart μέσα στο [@From, @To].
+--   Month / Quarter / Year : βάση είναι ο ΜΗΝΑΣ ανά φύλλο και κωδικό. Αν υπάρχει αποθηκευμένη γραμμή Month, χρησιμοποιείται αυτή,
+--     αλλιώς οι γραμμές Day του μήνα αθροίζονται (ώστε να μη μετρηθεί τίποτα δύο φορές). Μετά ο μήνας μπαίνει στο τρίμηνο/έτος του,
+--     με τρίμηνο = DATEFROMPARTS(YEAR, (DATEPART(QUARTER)-1)*3+1, 1). Οι αποθηκευμένες γραμμές Year δεν χρησιμοποιούνται.
+--   Οι περίοδοι είναι ΟΛΟΚΛΗΡΕΣ: το διάστημα επεκτείνεται στην αρχή της περιόδου του @From και στο τέλος της περιόδου του @To.
+-- Επιστρέφει: PeriodStart, ImportKWh (1.8.0), ExportKWh (2.8.0), NetKWh, LeafCount (φύλλα με δεδομένα στην περίοδο).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tso_aggregates
+    @UserID INT, @TransformerID INT, @PeriodType VARCHAR(7), @From DATE, @To DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tso_assert @UserID;
+    IF @PeriodType IS NULL OR @PeriodType NOT IN ('Day', 'Month', 'Quarter', 'Year')
+        THROW 53610, N'Ο τύπος περιόδου πρέπει να είναι Day, Month, Quarter ή Year.', 1;
+    IF @From IS NULL OR @To IS NULL OR @From > @To
+        THROW 53611, N'Μη έγκυρο διάστημα ημερομηνιών: δώστε από ≤ έως.', 1;
+    IF @TransformerID IS NULL OR NOT EXISTS (SELECT 1 FROM TRANSFORMER WHERE TransformerID = @TransformerID)
+        THROW 53612, N'Ο μετασχηματιστής δεν υπάρχει στο δέντρο.', 1;
+
+    -- Όρια [Lo, Hi] σε μέρες, επεκταμένα σε ολόκληρες περιόδους εκτός από το Day.
+    DECLARE @Lo DATE, @Hi DATE;
+    IF @PeriodType = 'Day'
+    BEGIN
+        SET @Lo = @From; SET @Hi = @To;
+    END
+    ELSE IF @PeriodType = 'Month'
+    BEGIN
+        SET @Lo = DATEFROMPARTS(YEAR(@From), MONTH(@From), 1);
+        SET @Hi = EOMONTH(@To);
+    END
+    ELSE IF @PeriodType = 'Quarter'
+    BEGIN
+        SET @Lo = DATEFROMPARTS(YEAR(@From), (DATEPART(QUARTER, @From) - 1) * 3 + 1, 1);
+        SET @Hi = EOMONTH(DATEFROMPARTS(YEAR(@To), (DATEPART(QUARTER, @To) - 1) * 3 + 3, 1));
+    END
+    ELSE
+    BEGIN
+        SET @Lo = DATEFROMPARTS(YEAR(@From), 1, 1);
+        SET @Hi = DATEFROMPARTS(YEAR(@To), 12, 31);
+    END
+
+    -- Φύλλα κάτω από τον κόμβο (και ο ίδιος ο κόμβος αν είναι φύλλο).
+    DECLARE @Leaves TABLE (TransformerID INT PRIMARY KEY);
+    WITH down AS (
+        SELECT t.TransformerID, 0 AS Depth FROM TRANSFORMER t WHERE t.TransformerID = @TransformerID
+        UNION ALL
+        SELECT c.TransformerID, d.Depth + 1
+        FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.TransformerID
+        WHERE d.Depth < 100
+    )
+    INSERT @Leaves (TransformerID)
+    SELECT d.TransformerID FROM down d
+    WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = d.TransformerID)
+    OPTION (MAXRECURSION 100);
+
+    -- Βάση: μία γραμμή ανά (φύλλο, κωδικός, ημέρα ή μήνας).
+    DECLARE @Base TABLE (TransformerID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL, BaseDate DATE NOT NULL, SumValue DECIMAL(18,4) NOT NULL);
+    IF @PeriodType = 'Day'
+    BEGIN
+        INSERT @Base (TransformerID, ObisCode, BaseDate, SumValue)
+        SELECT a.TransformerID, a.ObisCode, a.PeriodStart, a.SumValue
+        FROM TRANSFORMER_AGGREGATE a JOIN @Leaves l ON l.TransformerID = a.TransformerID
+        WHERE a.PeriodType = 'Day' AND a.ObisCode IN ('1.8.0', '2.8.0') AND a.PeriodStart BETWEEN @Lo AND @Hi;
+    END
+    ELSE
+    BEGIN
+        INSERT @Base (TransformerID, ObisCode, BaseDate, SumValue)
+        SELECT a.TransformerID, a.ObisCode, a.PeriodStart, a.SumValue
+        FROM TRANSFORMER_AGGREGATE a JOIN @Leaves l ON l.TransformerID = a.TransformerID
+        WHERE a.PeriodType = 'Month' AND a.ObisCode IN ('1.8.0', '2.8.0') AND a.PeriodStart BETWEEN @Lo AND @Hi;
+
+        INSERT @Base (TransformerID, ObisCode, BaseDate, SumValue)
+        SELECT a.TransformerID, a.ObisCode, DATEFROMPARTS(YEAR(a.PeriodStart), MONTH(a.PeriodStart), 1), SUM(a.SumValue)
+        FROM TRANSFORMER_AGGREGATE a JOIN @Leaves l ON l.TransformerID = a.TransformerID
+        WHERE a.PeriodType = 'Day' AND a.ObisCode IN ('1.8.0', '2.8.0') AND a.PeriodStart BETWEEN @Lo AND @Hi
+          AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE mo
+                          WHERE mo.TransformerID = a.TransformerID AND mo.ObisCode = a.ObisCode AND mo.PeriodType = 'Month'
+                            AND mo.PeriodStart = DATEFROMPARTS(YEAR(a.PeriodStart), MONTH(a.PeriodStart), 1))
+        GROUP BY a.TransformerID, a.ObisCode, DATEFROMPARTS(YEAR(a.PeriodStart), MONTH(a.PeriodStart), 1);
+    END
+
+    SELECT x.PeriodStart,
+           CAST(ISNULL(SUM(CASE WHEN x.ObisCode = '1.8.0' THEN x.SumValue END), 0) AS DECIMAL(18,4)) AS ImportKWh,
+           CAST(ISNULL(SUM(CASE WHEN x.ObisCode = '2.8.0' THEN x.SumValue END), 0) AS DECIMAL(18,4)) AS ExportKWh,
+           CAST(ISNULL(SUM(CASE WHEN x.ObisCode = '1.8.0' THEN x.SumValue END), 0)
+              - ISNULL(SUM(CASE WHEN x.ObisCode = '2.8.0' THEN x.SumValue END), 0) AS DECIMAL(18,4)) AS NetKWh,
+           COUNT(DISTINCT x.TransformerID) AS LeafCount
+    FROM (
+        SELECT b.TransformerID, b.ObisCode, b.SumValue,
+               CASE @PeriodType
+                    WHEN 'Day'     THEN b.BaseDate
+                    WHEN 'Month'   THEN b.BaseDate
+                    WHEN 'Quarter' THEN DATEFROMPARTS(YEAR(b.BaseDate), (DATEPART(QUARTER, b.BaseDate) - 1) * 3 + 1, 1)
+                    ELSE DATEFROMPARTS(YEAR(b.BaseDate), 1, 1) END AS PeriodStart
+        FROM @Base b
+    ) x
+    GROUP BY x.PeriodStart
+    ORDER BY x.PeriodStart;
+END;
+GO
+
+-- =====================================================================
+-- TSO-4: LOAD SHEDDING
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Εντολή αποκοπής φορτίου σε ΟΛΟΥΣ τους Active μετρητές κάτω από έναν μετασχηματιστή (σε όλα τα φύλλα του υποδέντρου).
+-- Μία συναλλαγή: LOAD_SHED_ORDER (Status 'Issued', OrderedBy) + μία REMOTE_COMMAND ανά μετρητή
+-- (CommandType 'Load shed', Status 'Sent', ShedOrderID, RequestedBy = @UserID: συμφωνία X3) + AUDIT_LOG.
+-- Parameters = {"shedOrderID": n} (έγκυρο JSON). Αν δεν υπάρχει κανένας ενεργός μετρητής: απορρίπτεται, δεν μένει εντολή.
+-- Μετρητές 'Pending confirmation' και 'Retired' δεν παίρνουν εντολή.
+-- Επιστρέφει: ShedOrderID, CommandCount.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tso_load_shed
+    @UserID INT, @TransformerID INT, @Reason NVARCHAR(500)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tso_assert @UserID;
+    IF @Reason IS NULL OR LEN(LTRIM(RTRIM(@Reason))) = 0
+        THROW 53620, N'Δώστε αιτιολογία για την αποκοπή φορτίου.', 1;
+    IF @TransformerID IS NULL OR NOT EXISTS (SELECT 1 FROM TRANSFORMER WHERE TransformerID = @TransformerID)
+        THROW 53621, N'Ο μετασχηματιστής δεν υπάρχει στο δέντρο.', 1;
+
+    DECLARE @Meters TABLE (MeterID INT PRIMARY KEY);
+    WITH down AS (
+        SELECT t.TransformerID, 0 AS Depth FROM TRANSFORMER t WHERE t.TransformerID = @TransformerID
+        UNION ALL
+        SELECT c.TransformerID, d.Depth + 1
+        FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.TransformerID
+        WHERE d.Depth < 100
+    )
+    INSERT @Meters (MeterID)
+    SELECT m.MeterID
+    FROM down d
+    JOIN METER m ON m.TransformerID = d.TransformerID AND m.Status = 'Active'
+    WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = d.TransformerID)
+    OPTION (MAXRECURSION 100);
+
+    DECLARE @Count INT = (SELECT COUNT(*) FROM @Meters);
+    IF @Count = 0
+        THROW 53622, N'Δεν υπάρχει κανένας ενεργός μετρητής κάτω από αυτόν τον μετασχηματιστή.', 1;
+
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @OrderID INT;
+        INSERT LOAD_SHED_ORDER (Reason, Status, TransformerID, OrderedBy)
+        VALUES (LTRIM(RTRIM(@Reason)), 'Issued', @TransformerID, @UserID);
+        SET @OrderID = SCOPE_IDENTITY();
+
+        INSERT REMOTE_COMMAND (CommandType, Parameters, Status, MeterID, RequestedBy, ShedOrderID)
+        SELECT 'Load shed', N'{"shedOrderID":' + CAST(@OrderID AS NVARCHAR(20)) + N'}', 'Sent', m.MeterID, @UserID, @OrderID
+        FROM @Meters m;
+
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy)
+        VALUES ('LOAD_SHED_ORDER', CAST(@OrderID AS VARCHAR(20)), 'Create', NULL,
+                N'Transformer=' + CAST(@TransformerID AS NVARCHAR(20)) + N'; Commands=' + CAST(@Count AS NVARCHAR(20)), @UserID);
+        COMMIT;
+        SELECT @OrderID AS ShedOrderID, @Count AS CommandCount;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- Λίστα εντολών αποκοπής (νεότερες πρώτα) με όνομα μετασχηματιστή και πλήθος εντολών ανά κατάσταση.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tso_list_shed_orders
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tso_assert @UserID;
+    SELECT o.ShedOrderID, o.CreatedAt, o.Status, o.Reason, o.TransformerID, t.Name AS TransformerName,
+           u.Username AS OrderedByName,
+           COUNT(rc.CommandID) AS Commands,
+           ISNULL(SUM(CASE WHEN rc.Status = 'Awaiting approval' THEN 1 END), 0) AS AwaitingApproval,
+           ISNULL(SUM(CASE WHEN rc.Status = 'Sent' THEN 1 END), 0) AS Sent,
+           ISNULL(SUM(CASE WHEN rc.Status = 'Acknowledged' THEN 1 END), 0) AS Acknowledged,
+           ISNULL(SUM(CASE WHEN rc.Status = 'Failed' THEN 1 END), 0) AS Failed,
+           ISNULL(SUM(CASE WHEN rc.Status = 'Cancelled' THEN 1 END), 0) AS Cancelled
+    FROM LOAD_SHED_ORDER o
+    JOIN TRANSFORMER t ON t.TransformerID = o.TransformerID
+    JOIN USER_ACCOUNT u ON u.UserID = o.OrderedBy
+    LEFT JOIN REMOTE_COMMAND rc ON rc.ShedOrderID = o.ShedOrderID
+    GROUP BY o.ShedOrderID, o.CreatedAt, o.Status, o.Reason, o.TransformerID, t.Name, u.Username
+    ORDER BY o.ShedOrderID DESC;
 END;
 GO
