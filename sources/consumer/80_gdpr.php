@@ -48,8 +48,9 @@ foreach ($rows ?: [] as $q) {
 <?php endif; ?>
 <h2>Τα αιτήματά μου</h2>
 <?php
-print_table($rows, [
+$cols = [
     'GdprRequestID' => '#', 'SubmittedAt' => 'Υποβλήθηκε', 'Status' => 'Κατάσταση', 'PreApprovedAt' => 'Εξετάστηκε (Operator)',
     'DecidedAt' => 'Απόφαση Admin', 'AppliedAt' => 'Εφαρμόστηκε',
-]);
+];
+print_table($rows === false ? false : array_map(fn($q) => array_intersect_key(array_replace($cols, $q), $cols), $rows), $cols);
 page_footer();

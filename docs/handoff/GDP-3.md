@@ -1,10 +1,10 @@
 # Handoff: GDP-3 GDPR pages
 
-Lock: active
+Lock: free
 
 Branch: task/GDP-3-pages
 Doc: docs/07-gdpr-and-retention.md
-Status: in progress
+Status: finished (in review)
 
 ## Next step
 Write the three pages (consumer, operator, admin).
