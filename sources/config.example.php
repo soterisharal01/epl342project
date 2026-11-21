@@ -12,8 +12,8 @@
 return [
     'serverName' => 'mssql.cs.ucy.ac.cy\\SQL2025',
     'connectionOptions' => [
-        'Database'     => 'sharal01',          // η βάση σου (π.χ. το username σου στο τμήμα)
-        'Uid'          => 'sharal01',          // SQL login
+        'Database'     => '<username>',         // η βάση σου (π.χ. το username σου στο τμήμα)
+        'Uid'          => '<username>',         // SQL login
         'PWD'          => 'ΓΡΑΨΕ_ΕΔΩ_ΤΟΝ_ΚΩΔΙΚΟ',
         'CharacterSet' => 'UTF-8',             // για να φαίνονται σωστά τα ελληνικά
         'TrustServerCertificate' => true,
