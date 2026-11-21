@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: GDP-1 … GDP-3 in [tasks.md](tasks.md)
 
-> **Status: GDP-1 written (in review, not yet run against the database); GDP-2 and GDP-3 planned.**
+> **Status: GDP-1 and GDP-2 written (in review, not yet run against the database); GDP-3 planned.**
 
 ## Requirements
 
@@ -58,13 +58,34 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 - [ ] 1.4 Raw 15-minute readings: 3 years, then deleted; aggregates stay. With an approved GDPR request: 1 month, and older rows are deleted **automatically**. Transformer readings/aggregates are not affected and are kept forever.
 - [ ] 1.4 Statistics prefer aggregates; detailed data only for those entitled to it.
 
+## What exists (GDP-2, `sql/procs_gdpr.sql`, tests in `sql/tests/test_gdpr.sql`, page `sources/admin/gdp_retention.php`)
+
+| Object | Who | What it does |
+|---|---|---|
+| `fn_retention_cutoff(@AsOf)` | inline TVF | Time segments per meter: `METER_INSTALLATION` (not Rejected) joined to the `HOLDING` of the premise and the holder's `RawRetentionMonths`. Columns `MeterID, SegFrom, SegTo, UserID, RetentionMonths, Cutoff`. |
+| `sp_retention_preview(@UserID, @AsOf = NULL)` | Admin | Read only. One row per meter and retention length: `MeterID, SerialNumber, RetentionMonths, Cutoff, RawToDelete, ValidatedToDelete, EditsToDelete, AsOf`. Meters with nothing to delete show 0. |
+| `sp_retention_purge(@UserID, @AsOf = NULL)` | Admin | Deletes expired rows; returns `RawDeleted, ValidatedDeleted, EditsDeleted, AsOf`. Writes one `AUDIT_LOG` row (`ObjectType = 'RETENTION'`, counts in `ResultComment`). |
+
+`@AsOf` defaults to now (UTC); the demo and the tests pass a later date.
+THROW numbers: 51450 `@AsOf` more than one year in the future (protects against a typo wiping everything), 51451 another purge is running (`sp_getapplock`), 51402 not an Admin.
+
+Design choices:
+
+- **Holder at the time of the reading.** A reading is covered by the segment where `InstalledAt <= IntervalStart < RemovedAt` and the holding covers that date.
+  A reading in no segment (premise with no holder then, or before the installation) falls back to **36 months**. Overlapping segments: the longer retention wins.
+- Rule: delete when `IntervalStart < DATEADD(MONTH, -months, @AsOf)`; the cutoff instant itself is kept.
+- **Agreement X5**: `sp_set_session_context N'mdms_purge', 1`, then `DELETE` only (never UPDATE), flag reset to 0 afterwards and in `CATCH`.
+- **Batches of 5000, one transaction per batch**: short locks and a small log while meters keep inserting. The rule is monotone, so an interrupted run just continues next time;
+  the price is that the whole purge is not atomic.
+- **`READING_EDIT`**: the edit rows of purged readings are deleted too, because they hold `OldValue`/`NewValue`, the same values we erase. Order: edits, validated, raw.
+- Never touched: `METER_AGGREGATE`, `TRANSFORMER_AGGREGATE`, transformer data.
+- The page `admin/gdp_retention.php` shows the preview (optional reference date) and a purge button with a confirmation and CSRF.
+
 ## Planned
 
 | Task | Procedures | Tables | Page |
 |---|---|---|---|
-| GDP-1 ★ | `sp_gdpr_submit`, `sp_gdpr_preapprove` (Operator), `sp_gdpr_decide` (Admin), `sp_gdpr_apply` (sets `RawRetentionMonths = 1`) | `GDPR_REQUEST`, `USER_ACCOUNT`, `BANK_ACCOUNT`, `AUDIT_LOG` | `consumer/gdp_request.php`, `operator/gdp_review.php`, `admin/gdp_decide.php` |
-| GDP-2 | `sp_retention_purge(@UserID, @AsOf)`: `sp_set_session_context N'mdms_purge', 1`, then deletes old rows from `RAW_READING` and `VALIDATED_READING` (agreement X5) | `RAW_READING`, `VALIDATED_READING` | button on an admin page |
-| GDP-3 | Pages for GDP-1 and GDP-2 | | |
+| GDP-3 | Pages for GDP-1 (consumer, operator, admin) | | `consumer/gdp_request.php`, `operator/gdp_review.php`, `admin/gdp_decide.php` |
 
 Schema hooks: the CHECKs `CK_GDPR_REQUEST_Stage` and `CK_GDPR_REQUEST_Order` enforce the stage order, and the trigger
 `TR_VALIDATED_READING_Immutable` allows DELETE only under the purge flag ([04-database-schema.md](04-database-schema.md)).
