@@ -117,10 +117,10 @@ change them only through the schema-change process or in the coordinating sessio
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| DAT-1 | Large data: users, premises, contracts, invoices | IV | | 30/11 | ○ | |
-| DAT-2 | Large data: technicians, tasks, documents, portfolios | IV | | 30/11 | ○ | |
-| DAT-3 | Large data: readings (200k–500k), packets | IV | | 30/11 | ○ | |
-| DAT-4 | `.dat` files + `sql/import.sql` load cleanly on an empty database | V.A | DAT-1, DAT-2, DAT-3 | 30/11 | ○ | |
+| DAT-1 | Large data: users, premises, contracts, invoices | IV | | 30/11 | 👀 | |
+| DAT-2 | Large data: technicians, tasks, documents, portfolios | IV | | 30/11 | 👀 | |
+| DAT-3 | Large data: readings (200k–500k), packets | IV | | 30/11 | 👀 | |
+| DAT-4 | `.dat` files + `sql/import.sql` load cleanly on an empty database | V.A | DAT-1, DAT-2, DAT-3 | 30/11 | 👀 | |
 | DAT-5 | `sql/select.sql`: one `EXEC` for every main function of every role, plus the analytics (aggregates per tree level, losses, events), for the examiner to run in SSMS | V.A | all ★ tasks | 2/12 | ○ | Take the `EXEC` calls from the tests |
 
 ## PRF, SEC, CCY, EXT: quality and documents
@@ -130,7 +130,7 @@ change them only through the schema-change process or in the coordinating sessio
 | PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | ○ | |
 | PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | ○ | |
 | PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | ○ | |
-| PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | ○ | |
+| PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | 👀 | |
 | SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | ○ | |
 | SEC-2 | Security document | [16](16-security.md) | | 2/12 | ○ | Chapter (b) of DOC-4 |
 | CCY-1 | Concurrency / contention document | [15](15-concurrency.md) | DSO-2 | 2/12 | ○ | Chapter (a) of DOC-4 |
