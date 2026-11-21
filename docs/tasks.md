@@ -8,6 +8,27 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 
 `○` free · `👀` in review · `✓` merged · `✂` cut · ★ = must be shown in the demo
 
+## Lanes: what can run in parallel
+
+A **lane** is a set of files that only **one** task may edit at a time. Tasks in different lanes never touch the same files,
+so they run in parallel safely. Before claiming a task, check [claims.md](claims.md): if another task **of the same lane**
+has a row there, pick a task from a free lane instead.
+
+| Lane | Files it owns | Queue (in order) |
+|---|---|---|
+| 1 DSO | `sql/procs_dso.sql`, `sql/tests/test_dso.sql`, `sources/dso/` | DSO-2 ★ → DSO-3 → DSO-4 ★ → DSO-5 → DSO-6 |
+| 2 TEC | `sql/procs_technician.sql`, `sql/tests/test_technician.sql`, `sources/technician/`, `sources/operator/tec_*` | TEC-2/3/4 ★ → TEC-6 ★ → TEC-7 ★ → TEC-8 → TEC-9 → TEC-10 |
+| 3 CON | `sql/procs_consumer.sql`, `sql/tests/test_consumer.sql`, `sources/consumer/` | CON-3 → CON-6 |
+| 4 GDP | `sql/procs_gdpr.sql`, `sql/tests/test_gdpr.sql`, `sources/*/gdp_*` | GDP-2 → GDP-3 |
+| 5 ADM | `sql/procs_admin.sql`, `sql/tests/test_admin.sql`, `sources/admin/`, `sources/operator/adm_*` | ADM-3 → ADM-4 |
+| 6 MKT | `sql/procs_market.sql`, `sql/tests/test_market.sql`, `sources/supplier/`, `sources/aggregator/` | MKT-4 |
+| 7 TSO | `sql/procs_tso.sql`, `sql/tests/test_tso.sql`, `sources/tso/` | TSO-5 → TSO-6 |
+| 8 DATA | `data/gen/`, `data/large/`, `data/import.sql` | DAT-1..4 → PRF-4 |
+| 9 PERF | `sql/indexes.sql` | PRF-1, PRF-2, PRF-3 (one at a time) |
+| 10 DOCS | one document per task | SEC-1/2, CCY-1, EXT-1, DOC-1..5, REL-5 (any number at once, one task per file) |
+
+Shared files (`sql/create.sql`, `data/small/00_base.sql`, the PHP skeleton, `README.md`, `docs/next-session.md`) belong to no lane:
+change them only through the schema-change process or in the coordinating session.
 ## Foundation
 
 | ID | Task | Doc | Needs | Due | Status | Notes |

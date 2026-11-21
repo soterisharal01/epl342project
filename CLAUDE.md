@@ -39,7 +39,7 @@ Do all of this before writing any code. Do not ask the human what to do unless s
 
 Every taken task is marked on `main` in [docs/claims.md](docs/claims.md), the only file anyone may push straight to `main`.
 
-1. **Check:** `git pull` on `main`. The task must not be in `docs/claims.md` and must have no `origin/task/<ID>-*` branch.
+1. **Check:** `git pull` on `main`. The task must not be in `docs/claims.md`, must have no `origin/task/<ID>-*` branch, and **no other task of its lane** may be in `docs/claims.md` (lanes: [docs/tasks.md](docs/tasks.md), section Lanes).
 2. **Mark it:** add one row to `docs/claims.md` (`| <ID> | task/<ID>-<slug> | <UTC time> | <one-line plan> |`), commit
    `claim: <ID>` on `main`, `git push`. If the push is rejected, `git pull --rebase` and go back to step 1.
 3. **Retest after a minute:** wait 60 seconds (`Start-Sleep 60` / `sleep 60`), `git fetch`, and read
