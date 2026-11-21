@@ -54,6 +54,8 @@ Do all of this before writing any code. Do not ask the human what to do unless s
 - Every new procedure gets tests in `sql/tests/test_<area>.sql` that print `OK …` or `FAIL …`: one call that
   succeeds and one that must be refused.
 - Update the task's component doc with what now exists (procedures, pages, how to use it). Docs are part of the task.
+- Before the PR: go through the **Spec checklist** of the task's component doc and section 8 of
+  [docs/19-conventions.md](docs/19-conventions.md). Copy the lines the task covers into the PR description with ✓.
 
 ## 4. Testing
 
@@ -108,4 +110,5 @@ Do everything in section 5, then make **every Markdown file tell the truth** abo
 - **Never** run anything destructive (`drop.sql`, `DELETE`) on a department database without an explicit "yes".
   Test databases are the human's own.
 - Do not claim in documents that something was produced by a tool when it was written by an AI, or the reverse.
-- The assignment PDF is not in the repo because the repo is public. Ask the human for it if needed.
+- The assignment PDF is not in the repo because the repo is public. The **Spec checklists** in docs 05–11 and
+  section 8 of the conventions carry it sentence by sentence. Ask the human for the PDF if something is missing or contradictory.

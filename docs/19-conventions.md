@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md)
 
-These rules apply to every task and every AI session. Decisions B1–B13 are **closed**. To change one, propose
+These rules apply to every task and every AI session. Decisions B1–B19 are **closed**. To change one, propose
 it in the group; if everyone agrees, edit it here and add a line to the change log at the end.
 (Phase A design decisions D1–D32 are in [phase-a/design-decisions.md](phase-a/design-decisions.md).)
 
@@ -109,6 +109,8 @@ Each table is written (INSERT/UPDATE/DELETE) only by procedures of its area. Oth
 | X4 | DSO-1, DSO-5 → TEC-9 | Event that leads to a field task | DSO writes `EVENT`. TEC reads events with `Status = 'Open'`, writes `FIELD_TASK` + `LEADS_TO`, then `UPDATE EVENT SET Status = 'In progress'`. That is TEC's only change to `EVENT`. |
 | X5 | GDP-2 | Deleting old readings (retention, GDPR) | `EXEC sp_set_session_context N'mdms_purge', 1;` then `DELETE` from `RAW_READING` and `VALIDATED_READING`. Never UPDATE. |
 | X6 | CON-2, MKT-1–3 | Reading DSO results | SELECT only on `VALIDATED_READING`, `METER_AGGREGATE`, and `RAW_READING` (Intraday only). Column meaning: B2. |
+| X7 | TEC-6 | A meter installation needs `METER.TransformerID` | Find the **leaf** geofence that contains the coordinates (`MinLat ≤ Lat ≤ MaxLat` and `MinLon ≤ Lon ≤ MaxLon`, transformer with no children) with TEC's **own** SELECT on `GEOFENCE`/`TRANSFORMER`, using the same rule as `sp_tso_locate` (TSO-1). None found: THROW. |
+| X8 | TEC-9 | An anti-tamper check finds a problem | `INSERT EVENT (EventType = 'Tamper finding', TaskID = <the check>, MeterID = …, Status = 'Open')`. TEC's only other write to `EVENT` besides X4. |
 
 ## 5. Roles (`USER_ACCOUNT.Role`)
 
@@ -145,11 +147,28 @@ One username has exactly one role (the professor's rule). A person with two role
 | B6 | Where the app runs | Each member tests in their own `~/public_html/mdms/` with their own database. The final demo runs on the team demo database `sharal01` and `~sharal01/mdms/`. Server: `mssql.cs.ucy.ac.cy\SQL2025`. |
 | B7 | Database password | Only in `sources/config.php`, which is git-ignored. The repo has `config.example.php`. |
 | B8 | Data files (.dat) | The generators in `data/gen/` write each table as a `.dat` (CSV, UTF-8) **and** an `.sql` with the same INSERTs. Importing means running the `.sql` in SSMS, because `BULK INSERT` on the department server cannot read files from our computers. The manual says so. |
-| B9 | Run order | `drop.sql` → `create.sql` → `procs_common.sql` → other `procs_*.sql` → `indexes.sql` → `data/small/00_base.sql` → `data/small/10–30_*.sql` (or `data/import.sql` for the large set). |
+| B9 | Run order | `drop.sql` → `create.sql` → `procs_common.sql` → other `procs_*.sql` → `indexes.sql` → `data/small/00_base.sql` → `data/small/10–30_*.sql` (or `sql/import.sql` for the large set). |
 | B10 | Schema changes | Only through section 6. |
 | B11 | Merging | A member who did not author the PR merges it after approving. If nobody reviews within 24 hours, any other member may review and merge. An AI merges only when its human explicitly asks for that PR. |
 | B12 | Code freeze | Wednesday 2/12 evening. After that, only bug fixes. |
 | B13 | Final ER | Redrawn at the end (task DOC-2) from the final `create.sql`. Until then the truth is `create.sql` and [04-database-schema.md](04-database-schema.md). |
+| B14 | Event types (`EVENT.EventType`) | The column has no CHECK, so everyone writes **exactly** these values: `'Unmatched packet'` (unknown network ID), `'Meter not active'`, `'Malformed packet'`, `'Communication problem'` (for example signal below −110 dBm, or a network type other than the meter's `COMM_TYPE`), `'Undervoltage'`, `'Overvoltage'`, `'Phase unbalance'`, `'Suspected theft'`, `'Suspect reading'` (spike from VEE), `'Tamper finding'` (field check, X8). `Severity`: `'Info'`, `'Warning'`, `'Critical'`. A new type = a new value here, no schema change. |
+| B15 | Remote commands | `REMOTE_COMMAND.CommandType`: `'Disconnect'`, `'Reconnect'`, `'Firmware upgrade'`, `'Load shed'` (TSO only, X3). Flow: a technician asks for a command **only** for a meter where they have an `Accepted` task → `'Awaiting approval'` → Operator approves (`ApprovedBy`) → `'Sent'` → one or more `COMMAND_ATTEMPT` rows (`'Timeout'`, `'NAK'`, `'ACK'`) → `'Acknowledged'` at the first ACK, or `'Failed'` after 3 failures. Every status change writes `AUDIT_LOG`. |
+| B16 | Current grid state | `TRANSFORMER_CURRENT_STATE` holds a row for **every** transformer of the tree (leaves **and** all ancestors), because spec III.4.2 wants the whole hierarchy and ancestor updates. Each transformer has exactly one geofence (`UQ_TRANSFORMER_GeofenceID`), so "per geofence" = "per transformer". All rows of one refresh share the **same** `RefInterval`: the latest slot with validated `1.8.0`. Only `1.8.0` and `2.8.0` (the CHECK enforces it). **Historical** transformer aggregates are stored **only for leaves** (professor, trigger `TR_TRANSFORMER_AGGREGATE_Leaf`). |
+| B17 | What retention and GDPR delete | For **consumer** meters: `RAW_READING`, `VALIDATED_READING` (via X5) and their `TELEMETRY_PACKET` rows that no longer have raw rows and no `EVENT` points to (FK), when older than `RawRetentionMonths` (36, or 1 after an approved GDPR request). **Always kept**: `METER_AGGREGATE`, `TRANSFORMER_AGGREGATE`, `TRANSFORMER_CURRENT_STATE`, invoices, payments, `AUDIT_LOG`. GDPR erases or anonymises personal data (name, email, phone, IBAN), not payment accounting. |
+| B18 | Which readings a consumer sees | Only meters installed on **their own** premise and **only for the period they held it** (overlap of `HOLDING.StartDate–EndDate` with `METER_INSTALLATION.InstalledAt–RemovedAt`). A new tenant does not see the old one's readings, and after a meter replacement the premise's old series still shows. |
+| B19 | Email/SMS sending | Sending is outside the database (Phase A assumption). The database keeps the channels (`CONSUMER_NOTIFICATION_CHANNEL`), a procedure finds what should be sent (thresholds crossed, quality events), and the page shows it as a notification. Listed under limitations in the manual. |
+
+## 8. Spec checklist common to every task (spec section III principles and IV)
+
+The assignment PDF is not in the repo. Each component doc (05–11) has a **Spec checklist** for its area; this one applies to every task. The PR copies the lines it covers with ✓.
+
+- [ ] Every protected function runs only after login. Every procedure checks the role **and** `AccountStatus = 'Active'` (and, for a technician, `ApprovalStatus = 'Approved'`).
+- [ ] Every function with more than one change is **one atomic action**: all or nothing (`XACT_ABORT` + `TRY/TRAN/CATCH ROLLBACK`).
+- [ ] Every **critical state change** (approval, rejection, remote command, change of technical details, GDPR request, VEE result, important telemetry event) writes `AUDIT_LOG` with: object (`ObjectType`, `ObjectID`), who (`PerformedBy`) **or** which mechanism (`ActorMechanism`, e.g. `'VEE'`), time, old and new state, result/comment (`ResultComment`).
+- [ ] The logic is in the database. PHP only calls procedures with `call_proc`, and pages show **only** our database.
+- [ ] Use the CHECK values of `create.sql` (e.g. `INVOICE.Status`) and decisions B1–B19. Never invent columns or values.
+- [ ] Every procedure has an `OK`/`FAIL` test (one success, one refusal), and its test data builds only on `00_base.sql`.
 
 ## Change log
 
@@ -158,3 +177,4 @@ One username has exactly one role (the professor's rule). A person with two role
 | 21/11 | First version of the Phase B plan, rules and decisions. |
 | 21/11 | Restructure: no personal ownership, areas instead of people, task IDs by area, start/stop protocol in `CLAUDE.md`, agreement X3 fixed to `'Load shed'`. |
 | 21/11 | `finish` command and `docs/next-session.md`. Rule: no `dbo.` and no scalar functions (department server uses per-user schemas). |
+| 21/11 | Ported from the old plan (PR #6, the line-by-line spec audit): spec checklists in docs 05–11 and section 8, agreements X7–X8, decisions B14–B19, professor questions and deliverable names in doc 18, tasks DAT-5 and DOC-4. |
