@@ -42,7 +42,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | ○ | |
+| GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | 👀 | |
 | GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | ○ | Agreement X5 |
 | GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | ○ | |
 
