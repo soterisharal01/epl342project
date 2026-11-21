@@ -4,7 +4,7 @@
 > (see [CLAUDE.md](../CLAUDE.md), section 1 step 2). Replace the whole file each time.
 
 **Written:** 2026-11-21 16:25 UTC
-**Branch:** `task/CON-7-no-dbo` (on top of REL-0) · **Open PRs:** #7 (REL-0) and the CON-7 PR, both waiting for another member's review
+**Branch:** `task/CON-7-no-dbo` (on top of REL-0) · **Open PRs:** #7 (REL-0) and #8 (CON-7), both waiting for another member's review
 
 ## What the last session did
 
@@ -20,7 +20,7 @@
 
 ## Next actions
 
-1. Get PR #7 (REL-0) and then the CON-7 PR reviewed and merged by another member, in that order.
+1. Get PR #7 (REL-0) and then #8 (CON-7) reviewed and merged by another member, in that order.
 2. Claim the first free task in [tasks.md](tasks.md) order: **ADM-2** (admin creates staff users, suspends/activates accounts, views the audit log).
    New task branches should start from `task/CON-7-no-dbo` until #7 and CON-7 are merged, then from `main`.
 
