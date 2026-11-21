@@ -85,7 +85,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| TSO-1 | ★ New transformer + geofence, tree (recursive CTE), locate geofence from coordinates | III.4.1 | | 25/11 | ○ | |
+| TSO-1 | ★ New transformer + geofence, tree (recursive CTE), locate geofence from coordinates | III.4.1 | | 25/11 | 👀 | |
 | TSO-2 | ★ Current state (refresh leaves + sum upwards) | III.4.2 | | 27/11 | ○ | |
 | TSO-3 | ★ Aggregates at any level (month → quarter) | Professor | | 27/11 | ○ | |
 | TSO-4 | ★ Load shedding on every meter below a transformer | II.D | | 27/11 | ○ | Agreement X3 |
