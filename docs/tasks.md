@@ -65,7 +65,7 @@ change them only through the schema-change process or in the coordinating sessio
 |---|---|---|---|---|---|---|
 | GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | 👀 | |
 | GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | 👀 | Agreement X5 |
-| GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | ○ | |
+| GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | 👀 | |
 
 ## TEC: technicians and meters ([08](08-technicians-and-meters.md))
 
