@@ -1,5 +1,5 @@
 -- =====================================================================
--- test_consumer.sql : έλεγχοι για το procs_consumer.sql (S4, S7, S8).
+-- test_consumer.sql : έλεγχοι για το procs_consumer.sql (CON-1, CON-4, CON-5).
 -- Πάνω στα κοινά δεδομένα: consumer1 = UserID 3 (υποστατικά 1, 2, λογαριασμός 1,
 -- τιμολόγια 1 Paid και 2 Issued 47.90), consumer2 = UserID 4, operator = UserID 2.
 -- Κάθε γραμμή τυπώνει OK ή FAIL. Τρέχει σε δοκιμαστική βάση (sql/tools/test_local.sh).
@@ -11,7 +11,7 @@ DECLARE @n INT, @x INT;
 BEGIN TRY EXEC sp_consumer_list_premises 2; PRINT 'FAIL operator saw consumer premises'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51000 PRINT 'OK   non-consumer -> 51000' ELSE PRINT 'FAIL role: ' + ERROR_MESSAGE(); END CATCH;
 
--- ---------- S4 υποστατικά ----------
+-- ---------- CON-1 υποστατικά ----------
 DECLARE @pr TABLE (PremiseID INT);
 INSERT @pr EXEC sp_consumer_add_premise 3, N'Οδός Δοκιμής 1', '1010', 35.17, 33.36, 'Residential', 1, 1;
 DECLARE @newp INT = (SELECT PremiseID FROM @pr);
@@ -37,7 +37,7 @@ IF EXISTS (SELECT 1 FROM HOLDING WHERE UserID = 3 AND PremiseID = @newp AND EndD
 BEGIN TRY EXEC sp_consumer_end_holding 3, 3; PRINT 'FAIL ended someone else''s holding'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51006 PRINT 'OK   foreign premise -> 51006' ELSE PRINT 'FAIL foreign: ' + ERROR_MESSAGE(); END CATCH;
 
--- ---------- S4 λογαριασμοί ----------
+-- ---------- CON-1 λογαριασμοί ----------
 DECLARE @ba TABLE (BankAccountID INT);
 INSERT @ba EXEC sp_consumer_add_bank_account 3, 'cy47 0020 0128 0000 0012 0099 9999', N'Μαρία Γεωργίου', 1;
 DECLARE @newb INT = (SELECT BankAccountID FROM @ba);
@@ -49,7 +49,7 @@ BEGIN CATCH IF ERROR_NUMBER() = 51011 PRINT 'OK   duplicate IBAN -> 51011' ELSE 
 BEGIN TRY EXEC sp_consumer_add_bank_account 3, 'XX12', N'X'; PRINT 'FAIL bad IBAN accepted'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51010 PRINT 'OK   bad IBAN -> 51010' ELSE PRINT 'FAIL bad IBAN: ' + ERROR_MESSAGE(); END CATCH;
 
--- ---------- S7 αιτήματα ----------
+-- ---------- CON-4 αιτήματα ----------
 DECLARE @rq TABLE (RequestID INT);
 INSERT @rq EXEC sp_consumer_submit_request 3, 1, 1, 'Meter check', N'Ο μετρητής δείχνει πολύ μεγάλη κατανάλωση.';
 DECLARE @rid INT = (SELECT RequestID FROM @rq);
@@ -70,7 +70,7 @@ DECLARE @lr TABLE (RequestID INT, SubmittedAt DATETIME2(0), RequestType NVARCHAR
 INSERT @lr EXEC sp_consumer_list_requests 3;
 IF (SELECT COUNT(*) FROM @lr) = 2 PRINT 'OK   list requests -> 2 own' ELSE PRINT 'FAIL list requests';
 
--- ---------- S8 τιμολόγια / πληρωμές ----------
+-- ---------- CON-5 τιμολόγια / πληρωμές ----------
 DECLARE @li TABLE (InvoiceID INT, IssueDate DATE, PeriodFrom DATE, PeriodTo DATE, Amount DECIMAL(12,2), Paid DECIMAL(12,2),
                    Remaining DECIMAL(12,2), Status NVARCHAR(30), Supplier NVARCHAR(100), Address NVARCHAR(200));
 INSERT @li EXEC sp_consumer_list_invoices 3;
