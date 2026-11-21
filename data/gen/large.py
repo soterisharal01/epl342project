@@ -26,9 +26,9 @@ N_CONSUMERS = 2000
 N_EXTRA_PREMISES = 200
 N_TECH = 30
 N_CONTRACTS = 1500
-N_READING_METERS = 200        # 5 per leaf
+N_READING_METERS = 80         # 2 per leaf (department DB is capped at 27 MB, see data/README.md)
 READ_START = datetime(2026, 11, 1)
-READ_DAYS = 10
+READ_DAYS = 7
 SLOTS = 96
 
 
@@ -105,7 +105,7 @@ def emit(table, cols, rows, identity=False):
         imp.write(f'INSERT {table} ({", ".join(cols)}) VALUES\n')
         imp.write(',\n'.join('(' + ','.join(sqlq(v) for v in r) + ')' for r in chunk) + ';\n')
         _since_go[0] += len(chunk)
-        if _since_go[0] >= 4000:
+        if _since_go[0] >= 2000:
             go()
     if identity:
         imp.write(f'SET IDENTITY_INSERT {table} OFF;\n')
@@ -218,16 +218,16 @@ emit('SUPPLY_CONTRACT', ['ContractID', 'StartDate', 'EndDate', 'UserID', 'Premis
 
 invoices, payments = [], []
 iid = pid_ = BASE
-months = [(2026, m) for m in range(5, 11)]        # May..Oct 2026
+months = [(2026, m) for m in range(8, 11)]        # Aug..Oct 2026 (3 months)
 for ci in range(N_CONTRACTS):
     for k, (y, m) in enumerate(months):
         pf = date(y, m, 1)
         pt = (date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1))
         issue = pt + timedelta(days=5)
         amount = round(R.uniform(25, 190) * (2.5 if prem[ci][5] != 'Residential' else 1), 2)
-        if k < 4 or (k == 4 and R.random() > 0.2):
+        if k < 1 or (k == 1 and R.random() > 0.2):
             status = 'Paid'
-        elif k == 4:
+        elif k == 1:
             status = 'Partially paid'
         else:
             status = 'Issued'
@@ -289,7 +289,7 @@ emit('VEE_RUN', ['RunID', 'PeriodFrom', 'PeriodTo', 'StartedAt', 'FinishedAt'],
 
 packets, raw, val = [], [], []
 magg = {}
-PKT_SLOTS = 24                     # one telemetry packet = 6 hours of one meter (all its codes)
+PKT_SLOTS = 96                     # one telemetry packet = 1 day of one meter (tiny JSON)
 seq = BASE
 VALIDATED_AT = datetime(2026, 11, 11, 1, 30)
 for i in reading_idx:
@@ -320,11 +320,7 @@ for i in reading_idx:
                 a[0] += e
                 a[1] += 1
         t_last = READ_START + timedelta(minutes=15 * (s0 + PKT_SLOTS - 1))
-        payload = json.dumps({'Meter_Network_ID': net, 'Transmission_Timestamp': (t_last + timedelta(minutes=15)).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                              'Network_Type': comm, 'Telemetry_Payload': [
-                                  {'obis': c, 'start': t_first.strftime('%Y-%m-%dT%H:%M:%SZ'), 'interval_s': 900,
-                                   'unit': 'kWh', 'values': [str(num3(v)) for v in entries[c]]} for c in codes]},
-                             ensure_ascii=False, separators=(',', ':'))
+        payload = json.dumps({'id': net, 'day': t_first.strftime('%Y-%m-%d'), 'obis': codes, 'intervals': PKT_SLOTS}, separators=(',', ':'))
         packets.append((seq, net, t_last + timedelta(minutes=15), t_last + timedelta(minutes=15, seconds=20), comm, -R.randint(70, 100),
                         payload, 'Accepted', None, mid))
         for c, ts, cv, e in pk_rows:
@@ -442,8 +438,18 @@ for r, v in zip(raw, val):
     prev[(r[0], r[1])] = x
 tech_ok = [u for u in users if u[3] == 'Technician']
 assert all(u[13] == 'Approved' and u[15] == 2 and u[14] and u[11] and u[12] for u in tech_ok)
-assert 200000 <= len(raw) <= 400000, len(raw)
+
 print('self-checks OK')
+
+# stored-size estimate: department DB cap is 27 MB (base objects use a few MB), so the set must stay <= 15 MB incl. indexes
+ROWB = {'USER_ACCOUNT': 330, 'CONSUMER_NOTIFICATION_CHANNEL': 20, 'IN_CATEGORY': 12, 'GEOFENCE': 80, 'TRANSFORMER': 80, 'PREMISE': 140,
+        'HOLDING': 30, 'BANK_ACCOUNT': 90, 'ACCOUNT_FOR': 12, 'SUPPLY_CONTRACT': 40, 'INVOICE': 50, 'PAYMENT': 80, 'PORTFOLIO': 60,
+        'INCLUDES': 30, 'METER': 130, 'METER_CONNECTED_PHASE': 20, 'SERVICE_REQUEST': 200, 'FIELD_TASK': 230, 'METER_INSTALLATION': 70,
+        'DOCUMENT': 150, 'VEE_RUN': 40, 'TELEMETRY_PACKET': 330, 'RAW_READING': 40, 'VALIDATED_READING': 50, 'METER_AGGREGATE': 50,
+        'TRANSFORMER_AGGREGATE': 50}
+EST_MB = sum(n * ROWB[t] * 1.5 for t, n in COUNTS) / 1e6
+print(f'estimated stored size (rows x bytes x 1.5 for indexes): {EST_MB:.1f} MB')
+assert EST_MB <= 15, EST_MB
 
 # ---------------------------------------------------------------- header + footer of import.sql
 imp.close()
@@ -453,7 +459,7 @@ head = [
     '-- Run order: drop.sql -> create.sql -> procs_*.sql -> indexes.sql -> data/small/00_base.sql -> THIS FILE.',
     '-- Runs on a database that has only the base data. IDs of every IDENTITY table start at 100000.',
     '-- The same rows are in data/large/NN_TABLE.dat (CSV, UTF-8, header row, empty field = NULL, times UTC).',
-    '-- Not wrapped in one transaction (too big): on an error, rebuild the database and run again.',
+    '-- Sized for the 27 MB department database cap. No long transaction: every GO batch (~2000 rows) commits on its own (XACT_ABORT ON); on an error rebuild and rerun.',
     'SET NOCOUNT ON;', 'SET XACT_ABORT ON;', 'GO', '']
 foot = ['', "PRINT N'import.sql: OK';"]
 foot += [f"PRINT N'  {t}: {n}';" for t, n in COUNTS]

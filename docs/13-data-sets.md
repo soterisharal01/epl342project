@@ -38,11 +38,13 @@ Loads **after** `data/small/00_base.sql`. All IDENTITY IDs start at 100000. User
 | GEOFENCE / TRANSFORMER | 44 / 44 (4 mid-level + 40 new leaves under base transformers 2 and 3) |
 | PREMISE / HOLDING | 2,200 / 2,200 |
 | BANK_ACCOUNT / SUPPLY_CONTRACT | 1,500 / 1,500 |
-| INVOICE / PAYMENT | 9,000 (6 months per contract) / 7,500 |
+| INVOICE / PAYMENT | 4,500 (3 months per contract) / 3,000 |
 | METER / METER_CONNECTED_PHASE | 2,000 Active / 3,000 |
 | FIELD_TASK / METER_INSTALLATION | 2,000 Done installations / 2,000 Confirmed |
-| TELEMETRY_PACKET | 8,000 (one per meter per 6 hours) |
-| RAW_READING / VALIDATED_READING | 230,400 / 230,400 (200 meters x 10 days x 96, 40 prosumers also 2.8.0) |
-| METER_AGGREGATE / TRANSFORMER_AGGREGATE | 2,400 / 480 (Day rows) |
+| TELEMETRY_PACKET | 560 (one per meter per day, tiny JSON) |
+| RAW_READING / VALIDATED_READING | 64,512 / 64,512 (80 meters x 7 days x 96, 16 prosumers also 2.8.0) |
+| METER_AGGREGATE / TRANSFORMER_AGGREGATE | 672 / 336 (Day rows) |
+
+**Size cap:** each student database on the department server holds at most 27 MB of data (20 MB log). After create + base data only about 15 MB is left, so the set is sized to an estimated 13 MB stored (rows x bytes x 1.5, printed by the generator). It is still far above "thousands of rows" (161,301 rows). Import commits every ~2,000 rows (`GO`).
 
 Import = run `sql/import.sql` in SSMS (`BULK INSERT` on the department server cannot see our files). Decisions B8, B9.
