@@ -43,39 +43,39 @@ change them only through the schema-change process or in the coordinating sessio
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
 | ADM-1 | ★ Consumer self-registration (procedure + page) | III.1.1 | | 24/11 | ✓ | `sp_auth_register_consumer`, `register_consumer.php` (PR #4) |
-| ADM-2 | Admin: create Operator/DSO/TSO/Supplier/Aggregator users, suspend/activate, view the audit log | General | | 25/11 | 👀 | |
-| ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | 👀 | |
-| ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | 👀 | |
+| ADM-2 | Admin: create Operator/DSO/TSO/Supplier/Aggregator users, suspend/activate, view the audit log | General | | 25/11 | ✓ | |
+| ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | ✓ | |
+| ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | ✓ | |
 
 ## CON: consumers ([06](06-consumers.md))
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
 | CON-1 | ★ Premises + bank accounts | III.1.1 | | 24/11 | ✓ | `sp_consumer_add_premise`, `list_premises`, `end_holding`, `add_bank_account`, `list_bank_accounts`, pages `10_premises`, `20_bank` (PR #4) |
-| CON-2 | ★ Readings: current month free, history through a purchased service, within retention | III.1.2 | | 26/11 | 👀 | |
-| CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | 👀 | |
+| CON-2 | ★ Readings: current month free, history through a purchased service, within retention | III.1.2 | | 26/11 | ✓ | |
+| CON-3 | Thresholds, notification channels, power-quality events | III.1.2 | | 26/11 | ✓ | |
 | CON-4 | ★ Check/fault requests + history | III.1.3 | | 25/11 | ✓ | `sp_consumer_submit_request`, `list_requests`, `cancel_request`, `list_meters`, page `30_requests` (PR #4) |
 | CON-5 | ★ Invoices, payments, paying an invoice | III.1.3 | | 26/11 | ✓ | `sp_consumer_list_invoices`, `list_payments`, `pay_invoice`, page `40_billing` (PR #4) |
-| CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | 👀 | |
-| CON-7 | Fix: consumer procedures call `dbo.fn_consumer_holds`, which fails on the department server (per-user schemas) | Bug | | 22/11 | 👀 | Now an inline table-valued function; 37/37 OK on a member database; PR #8 |
+| CON-6 | PHP pages for CON-2 and CON-3 | IV | CON-2, CON-3 | 29/11 | ✓ | |
+| CON-7 | Fix: consumer procedures call `dbo.fn_consumer_holds`, which fails on the department server (per-user schemas) | Bug | | 22/11 | ✓ | Now an inline table-valued function; 37/37 OK on a member database; PR #8 |
 
 ## GDP: GDPR and retention ([07](07-gdpr-and-retention.md))
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | 👀 | |
-| GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | 👀 | Agreement X5 |
-| GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | 👀 | |
+| GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | ✓ | |
+| GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | ✓ | Agreement X5 |
+| GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | ✓ | |
 
 ## TEC: technicians and meters ([08](08-technicians-and-meters.md))
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| TEC-1 | ★ Technician registration + categories | III.2.1 | | 24/11 | 👀 | |
-| TEC-2 | Technician documents | III.2.1 | | 24/11 | 👀 | |
-| TEC-3 | Availability (time + area) | III.2.1 | | 25/11 | 👀 | |
-| TEC-4 | ★ Operator: approve/reject technician, review documents | III.2.1 | TEC-1, TEC-2 | 25/11 | 👀 | |
-| TEC-5 | ★ Field tasks: create (also from a consumer request), assign, accept, notes, complete | III.2.2 | | 26/11 | 👀 | Agreement X1 |
+| TEC-1 | ★ Technician registration + categories | III.2.1 | | 24/11 | ✓ | |
+| TEC-2 | Technician documents | III.2.1 | | 24/11 | ✓ | |
+| TEC-3 | Availability (time + area) | III.2.1 | | 25/11 | ✓ | |
+| TEC-4 | ★ Operator: approve/reject technician, review documents | III.2.1 | TEC-1, TEC-2 | 25/11 | ✓ | |
+| TEC-5 | ★ Field tasks: create (also from a consumer request), assign, accept, notes, complete | III.2.2 | | 26/11 | ✓ | Agreement X1 |
 | TEC-6 | ★ Meter install/replace + equipment documents | III.2.3 | TEC-5 | 26/11 | ○ | |
 | TEC-7 | ★ Operator: confirm meter → Active | III.2.3 | TEC-6 | 26/11 | ○ | |
 | TEC-8 | Remote commands + attempts until ACK | III.2.4 | | 27/11 | ○ | |
@@ -86,32 +86,32 @@ change them only through the schema-change process or in the coordinating sessio
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| MKT-1 | ★ Supplier aggregates (Day-Ahead) | III.5.1–5.2 | | 27/11 | 👀 | Agreement X6 |
-| MKT-2 | Aggregator portfolio + aggregates | III.5.1 | | 27/11 | 👀 | |
-| MKT-3 | ★ Intraday provisional (from raw) | III.5.2 | | 27/11 | 👀 | |
-| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | 👀 | |
+| MKT-1 | ★ Supplier aggregates (Day-Ahead) | III.5.1–5.2 | | 27/11 | ✓ | Agreement X6 |
+| MKT-2 | Aggregator portfolio + aggregates | III.5.1 | | 27/11 | ✓ | |
+| MKT-3 | ★ Intraday provisional (from raw) | III.5.2 | | 27/11 | ✓ | |
+| MKT-4 | PHP pages: supplier, aggregator | IV | MKT-1, MKT-2, MKT-3 | 29/11 | ✓ | |
 
 ## DSO: ingestion and VEE ([09](09-dso-ingestion-vee.md))
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| DSO-1 | ★ Ingest JSON packet → `TELEMETRY_PACKET` + `RAW_READING`, failures as events | III.3.1 | | 25/11 | 👀 | Agreements X2, X4 |
-| DSO-2 | ★ VEE: validation (range, spike, gaps), estimation (interpolation), write `VALIDATED_READING` | III.3.2 | | 26/11 | 👀 | Base data has Pending raw rows to work on |
-| DSO-3 | Suspect readings + manual edit | III.3.2 | DSO-2 | 26/11 | 👀 | |
-| DSO-4 | ★ Aggregates: meter (Day/Month/Year) + leaf transformer | III.3.2 | DSO-2 | 27/11 | 👀 | |
-| DSO-5 | Analytics: under/over-voltage, phase imbalance, **technical losses**, suspected theft → `EVENT` (types in B14) | II.C | | 27/11 | 👀 | |
-| DSO-6 | PHP pages: DSO | IV | DSO-1, DSO-2, DSO-4 | 29/11 | 👀 | |
+| DSO-1 | ★ Ingest JSON packet → `TELEMETRY_PACKET` + `RAW_READING`, failures as events | III.3.1 | | 25/11 | ✓ | Agreements X2, X4 |
+| DSO-2 | ★ VEE: validation (range, spike, gaps), estimation (interpolation), write `VALIDATED_READING` | III.3.2 | | 26/11 | ✓ | Base data has Pending raw rows to work on |
+| DSO-3 | Suspect readings + manual edit | III.3.2 | DSO-2 | 26/11 | ✓ | |
+| DSO-4 | ★ Aggregates: meter (Day/Month/Year) + leaf transformer | III.3.2 | DSO-2 | 27/11 | ✓ | |
+| DSO-5 | Analytics: under/over-voltage, phase imbalance, **technical losses**, suspected theft → `EVENT` (types in B14) | II.C | | 27/11 | ✓ | |
+| DSO-6 | PHP pages: DSO | IV | DSO-1, DSO-2, DSO-4 | 29/11 | ✓ | |
 
 ## TSO: transformer tree ([10](10-tso-transformers.md))
 
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| TSO-1 | ★ New transformer + geofence, tree (recursive CTE), locate geofence from coordinates | III.4.1 | | 25/11 | 👀 | |
-| TSO-2 | ★ Current state (refresh leaves + sum upwards) | III.4.2 | | 27/11 | 👀 | |
-| TSO-3 | ★ Aggregates at any level (month → quarter) | Professor | | 27/11 | 👀 | |
-| TSO-4 | ★ Load shedding on every meter below a transformer | II.D | | 27/11 | 👀 | Agreement X3 |
-| TSO-5 | PHP pages: TSO | IV | TSO-1, TSO-2, TSO-3, TSO-4 | 29/11 | ○ | |
-| TSO-6 | Leaflet map (bonus +10%) | Bonus | TSO-1 | 2/12 | 👀 | Only if time allows |
+| TSO-1 | ★ New transformer + geofence, tree (recursive CTE), locate geofence from coordinates | III.4.1 | | 25/11 | ✓ | |
+| TSO-2 | ★ Current state (refresh leaves + sum upwards) | III.4.2 | | 27/11 | ✓ | |
+| TSO-3 | ★ Aggregates at any level (month → quarter) | Professor | | 27/11 | ✓ | |
+| TSO-4 | ★ Load shedding on every meter below a transformer | II.D | | 27/11 | ✓ | Agreement X3 |
+| TSO-5 | PHP pages: TSO | IV | TSO-1, TSO-2, TSO-3, TSO-4 | 29/11 | ✓ | |
+| TSO-6 | Leaflet map (bonus +10%) | Bonus | TSO-1 | 2/12 | ✓ | Only if time allows |
 
 ## DAT: large data ([13](13-data-sets.md))
 
@@ -127,29 +127,29 @@ change them only through the schema-change process or in the coordinating sessio
 
 | ID | Task | Doc | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | 👀 | |
-| PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | 👀 | |
-| PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | 👀 | |
+| PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | ✓ | |
+| PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | ✓ | |
+| PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | ✓ | |
 | PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | ○ | |
 | SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | ○ | |
-| SEC-2 | Security document | [16](16-security.md) | | 2/12 | 👀 | Chapter (b) of DOC-4 |
-| CCY-1 | Concurrency / contention document | [15](15-concurrency.md) | DSO-2 | 2/12 | 👀 | Chapter (a) of DOC-4 |
-| EXT-1 | Extensibility document | [17](17-extensibility.md) | | 2/12 | 👀 | Chapter (c) of DOC-4 |
+| SEC-2 | Security document | [16](16-security.md) | | 2/12 | ✓ | Chapter (b) of DOC-4 |
+| CCY-1 | Concurrency / contention document | [15](15-concurrency.md) | DSO-2 | 2/12 | ✓ | Chapter (a) of DOC-4 |
+| EXT-1 | Extensibility document | [17](17-extensibility.md) | | 2/12 | ✓ | Chapter (c) of DOC-4 |
 
 ## DOC, REL: final deliverables ([18](18-deliverables-and-timeline.md))
 
 | ID | Task | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|
-| REL-0 | Docs restructure: README menu, component docs, start/stop protocol, no personal ownership | | 21/11 | 👀 | PR #7 |
+| REL-0 | Docs restructure: README menu, component docs, start/stop protocol, no personal ownership | | 21/11 | ✓ | PR #7 |
 | REL-1 | Integration on the demo database `sharal01` + `~sharal01/public_html/mdms` | all ★ tasks | 30/11 | ○ | |
 | DOC-1 | User manual (with every component's section) | | 2/12 | ○ | docx: the user manual |
 | DOC-2 | New ER diagram (Chen, ERD+) + relational diagram matching the final `create.sql` | REL-1 | 2/12 | ○ | Decision B13 |
-| DOC-3 | Data dictionary (every table and column explained) | | 2/12 | 👀 | `docs/20-data-dictionary.md`, generated by `sql/tools/dictionary.py` |
-| DOC-4 | **One** separate document with (a) contention, (b) security, (c) extension (+ indexes, before/after, 10,000-request test) | SEC-2, CCY-1, EXT-1 | 2/12 | 👀 | docx: the separate document |
+| DOC-3 | Data dictionary (every table and column explained) | | 2/12 | ✓ | `docs/20-data-dictionary.md`, generated by `sql/tools/dictionary.py` |
+| DOC-4 | **One** separate document with (a) contention, (b) security, (c) extension (+ indexes, before/after, 10,000-request test) | SEC-2, CCY-1, EXT-1 | 2/12 | ✓ | docx: the separate document |
 | REL-2 | Clean-database rehearsal: drop → create → procs → indexes → data | REL-1 | 3/12 | ○ | |
 | REL-3 | 30-minute demo rehearsal (everyone presents and explains an area they did not build) | REL-2 | 3/12 | ○ | |
 | REL-4 | `12.zip` + printed `docx/` + Moodle upload before 11:00 | REL-3 | 4/12 | ○ | |
-| REL-5 | `sql/select.sql`: demo and analytic queries for the exam (not part of the build) | | 2/12 | 👀 | 27 queries; parse check on a database pending |
+| REL-5 | `sql/select.sql`: demo and analytic queries for the exam (not part of the build) | | 2/12 | ✓ | 27 queries; parse check on a database pending |
 
 ## Old IDs
 
