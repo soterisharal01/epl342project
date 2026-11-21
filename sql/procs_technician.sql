@@ -656,3 +656,372 @@ BEGIN
     ORDER BY AttachmentID;
 END;
 GO
+
+-- =====================================================================
+-- TEC-2 / TEC-3 / TEC-4: έγγραφα τεχνικού, διαθεσιμότητα, έγκριση από τον Operator.
+-- Λάθη (THROW) 52300-52499:
+-- 52300 ρόλος/κατάσταση τεχνικού | 52301 τύπος εγγράφου | 52302 αριθμός εγγράφου
+-- 52303 ημερομηνίες εγγράφου | 52304 αρχείο εγγράφου
+-- 52310 ημερομηνία στο παρελθόν | 52311 ώρες | 52312 επικάλυψη | 52313 δήμοι
+-- 52314 διαθεσιμότητα δεν βρέθηκε | 52315 εργασία μέσα στη ζώνη
+-- 52320 τεχνικός δεν βρέθηκε | 52321 έγγραφο δεν βρέθηκε | 52322 έγγραφο ήδη ελεγμένο
+-- 52324 απόφαση μόνο σε εκκρεμή τεχνικό | 52325 λείπουν αποδεκτά έγγραφα
+-- 52326 απαιτείται σχόλιο | 52327 μη έγκυρη κατάσταση | 52328 μη επιτρεπτή μετάβαση
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- sp_tech_assert_any: ενεργός Τεχνικός με οποιαδήποτε κατάσταση έγκρισης εκτός Rejected.
+-- Για ό,τι πρέπει να κάνει ο τεχνικός ΠΡΙΝ εγκριθεί (π.χ. να ανεβάσει έγγραφα).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_assert_any
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT
+                   WHERE UserID = @UserID AND Role = 'Technician' AND AccountStatus = 'Active'
+                     AND ApprovalStatus IN ('Pending', 'Approved', 'Suspended'))
+        THROW 52300, N'Δεν επιτρέπεται: μόνο για ενεργό Τεχνικό που δεν έχει απορριφθεί.', 1;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_add_document: ο τεχνικός καταθέτει έγγραφο (ID card, Installer licence,
+-- Training certificate). ReviewStatus 'Pending'. Επιστρέφει: DocumentID.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_add_document
+    @UserID INT, @DocType VARCHAR(27), @DocNumber NVARCHAR(50), @IssueDate DATE,
+    @ExpiryDate DATE = NULL, @FilePath NVARCHAR(400) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert_any @UserID;
+    IF @DocType IS NULL OR @DocType NOT IN ('ID card', 'Installer licence', 'Training certificate')
+        THROW 52301, N'Μη έγκυρος τύπος εγγράφου τεχνικού (ID card, Installer licence, Training certificate).', 1;
+    IF @DocNumber IS NULL OR LTRIM(RTRIM(@DocNumber)) = N''
+        THROW 52302, N'Ο αριθμός εγγράφου είναι υποχρεωτικός.', 1;
+    IF @IssueDate IS NULL OR @IssueDate > CAST(SYSUTCDATETIME() AS DATE)
+       OR (@ExpiryDate IS NOT NULL AND @ExpiryDate <= @IssueDate)
+        THROW 52303, N'Η έκδοση δεν μπορεί να είναι στο μέλλον και η λήξη πρέπει να είναι μετά την έκδοση.', 1;
+    IF @FilePath IS NULL OR LTRIM(RTRIM(@FilePath)) = N''
+        THROW 52304, N'Το αρχείο του εγγράφου είναι υποχρεωτικό.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        INSERT DOCUMENT (DocType, DocNumber, IssueDate, ExpiryDate, FilePath, ReviewStatus, TechnicianID)
+        VALUES (@DocType, LTRIM(RTRIM(@DocNumber)), @IssueDate, @ExpiryDate, LTRIM(RTRIM(@FilePath)), 'Pending', @UserID);
+        DECLARE @doc INT = SCOPE_IDENTITY();
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, NewState, PerformedBy)
+        VALUES ('DOCUMENT', CAST(@doc AS VARCHAR(100)), 'Add technician document', 'Pending', @UserID);
+        COMMIT;
+        SELECT @doc AS DocumentID;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_list_documents: τα δικά μου έγγραφα (και η κρίση του Operator).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_list_documents
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tech_assert_any @UserID;
+    SELECT DocumentID, DocType, DocNumber, IssueDate, ExpiryDate, FilePath,
+           ReviewStatus, ReviewComment, ReviewedAt
+    FROM DOCUMENT
+    WHERE TechnicianID = @UserID
+    ORDER BY DocType, DocumentID DESC;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_ref_list_municipalities: δήμοι για τη φόρμα διαθεσιμότητας.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_ref_list_municipalities
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT m.MunicipalityID, m.Name + N' (' + d.Name + N')' AS Label
+    FROM MUNICIPALITY m
+    JOIN DISTRICT d ON d.DistrictID = m.DistrictID
+    ORDER BY d.Name, m.Name;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_declare_availability: ημερήσια διαθεσιμότητα (ώρες + δήμοι). Εγκεκριμένος τεχνικός.
+-- @MunicipalityIDs = 'ID,ID'. Όχι στο παρελθόν, ώρες From < To, χωρίς επικάλυψη την ίδια μέρα,
+-- τουλάχιστον ένας δήμος και όλοι υπαρκτοί. AVAILABILITY + AVAILABLE_IN σε μία συναλλαγή.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_declare_availability
+    @UserID INT, @AvailDate DATE, @FromTime TIME(0), @ToTime TIME(0), @MunicipalityIDs VARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert @UserID;
+    IF @AvailDate IS NULL OR @AvailDate < CAST(SYSUTCDATETIME() AS DATE)
+        THROW 52310, N'Η διαθεσιμότητα δεν μπορεί να δηλωθεί για ημερομηνία στο παρελθόν.', 1;
+    IF @FromTime IS NULL OR @ToTime IS NULL OR @ToTime <= @FromTime
+        THROW 52311, N'Η ώρα λήξης πρέπει να είναι μετά την ώρα έναρξης.', 1;
+    DECLARE @munis TABLE (MunicipalityID INT NULL);
+    INSERT @munis (MunicipalityID)
+    SELECT DISTINCT TRY_CAST(LTRIM(RTRIM(value)) AS INT)
+    FROM STRING_SPLIT(ISNULL(@MunicipalityIDs, ''), ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+    IF NOT EXISTS (SELECT 1 FROM @munis)
+       OR EXISTS (SELECT 1 FROM @munis x
+                  WHERE x.MunicipalityID IS NULL
+                     OR NOT EXISTS (SELECT 1 FROM MUNICIPALITY m WHERE m.MunicipalityID = x.MunicipalityID))
+        THROW 52313, N'Διαλέξτε τουλάχιστον έναν έγκυρο δήμο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        -- Κλείδωμα των ζωνών της ημέρας ώστε δύο ταυτόχρονες δηλώσεις να μην επικαλυφθούν.
+        IF EXISTS (SELECT 1 FROM AVAILABILITY WITH (UPDLOCK, HOLDLOCK)
+                   WHERE UserID = @UserID AND AvailDate = @AvailDate
+                     AND FromTime < @ToTime AND ToTime > @FromTime)
+            THROW 52312, N'Η ζώνη επικαλύπτεται με άλλη δηλωμένη ζώνη της ίδιας ημέρας.', 1;
+        INSERT AVAILABILITY (UserID, AvailDate, FromTime, ToTime) VALUES (@UserID, @AvailDate, @FromTime, @ToTime);
+        INSERT AVAILABLE_IN (UserID, AvailDate, FromTime, MunicipalityID)
+        SELECT @UserID, @AvailDate, @FromTime, MunicipalityID FROM @munis;
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_list_availability: οι δικές μου ζώνες, προαιρετικά από/έως ημερομηνία.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_list_availability
+    @UserID INT, @From DATE = NULL, @To DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_tech_assert @UserID;
+    SELECT a.AvailDate, a.FromTime, a.ToTime,
+           (SELECT STRING_AGG(m.Name, N', ') WITHIN GROUP (ORDER BY m.Name)
+            FROM AVAILABLE_IN ai JOIN MUNICIPALITY m ON m.MunicipalityID = ai.MunicipalityID
+            WHERE ai.UserID = a.UserID AND ai.AvailDate = a.AvailDate AND ai.FromTime = a.FromTime) AS Municipalities
+    FROM AVAILABILITY a
+    WHERE a.UserID = @UserID
+      AND (@From IS NULL OR a.AvailDate >= @From)
+      AND (@To IS NULL OR a.AvailDate <= @To)
+    ORDER BY a.AvailDate, a.FromTime;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_tech_remove_availability: διαγραφή ζώνης (το PK είναι UserID+AvailDate+FromTime).
+-- Απορρίπτεται αν μη ακυρωμένη εργασία του τεχνικού επικαλύπτει τη ζώνη.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tech_remove_availability
+    @UserID INT, @AvailDate DATE, @FromTime TIME(0)
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_tech_assert @UserID;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @ToTime TIME(0) =
+            (SELECT ToTime FROM AVAILABILITY WITH (UPDLOCK)
+             WHERE UserID = @UserID AND AvailDate = @AvailDate AND FromTime = @FromTime);
+        IF @ToTime IS NULL
+            THROW 52314, N'Η ζώνη διαθεσιμότητας δεν βρέθηκε.', 1;
+        DECLARE @slotFrom DATETIME2(0) = DATEADD(SECOND, DATEDIFF(SECOND, CAST('00:00:00' AS TIME(0)), @FromTime), CAST(@AvailDate AS DATETIME2(0)));
+        DECLARE @slotTo DATETIME2(0) = DATEADD(SECOND, DATEDIFF(SECOND, CAST('00:00:00' AS TIME(0)), @ToTime), CAST(@AvailDate AS DATETIME2(0)));
+        IF EXISTS (SELECT 1 FROM FIELD_TASK
+                   WHERE TechnicianID = @UserID AND Status <> 'Cancelled'
+                     AND ScheduledFrom < @slotTo AND ScheduledTo > @slotFrom)
+            THROW 52315, N'Υπάρχει ενεργή εργασία μέσα στη ζώνη. Ακυρώστε ή αναθέστε την πρώτα.', 1;
+        DELETE FROM AVAILABILITY WHERE UserID = @UserID AND AvailDate = @AvailDate AND FromTime = @FromTime;
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_list_pending_technicians: τεχνικοί σε κατάσταση Pending, με κατηγορίες
+-- και πλήθος εγγράφων ανά κατάσταση ελέγχου.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_list_pending_technicians
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_operator_assert @UserID;
+    SELECT u.UserID AS TechnicianID, u.Username, u.FirstName, u.LastName, u.Email, u.Phone, u.BirthDate, u.Photo,
+           (SELECT STRING_AGG(t.Name, N', ') WITHIN GROUP (ORDER BY t.Name)
+            FROM IN_CATEGORY ic JOIN TECHNICIAN_CATEGORY t ON t.CategoryID = ic.CategoryID
+            WHERE ic.UserID = u.UserID) AS Categories,
+           (SELECT COUNT(*) FROM DOCUMENT d WHERE d.TechnicianID = u.UserID AND d.ReviewStatus = 'Pending') AS DocsPending,
+           (SELECT COUNT(*) FROM DOCUMENT d WHERE d.TechnicianID = u.UserID AND d.ReviewStatus = 'Accepted') AS DocsAccepted,
+           (SELECT COUNT(*) FROM DOCUMENT d WHERE d.TechnicianID = u.UserID AND d.ReviewStatus = 'Rejected') AS DocsRejected
+    FROM USER_ACCOUNT u
+    WHERE u.Role = 'Technician' AND u.ApprovalStatus = 'Pending'
+    ORDER BY u.UserID;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_list_technician_documents: τα έγγραφα ενός τεχνικού (οποιαδήποτε κατάσταση).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_list_technician_documents
+    @UserID INT, @TechnicianID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    EXEC sp_operator_assert @UserID;
+    IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @TechnicianID AND Role = 'Technician')
+        THROW 52320, N'Ο τεχνικός δεν βρέθηκε.', 1;
+    SELECT d.DocumentID, d.DocType, d.DocNumber, d.IssueDate, d.ExpiryDate, d.FilePath,
+           d.ReviewStatus, d.ReviewComment, d.ReviewedAt, r.Username AS ReviewedByUsername
+    FROM DOCUMENT d
+    LEFT JOIN USER_ACCOUNT r ON r.UserID = d.ReviewedBy
+    WHERE d.TechnicianID = @TechnicianID
+    ORDER BY d.DocType, d.DocumentID DESC;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_review_document: αποδοχή/απόρριψη εγγράφου τεχνικού (μόνο όσο είναι Pending).
+-- Η απόρριψη θέλει σχόλιο. Καταγράφεται στο AUDIT_LOG (Pending -> Accepted/Rejected).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_review_document
+    @UserID INT, @DocumentID INT, @Accept BIT, @Comment NVARCHAR(500) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_operator_assert @UserID;
+    IF @Accept IS NULL
+        THROW 52327, N'Δώστε απόφαση: αποδοχή ή απόρριψη.', 1;
+    IF @Accept = 0 AND (@Comment IS NULL OR LTRIM(RTRIM(@Comment)) = N'')
+        THROW 52326, N'Η απόρριψη απαιτεί σχόλιο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @status VARCHAR(8) =
+            (SELECT ReviewStatus FROM DOCUMENT WITH (UPDLOCK)
+             WHERE DocumentID = @DocumentID AND TechnicianID IS NOT NULL);
+        IF @status IS NULL
+            THROW 52321, N'Το έγγραφο τεχνικού δεν βρέθηκε.', 1;
+        IF @status <> 'Pending'
+            THROW 52322, N'Το έγγραφο έχει ήδη ελεγχθεί.', 1;
+        DECLARE @new VARCHAR(8) = CASE WHEN @Accept = 1 THEN 'Accepted' ELSE 'Rejected' END;
+        UPDATE DOCUMENT
+        SET ReviewStatus = @new, ReviewComment = NULLIF(LTRIM(RTRIM(@Comment)), N''),
+            ReviewedBy = @UserID, ReviewedAt = SYSUTCDATETIME()
+        WHERE DocumentID = @DocumentID;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('DOCUMENT', CAST(@DocumentID AS VARCHAR(100)), 'Review technician document', @status, @new,
+                NULLIF(LTRIM(RTRIM(@Comment)), N''), @UserID);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_decide_technician: έγκριση ή απόρριψη τεχνικού που είναι Pending.
+-- ΚΑΝΟΝΑΣ ΕΓΚΡΙΣΗΣ: χρειάζεται τουλάχιστον ένα Accepted, μη ληγμένο (ExpiryDate NULL ή > σήμερα UTC)
+-- έγγραφο ΚΑΘΕ ΕΝΟΣ από τους 3 τύπους (ID card, Installer licence, Training certificate).
+-- Η απόρριψη επιτρέπεται όσο είναι Pending και θέλει σχόλιο.
+-- Γράφει ApprovalStatus, ApprovedBy, ApprovalDecidedAt και AUDIT_LOG (παλιό/νέο + σχόλιο).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_decide_technician
+    @UserID INT, @TechnicianID INT, @Approve BIT, @Comment NVARCHAR(500) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_operator_assert @UserID;
+    IF @Approve IS NULL
+        THROW 52327, N'Δώστε απόφαση: έγκριση ή απόρριψη.', 1;
+    IF @Approve = 0 AND (@Comment IS NULL OR LTRIM(RTRIM(@Comment)) = N'')
+        THROW 52326, N'Η απόρριψη απαιτεί σχόλιο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @old VARCHAR(9) =
+            (SELECT ApprovalStatus FROM USER_ACCOUNT WITH (UPDLOCK)
+             WHERE UserID = @TechnicianID AND Role = 'Technician');
+        IF @old IS NULL
+            THROW 52320, N'Ο τεχνικός δεν βρέθηκε.', 1;
+        IF @old <> 'Pending'
+            THROW 52324, N'Απόφαση λαμβάνεται μόνο για τεχνικό σε εκκρεμότητα (Pending).', 1;
+        IF @Approve = 1
+        BEGIN
+            DECLARE @today DATE = CAST(SYSUTCDATETIME() AS DATE);
+            DECLARE @types INT =
+                (SELECT COUNT(DISTINCT DocType) FROM DOCUMENT WITH (UPDLOCK)
+                 WHERE TechnicianID = @TechnicianID AND ReviewStatus = 'Accepted'
+                   AND DocType IN ('ID card', 'Installer licence', 'Training certificate')
+                   AND (ExpiryDate IS NULL OR ExpiryDate > @today));
+            IF @types < 3
+                THROW 52325, N'Η έγκριση απαιτεί αποδεκτό, μη ληγμένο έγγραφο για καθέναν από τους 3 τύπους (ID card, Installer licence, Training certificate).', 1;
+        END;
+        DECLARE @new VARCHAR(9) = CASE WHEN @Approve = 1 THEN 'Approved' ELSE 'Rejected' END;
+        UPDATE USER_ACCOUNT
+        SET ApprovalStatus = @new, ApprovedBy = @UserID, ApprovalDecidedAt = SYSUTCDATETIME()
+        WHERE UserID = @TechnicianID;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('USER_ACCOUNT', CAST(@TechnicianID AS VARCHAR(100)),
+                CASE WHEN @Approve = 1 THEN 'Approve technician' ELSE 'Reject technician' END,
+                @old, @new, NULLIF(LTRIM(RTRIM(@Comment)), N''), @UserID);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- sp_operator_set_technician_status: Approved <-> Suspended. Η αναστολή θέλει σχόλιο.
+-- Pending/Rejected αλλάζουν μόνο με sp_operator_decide_technician.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_operator_set_technician_status
+    @UserID INT, @TechnicianID INT, @Status VARCHAR(9), @Comment NVARCHAR(500) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_operator_assert @UserID;
+    IF @Status IS NULL OR @Status NOT IN ('Approved', 'Suspended')
+        THROW 52327, N'Η νέα κατάσταση πρέπει να είναι Approved ή Suspended.', 1;
+    IF @Status = 'Suspended' AND (@Comment IS NULL OR LTRIM(RTRIM(@Comment)) = N'')
+        THROW 52326, N'Η αναστολή απαιτεί σχόλιο.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @old VARCHAR(9) =
+            (SELECT ApprovalStatus FROM USER_ACCOUNT WITH (UPDLOCK)
+             WHERE UserID = @TechnicianID AND Role = 'Technician');
+        IF @old IS NULL
+            THROW 52320, N'Ο τεχνικός δεν βρέθηκε.', 1;
+        IF @old NOT IN ('Approved', 'Suspended') OR @old = @Status
+            THROW 52328, N'Η μετάβαση επιτρέπεται μόνο από Approved σε Suspended ή αντίστροφα.', 1;
+        UPDATE USER_ACCOUNT
+        SET ApprovalStatus = @Status, ApprovedBy = @UserID, ApprovalDecidedAt = SYSUTCDATETIME()
+        WHERE UserID = @TechnicianID;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('USER_ACCOUNT', CAST(@TechnicianID AS VARCHAR(100)), 'Set technician status',
+                @old, @Status, NULLIF(LTRIM(RTRIM(@Comment)), N''), @UserID);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
