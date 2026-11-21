@@ -273,3 +273,192 @@ BEGIN
     END CATCH
 END;
 GO
+
+-- =====================================================================
+-- GDP-2: Διατήρηση δεδομένων (ΙΙΙ.1.4). THROW 51450-51499.
+--   51450 η ημερομηνία αναφοράς είναι πάνω από 1 χρόνο στο μέλλον (προστασία από λάθος που σβήνει τα πάντα)
+--   51451 τρέχει ήδη άλλη εκκαθάριση
+-- (και 51402 όταν ο χρήστης δεν είναι Admin, από το sp_gdpr_assert_role)
+--
+-- ΚΑΝΟΝΑΣ: ωμές και επικυρωμένες μετρήσεις (RAW_READING, VALIDATED_READING) κρατιούνται
+-- RawRetentionMonths μήνες (36, ή 1 μετά από εφαρμοσμένο αίτημα GDPR) του καταναλωτή που
+-- ΚΡΑΤΟΥΣΕ το υποστατικό ΤΗΝ ΩΡΑ ΤΗΣ ΜΕΤΡΗΣΗΣ:
+--   μετρητής --METER_INSTALLATION(InstalledAt..RemovedAt)--> υποστατικό --HOLDING(StartDate..EndDate)--> καταναλωτής.
+--   * Το παράθυρο κατοχής/εγκατάστασης δίνεται από τη fn_retention_cutoff (τμήματα χρόνου ανά μετρητή).
+--   * Μέτρηση που δεν πέφτει σε κανένα τμήμα (υποστατικό χωρίς κάτοχο εκείνη την ώρα, ή πριν την
+--     εγκατάσταση) -> εφεδρικά 36 μήνες.
+--   * Αν δύο τμήματα επικαλύπτονται (δεν θα έπρεπε), κερδίζει ο μεγαλύτερος χρόνος διατήρησης (συντηρητικά).
+--   * Οι εγκαταστάσεις με ConfirmationStatus = 'Rejected' δεν μετράνε.
+--   Διαγράφονται και οι γραμμές READING_EDIT των ίδιων μετρήσεων: κρατούν OldValue/NewValue, δηλαδή τις
+--   ίδιες τιμές που σβήνουμε, άρα θα έμεναν ως «διαρροή» των δεδομένων. Τα METER_AGGREGATE,
+--   TRANSFORMER_AGGREGATE και τα δεδομένα μετασχηματιστών ΔΕΝ πειράζονται (μένουν για πάντα).
+-- =====================================================================
+
+-- Τμήματα χρόνου ανά μετρητή: ποιος καταναλωτής κρατούσε το υποστατικό και πόσους μήνες κρατιούνται οι μετρήσεις.
+-- Inline TVF (όχι scalar). SegFrom <= χρόνος < SegTo.
+CREATE OR ALTER FUNCTION fn_retention_cutoff (@AsOf DATETIME2(0))
+RETURNS TABLE
+AS RETURN
+(
+    SELECT i.MeterID, s.SegFrom, s.SegTo, h.UserID,
+           u.RawRetentionMonths AS RetentionMonths,
+           DATEADD(MONTH, -u.RawRetentionMonths, @AsOf) AS Cutoff
+    FROM METER_INSTALLATION i
+    JOIN HOLDING h ON h.PremiseID = i.PremiseID
+    JOIN USER_ACCOUNT u ON u.UserID = h.UserID
+    CROSS APPLY (SELECT GREATEST(i.InstalledAt, CAST(h.StartDate AS DATETIME2(0))) AS SegFrom,
+                        LEAST(COALESCE(i.RemovedAt, CAST('9999-12-31' AS DATETIME2(0))),
+                              CASE WHEN h.EndDate IS NULL THEN CAST('9999-12-31' AS DATETIME2(0))
+                                   ELSE DATEADD(DAY, 1, CAST(h.EndDate AS DATETIME2(0))) END) AS SegTo) s
+    WHERE i.ConfirmationStatus <> 'Rejected' AND u.RawRetentionMonths IS NOT NULL AND s.SegFrom < s.SegTo
+);
+GO
+
+-- ---------------------------------------------------------------------
+-- Προεπισκόπηση (μόνο ανάγνωση): ανά μετρητή και ανά χρόνο διατήρησης, πόσες γραμμές θα σβηστούν.
+-- Μετρητές χωρίς τίποτα προς διαγραφή εμφανίζονται με 0 και τους μήνες που ισχύουν στο @AsOf.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_retention_preview
+    @UserID INT, @AsOf DATETIME2 = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_gdpr_assert_role @UserID, 'Admin';
+    DECLARE @asof0 DATETIME2(0) = CAST(COALESCE(@AsOf, SYSUTCDATETIME()) AS DATETIME2(0));
+    IF @asof0 > DATEADD(YEAR, 1, SYSUTCDATETIME())
+        THROW 51450, N'Η ημερομηνία αναφοράς δεν μπορεί να είναι πάνω από έναν χρόνο στο μέλλον.', 1;
+    BEGIN TRY
+        DECLARE @seg TABLE (MeterID INT NOT NULL, SegFrom DATETIME2(0) NOT NULL, SegTo DATETIME2(0) NOT NULL,
+                            UserID INT NOT NULL, RetentionMonths TINYINT NOT NULL, Cutoff DATETIME2(0) NOT NULL,
+                            INDEX ix_seg (MeterID, SegFrom));
+        INSERT @seg SELECT MeterID, SegFrom, SegTo, UserID, RetentionMonths, Cutoff FROM fn_retention_cutoff(@asof0);
+        DECLARE @minCutoff DATETIME2(0) = DATEADD(MONTH, -1, @asof0);   -- ο μικρότερος δυνατός χρόνος διατήρησης
+
+        WITH k AS (
+            SELECT r.MeterID, r.IntervalStart, CAST(1 AS INT) AS Raw, CAST(0 AS INT) AS Val, CAST(0 AS INT) AS Ed
+            FROM RAW_READING r WHERE r.IntervalStart < @minCutoff
+            UNION ALL
+            SELECT v.MeterID, v.IntervalStart, 0, 1, 0 FROM VALIDATED_READING v WHERE v.IntervalStart < @minCutoff
+            UNION ALL
+            SELECT e.MeterID, e.IntervalStart, 0, 0, 1 FROM READING_EDIT e WHERE e.IntervalStart < @minCutoff
+        ), m AS (
+            SELECT k.MeterID, k.Raw, k.Val, k.Ed, k.IntervalStart,
+                   COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
+                             WHERE sg.MeterID = k.MeterID AND k.IntervalStart >= sg.SegFrom AND k.IntervalStart < sg.SegTo), 36) AS Months
+            FROM k
+        ), del AS (
+            SELECT MeterID, Months, SUM(Raw) AS RawToDelete, SUM(Val) AS ValidatedToDelete, SUM(Ed) AS EditsToDelete
+            FROM m
+            WHERE IntervalStart < DATEADD(MONTH, -Months, @asof0)
+            GROUP BY MeterID, Months
+        )
+        SELECT mt.MeterID, mt.SerialNumber, d.Months AS RetentionMonths, DATEADD(MONTH, -d.Months, @asof0) AS Cutoff,
+               d.RawToDelete, d.ValidatedToDelete, d.EditsToDelete, @asof0 AS AsOf
+        FROM del d JOIN METER mt ON mt.MeterID = d.MeterID
+        UNION ALL
+        SELECT mt.MeterID, mt.SerialNumber, cur.Months, DATEADD(MONTH, -cur.Months, @asof0), 0, 0, 0, @asof0
+        FROM METER mt
+        CROSS APPLY (SELECT COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
+                                      WHERE sg.MeterID = mt.MeterID AND @asof0 >= sg.SegFrom AND @asof0 < sg.SegTo), 36) AS Months) cur
+        WHERE NOT EXISTS (SELECT 1 FROM del d WHERE d.MeterID = mt.MeterID)
+        ORDER BY MeterID, RetentionMonths;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- Εκκαθάριση. Αρχή X5: sp_set_session_context N'mdms_purge', 1 -> DELETE (ποτέ UPDATE) -> επαναφορά στο 0.
+-- Παρτίδες των 5000 γραμμών: μικρά transactions = σύντομα κλειδώματα (οι μετρήσεις συνεχίζουν να
+-- εισάγονται) και το log δεν φουσκώνει. ΜΙΑ transaction ανά παρτίδα (όχι για όλη την εκκαθάριση):
+-- ο κανόνας είναι μονότονος (ό,τι σβήστηκε θα έπρεπε να σβηστεί έτσι κι αλλιώς), άρα αν διακοπεί στη
+-- μέση δεν χάνεται συνέπεια, απλώς ξανατρέχει. Το κόστος: χωρίς ατομικότητα για ολόκληρη τη δουλειά.
+-- Σειρά: READING_EDIT, VALIDATED_READING, RAW_READING. Ένα session lock εμποδίζει δύο ταυτόχρονες εκκαθαρίσεις.
+-- Επιστρέφει RawDeleted, ValidatedDeleted, EditsDeleted, AsOf.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_retention_purge
+    @UserID INT, @AsOf DATETIME2 = NULL
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_gdpr_assert_role @UserID, 'Admin';
+    DECLARE @asof0 DATETIME2(0) = CAST(COALESCE(@AsOf, SYSUTCDATETIME()) AS DATETIME2(0));
+    IF @asof0 > DATEADD(YEAR, 1, SYSUTCDATETIME())
+        THROW 51450, N'Η ημερομηνία αναφοράς δεν μπορεί να είναι πάνω από έναν χρόνο στο μέλλον.', 1;
+    DECLARE @haveLock BIT = 0;
+    BEGIN TRY
+        DECLARE @lk INT;
+        EXEC @lk = sp_getapplock @Resource = N'mdms_retention_purge', @LockMode = N'Exclusive',
+                                 @LockOwner = N'Session', @LockTimeout = 0;
+        IF @lk < 0 THROW 51451, N'Τρέχει ήδη άλλη εκκαθάριση δεδομένων.', 1;
+        SET @haveLock = 1;
+
+        DECLARE @seg TABLE (MeterID INT NOT NULL, SegFrom DATETIME2(0) NOT NULL, SegTo DATETIME2(0) NOT NULL,
+                            RetentionMonths TINYINT NOT NULL, INDEX ix_seg (MeterID, SegFrom));
+        INSERT @seg SELECT MeterID, SegFrom, SegTo, RetentionMonths FROM fn_retention_cutoff(@asof0);
+        DECLARE @minCutoff DATETIME2(0) = DATEADD(MONTH, -1, @asof0);
+        DECLARE @batch INT = 5000, @n INT, @nRaw INT = 0, @nVal INT = 0, @nEd INT = 0;
+
+        EXEC sp_set_session_context N'mdms_purge', 1;
+
+        WHILE 1 = 1   -- READING_EDIT
+        BEGIN
+            BEGIN TRAN;
+            DELETE TOP (@batch) e FROM READING_EDIT e
+            WHERE e.IntervalStart < @minCutoff
+              AND e.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
+                    WHERE sg.MeterID = e.MeterID AND e.IntervalStart >= sg.SegFrom AND e.IntervalStart < sg.SegTo), 36), @asof0);
+            SET @n = @@ROWCOUNT;
+            COMMIT;
+            SET @nEd += @n;
+            IF @n = 0 BREAK;
+        END
+        WHILE 1 = 1   -- VALIDATED_READING (το trigger το επιτρέπει μόνο με το flag)
+        BEGIN
+            BEGIN TRAN;
+            DELETE TOP (@batch) v FROM VALIDATED_READING v
+            WHERE v.IntervalStart < @minCutoff
+              AND v.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
+                    WHERE sg.MeterID = v.MeterID AND v.IntervalStart >= sg.SegFrom AND v.IntervalStart < sg.SegTo), 36), @asof0);
+            SET @n = @@ROWCOUNT;
+            COMMIT;
+            SET @nVal += @n;
+            IF @n = 0 BREAK;
+        END
+        WHILE 1 = 1   -- RAW_READING
+        BEGIN
+            BEGIN TRAN;
+            DELETE TOP (@batch) r FROM RAW_READING r
+            WHERE r.IntervalStart < @minCutoff
+              AND r.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
+                    WHERE sg.MeterID = r.MeterID AND r.IntervalStart >= sg.SegFrom AND r.IntervalStart < sg.SegTo), 36), @asof0);
+            SET @n = @@ROWCOUNT;
+            COMMIT;
+            SET @nRaw += @n;
+            IF @n = 0 BREAK;
+        END
+
+        EXEC sp_set_session_context N'mdms_purge', 0;
+
+        BEGIN TRAN;
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, ResultComment, PerformedBy)
+        VALUES ('RETENTION', CONVERT(VARCHAR(19), @asof0, 120), 'Retention purge',
+                CONCAT(N'Εκκαθάριση ως ', CONVERT(VARCHAR(19), @asof0, 120), N' UTC: ωμές ', @nRaw,
+                       N', επικυρωμένες ', @nVal, N', διορθώσεις ', @nEd), @UserID);
+        COMMIT;
+
+        EXEC sp_releaseapplock @Resource = N'mdms_retention_purge', @LockOwner = N'Session';
+        SET @haveLock = 0;
+        SELECT @nRaw AS RawDeleted, @nVal AS ValidatedDeleted, @nEd AS EditsDeleted, @asof0 AS AsOf;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        EXEC sp_set_session_context N'mdms_purge', 0;
+        IF @haveLock = 1 EXEC sp_releaseapplock @Resource = N'mdms_retention_purge', @LockOwner = N'Session';
+        THROW;
+    END CATCH
+END;
+GO
