@@ -1,5 +1,5 @@
 -- =====================================================================
--- test_tso.sql : έλεγχοι για το procs_tso.sql (TSO-1).
+-- test_tso.sql : έλεγχοι για το procs_tso.sql (TSO-1 … TSO-4).
 -- Πάνω στα κοινά δεδομένα: tso1 = UserID 8, operator = UserID 2.
 -- Δέντρο βάσης: 1 ρίζα, 2 και 3 κάτω από αυτήν, φύλλα 4, 5 (κάτω από 2) και 6 (κάτω από 3).
 -- Μετρητές: 1 και 4 στον 4, 2 στον 5, 3 και 5 στον 6.
@@ -148,3 +148,189 @@ END CATCH;
 IF (SELECT Result FROM @chk WHERE MeterID = 1) = 'Mismatch' AND (SELECT FoundTransformerID FROM @chk WHERE MeterID = 1) = 4
    AND (SELECT TransformerID FROM METER WHERE MeterID = 1) = 4
     PRINT 'OK   check meters: moved meter flagged Mismatch (found 4), change rolled back' ELSE PRINT 'FAIL check meters mismatch';
+
+
+-- =====================================================================
+-- TSO-2 / TSO-3 / TSO-4: τρέχουσα κατάσταση, aggregates, load shedding
+-- (οι μεταβλητές ξεκινούν με @s_ για να μη συγκρούονται με του TSO-1)
+-- =====================================================================
+
+-- ---------- Έλεγχος ρόλου (operator = UserID 2) ----------
+BEGIN TRY EXEC sp_tso_refresh_current_state 2; PRINT 'FAIL operator refreshed state'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53500 PRINT 'OK   refresh state: non-TSO -> 53500' ELSE PRINT 'FAIL refresh role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_current_state 2; PRINT 'FAIL operator read state'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53500 PRINT 'OK   current state: non-TSO -> 53500' ELSE PRINT 'FAIL state role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_aggregates 2, 1, 'Day', '2026-11-18', '2026-11-19'; PRINT 'FAIL operator read aggregates'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53500 PRINT 'OK   aggregates: non-TSO -> 53500' ELSE PRINT 'FAIL aggregates role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_load_shed 2, 2, N'δοκιμή'; PRINT 'FAIL operator shed load'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53500 PRINT 'OK   load shed: non-TSO -> 53500' ELSE PRINT 'FAIL shed role: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_list_shed_orders 2; PRINT 'FAIL operator listed orders'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53500 PRINT 'OK   list shed orders: non-TSO -> 53500' ELSE PRINT 'FAIL list role: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- sp_tso_refresh_current_state ----------
+DECLARE @s_ref TABLE (RefInterval DATETIME2(0), LeafCount INT, RowsAffected INT);
+INSERT @s_ref EXEC sp_tso_refresh_current_state 8;
+DECLARE @s_latest DATETIME2(0) = (SELECT MAX(IntervalStart) FROM VALIDATED_READING WHERE ObisCode IN ('1.8.0', '2.8.0'));
+DECLARE @s_leaves INT = (SELECT COUNT(*) FROM TRANSFORMER t WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = t.TransformerID));
+IF (SELECT RefInterval FROM @s_ref) = @s_latest AND (SELECT LeafCount FROM @s_ref) = @s_leaves
+    PRINT 'OK   refresh: RefInterval is the latest validated interval, one pass over all leaves' ELSE PRINT 'FAIL refresh result';
+IF (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID IN (4, 5, 6) AND ObisCode IN ('1.8.0', '2.8.0')) = 6
+    PRINT 'OK   refresh: leaves 4, 5, 6 have rows for 1.8.0 and 2.8.0' ELSE PRINT 'FAIL refresh rows for leaves 4, 5, 6';
+IF (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE) = 2 * @s_leaves
+   AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_CURRENT_STATE cs JOIN TRANSFORMER k ON k.ParentTransformerID = cs.TransformerID)
+   AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_CURRENT_STATE WHERE RefInterval <> @s_latest)
+    PRINT 'OK   refresh: only leaves stored (2 codes each), all with the same RefInterval' ELSE PRINT 'FAIL refresh stores non-leaves or mixed intervals';
+IF NOT EXISTS (
+    SELECT 1
+    FROM TRANSFORMER_CURRENT_STATE cs
+    OUTER APPLY (SELECT SUM(vr.Value) AS S, COUNT(DISTINCT vr.MeterID) AS C
+                 FROM METER m JOIN VALIDATED_READING vr ON vr.MeterID = m.MeterID
+                 WHERE m.TransformerID = cs.TransformerID AND vr.ObisCode = cs.ObisCode AND vr.IntervalStart = @s_latest) d
+    WHERE cs.SumValue <> ISNULL(d.S, 0) OR cs.MeterCount <> ISNULL(d.C, 0))
+    PRINT 'OK   refresh: every stored SumValue/MeterCount equals a direct SUM over VALIDATED_READING' ELSE PRINT 'FAIL refresh sums differ from direct SUM';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'TRANSFORMER_CURRENT_STATE' AND Action = 'Refresh' AND PerformedBy = 8)
+    PRINT 'OK   refresh: AUDIT_LOG row written' ELSE PRINT 'FAIL refresh audit';
+
+-- Δεύτερη ανανέωση: ίδιο αποτέλεσμα, καμία διπλή γραμμή.
+DECLARE @s_cnt1 INT = (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE);
+EXEC sp_tso_refresh_current_state 8;
+IF (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE) = @s_cnt1 PRINT 'OK   refresh twice: MERGE does not duplicate rows' ELSE PRINT 'FAIL refresh twice';
+
+-- ---------- sp_tso_current_state ----------
+DECLARE @s_st TABLE (TransformerID INT, Name NVARCHAR(50), Level INT, Path NVARCHAR(4000), RefInterval DATETIME2(0),
+                     ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), MeterCount INT);
+INSERT @s_st EXEC sp_tso_current_state 8;
+IF (SELECT COUNT(*) FROM @s_st) = (SELECT COUNT(*) FROM TRANSFORMER) AND (SELECT Level FROM @s_st WHERE TransformerID = 1) = 0
+   AND (SELECT Level FROM @s_st WHERE TransformerID = 4) = 2
+    PRINT 'OK   current state: one row per node, Level from the root' ELSE PRINT 'FAIL current state shape';
+IF (SELECT ImportKWh FROM @s_st WHERE TransformerID = 1) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0')
+   AND (SELECT ExportKWh FROM @s_st WHERE TransformerID = 1) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '2.8.0')
+   AND (SELECT NetKWh FROM @s_st WHERE TransformerID = 1) = (SELECT ImportKWh - ExportKWh FROM @s_st WHERE TransformerID = 1)
+    PRINT 'OK   current state: root = sum of all leaves (import, export, net)' ELSE PRINT 'FAIL current state root sum';
+IF (SELECT ImportKWh FROM @s_st WHERE TransformerID = 2) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0' AND TransformerID IN (4, 5))
+   AND (SELECT MeterCount FROM @s_st WHERE TransformerID = 2) = (SELECT SUM(MeterCount) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0' AND TransformerID IN (4, 5))
+   AND (SELECT ImportKWh FROM @s_st WHERE TransformerID = 4) = (SELECT SumValue FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0' AND TransformerID = 4)
+    PRINT 'OK   current state: transformer 2 = leaves 4 + 5, a leaf equals its stored row' ELSE PRINT 'FAIL current state intermediate node';
+IF (SELECT RefInterval FROM @s_st WHERE TransformerID = 1) = @s_latest PRINT 'OK   current state: RefInterval shown' ELSE PRINT 'FAIL current state RefInterval';
+DELETE @s_st;
+INSERT @s_st EXEC sp_tso_current_state 8, 2;
+IF (SELECT COUNT(*) FROM @s_st) = 3 AND (SELECT Level FROM @s_st WHERE TransformerID = 2) = 0 AND NOT EXISTS (SELECT 1 FROM @s_st WHERE TransformerID IN (1, 3, 6))
+    PRINT 'OK   current state of transformer 2: itself + subtree only' ELSE PRINT 'FAIL current state subtree';
+BEGIN TRY EXEC sp_tso_current_state 8, 99999; PRINT 'FAIL unknown transformer accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53601 PRINT 'OK   current state: unknown transformer -> 53601' ELSE PRINT 'FAIL current state unknown: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- sp_tso_aggregates ----------
+DECLARE @s_ag TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), LeafCount INT);
+INSERT @s_ag EXEC sp_tso_aggregates 8, 1, 'Day', '2026-11-18', '2026-11-19';
+IF (SELECT COUNT(*) FROM @s_ag) = 2
+   AND (SELECT SUM(ImportKWh) FROM @s_ag) = (SELECT SUM(a.SumValue) FROM TRANSFORMER_AGGREGATE a
+        WHERE a.PeriodType = 'Day' AND a.ObisCode = '1.8.0' AND a.PeriodStart BETWEEN '2026-11-18' AND '2026-11-19'
+          AND NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = a.TransformerID))
+   AND (SELECT SUM(ExportKWh) FROM @s_ag) = (SELECT SUM(a.SumValue) FROM TRANSFORMER_AGGREGATE a
+        WHERE a.PeriodType = 'Day' AND a.ObisCode = '2.8.0' AND a.PeriodStart BETWEEN '2026-11-18' AND '2026-11-19'
+          AND NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = a.TransformerID))
+    PRINT 'OK   aggregates Day 18-19/11 at the root = sum of the leaf rows' ELSE PRINT 'FAIL aggregates Day root';
+IF (SELECT LeafCount FROM @s_ag WHERE PeriodStart = '2026-11-18') = 3
+   AND (SELECT NetKWh FROM @s_ag WHERE PeriodStart = '2026-11-18') = (SELECT ImportKWh - ExportKWh FROM @s_ag WHERE PeriodStart = '2026-11-18')
+    PRINT 'OK   aggregates Day: LeafCount 3 and Net = Import - Export' ELSE PRINT 'FAIL aggregates Day leaf count';
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 2, 'Day', '2026-11-18', '2026-11-18';
+IF (SELECT COUNT(*) FROM @s_ag) = 1 AND (SELECT LeafCount FROM @s_ag) = 2
+   AND (SELECT ImportKWh FROM @s_ag) = (SELECT SUM(SumValue) FROM TRANSFORMER_AGGREGATE
+        WHERE TransformerID IN (4, 5) AND PeriodType = 'Day' AND ObisCode = '1.8.0' AND PeriodStart = '2026-11-18')
+    PRINT 'OK   aggregates Day for transformer 2 = leaves 4 + 5' ELSE PRINT 'FAIL aggregates Day transformer 2';
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 6, 'Day', '2026-11-18', '2026-11-18';
+IF (SELECT COUNT(*) FROM @s_ag) = 1 AND (SELECT LeafCount FROM @s_ag) = 1
+   AND (SELECT ExportKWh FROM @s_ag) = (SELECT SumValue FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 6 AND PeriodType = 'Day' AND ObisCode = '2.8.0' AND PeriodStart = '2026-11-18')
+    PRINT 'OK   aggregates Day for a leaf = its own row' ELSE PRINT 'FAIL aggregates Day leaf';
+
+-- Quarter: Q4 2026 = ένα αποτέλεσμα. Η σύγκριση με τα Day γίνεται μόνο αν δεν υπάρχουν αποθηκευμένα Month στο τρίμηνο.
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 1, 'Quarter', '2026-11-18', '2026-11-19';
+IF (SELECT COUNT(*) FROM @s_ag) = 1 AND (SELECT PeriodStart FROM @s_ag) = '2026-10-01'
+    PRINT 'OK   aggregates Quarter -> one row, PeriodStart 2026-10-01 (Q4 2026)' ELSE PRINT 'FAIL aggregates Quarter shape';
+IF EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE WHERE PeriodType = 'Month' AND PeriodStart BETWEEN '2026-10-01' AND '2026-12-31')
+    PRINT 'OK   aggregates Quarter = Day sum (skipped: stored Month rows exist in Q4)'
+ELSE IF (SELECT ImportKWh FROM @s_ag) = (SELECT SUM(a.SumValue) FROM TRANSFORMER_AGGREGATE a
+            WHERE a.PeriodType = 'Day' AND a.ObisCode = '1.8.0' AND a.PeriodStart BETWEEN '2026-10-01' AND '2026-12-31'
+              AND NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = a.TransformerID))
+        AND (SELECT ExportKWh FROM @s_ag) = (SELECT SUM(a.SumValue) FROM TRANSFORMER_AGGREGATE a
+            WHERE a.PeriodType = 'Day' AND a.ObisCode = '2.8.0' AND a.PeriodStart BETWEEN '2026-10-01' AND '2026-12-31'
+              AND NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = a.TransformerID))
+    PRINT 'OK   aggregates Quarter Q4 2026 = sum of the leaf Day rows' ELSE PRINT 'FAIL aggregates Quarter sum';
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 1, 'Month', '2026-11-05', '2026-11-30';
+IF (SELECT COUNT(*) FROM @s_ag) = 1 AND (SELECT PeriodStart FROM @s_ag) = '2026-11-01'
+   AND (SELECT ImportKWh FROM @s_ag) > 0
+    PRINT 'OK   aggregates Month -> November rolled up (whole month)' ELSE PRINT 'FAIL aggregates Month';
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 1, 'Year', '2026-01-01', '2026-12-31';
+IF (SELECT COUNT(*) FROM @s_ag) = 1 AND (SELECT PeriodStart FROM @s_ag) = '2026-01-01'
+    PRINT 'OK   aggregates Year -> one row, PeriodStart 2026-01-01' ELSE PRINT 'FAIL aggregates Year';
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 1, 'Day', '2020-01-01', '2020-01-31';
+IF NOT EXISTS (SELECT 1 FROM @s_ag) PRINT 'OK   aggregates for a period without data -> 0 rows' ELSE PRINT 'FAIL aggregates empty period';
+
+-- Ο πίνακας δεν αλλάζει από τα aggregates.
+DECLARE @s_agcnt INT = (SELECT COUNT(*) FROM TRANSFORMER_AGGREGATE), @s_agsum DECIMAL(18,4) = (SELECT SUM(SumValue) FROM TRANSFORMER_AGGREGATE);
+DELETE @s_ag;
+INSERT @s_ag EXEC sp_tso_aggregates 8, 1, 'Quarter', '2026-10-01', '2026-12-31';
+IF (SELECT COUNT(*) FROM TRANSFORMER_AGGREGATE) = @s_agcnt AND (SELECT SUM(SumValue) FROM TRANSFORMER_AGGREGATE) = @s_agsum
+    PRINT 'OK   aggregates never write to TRANSFORMER_AGGREGATE' ELSE PRINT 'FAIL aggregates wrote to the table';
+
+BEGIN TRY EXEC sp_tso_aggregates 8, 1, 'Week', '2026-11-18', '2026-11-19'; PRINT 'FAIL bad period type accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53610 PRINT 'OK   aggregates: bad period type -> 53610' ELSE PRINT 'FAIL period type: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_aggregates 8, 1, 'Day', '2026-11-19', '2026-11-18'; PRINT 'FAIL inverted dates accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53611 PRINT 'OK   aggregates: From > To -> 53611' ELSE PRINT 'FAIL inverted dates: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_aggregates 8, 99999, 'Day', '2026-11-18', '2026-11-19'; PRINT 'FAIL unknown transformer accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53612 PRINT 'OK   aggregates: unknown transformer -> 53612' ELSE PRINT 'FAIL aggregates unknown: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- sp_tso_load_shed ----------
+DECLARE @s_o0 INT = (SELECT COUNT(*) FROM LOAD_SHED_ORDER), @s_c0 INT = (SELECT COUNT(*) FROM REMOTE_COMMAND);
+DECLARE @s_shed TABLE (ShedOrderID INT, CommandCount INT);
+INSERT @s_shed EXEC sp_tso_load_shed 8, 2, N'Δοκιμή TSO-4: υπερφόρτωση δικτύου';
+DECLARE @s_oid INT = (SELECT ShedOrderID FROM @s_shed);
+IF @s_oid IS NOT NULL AND (SELECT CommandCount FROM @s_shed) = 3
+   AND (SELECT COUNT(*) FROM LOAD_SHED_ORDER) = @s_o0 + 1 AND (SELECT COUNT(*) FROM REMOTE_COMMAND) = @s_c0 + 3
+   AND EXISTS (SELECT 1 FROM LOAD_SHED_ORDER WHERE ShedOrderID = @s_oid AND Status = 'Issued' AND TransformerID = 2 AND OrderedBy = 8)
+    PRINT 'OK   load shed on transformer 2 -> one order, 3 commands' ELSE PRINT 'FAIL load shed on transformer 2';
+IF (SELECT COUNT(*) FROM REMOTE_COMMAND WHERE ShedOrderID = @s_oid AND MeterID IN (1, 2, 4)) = 3
+   AND (SELECT COUNT(*) FROM REMOTE_COMMAND WHERE ShedOrderID = @s_oid) = 3
+    PRINT 'OK   load shed: commands only for the Active meters 1, 2, 4' ELSE PRINT 'FAIL load shed meters';
+IF NOT EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE ShedOrderID = @s_oid
+               AND (CommandType <> 'Load shed' OR Status <> 'Sent' OR RequestedBy <> 8 OR ISJSON(Parameters) <> 1))
+   AND NOT EXISTS (SELECT 1 FROM REMOTE_COMMAND rc JOIN METER m ON m.MeterID = rc.MeterID WHERE rc.ShedOrderID = @s_oid AND m.Status <> 'Active')
+    PRINT 'OK   load shed: all commands Load shed + Sent, RequestedBy = TSO, Parameters valid JSON' ELSE PRINT 'FAIL load shed command fields';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'LOAD_SHED_ORDER' AND ObjectID = CAST(@s_oid AS VARCHAR(20)) AND Action = 'Create' AND PerformedBy = 8)
+    PRINT 'OK   load shed: AUDIT_LOG row' ELSE PRINT 'FAIL load shed audit';
+
+-- Το root: ο Pending μετρητής 5 και ο Active 3 κάτω από τον 3 -> 4 εντολές (1, 2, 3, 4).
+DELETE @s_shed;
+INSERT @s_shed EXEC sp_tso_load_shed 8, 1, N'Δοκιμή TSO-4: όλο το δίκτυο';
+IF (SELECT CommandCount FROM @s_shed) = 4
+   AND NOT EXISTS (SELECT 1 FROM REMOTE_COMMAND WHERE ShedOrderID = (SELECT ShedOrderID FROM @s_shed) AND MeterID = 5)
+    PRINT 'OK   load shed on the root -> 4 Active meters, the Pending meter 5 skipped' ELSE PRINT 'FAIL load shed root';
+
+-- Απορρίψεις: τίποτα δεν μένει πίσω.
+SET @s_o0 = (SELECT COUNT(*) FROM LOAD_SHED_ORDER);
+SET @s_c0 = (SELECT COUNT(*) FROM REMOTE_COMMAND);
+DECLARE @s_empty INT = (SELECT TransformerID FROM TRANSFORMER WHERE Name = N'T-TEST-LIM-A');
+BEGIN TRY EXEC sp_tso_load_shed 8, @s_empty, N'Δοκιμή χωρίς μετρητές'; PRINT 'FAIL shed on transformer without meters accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53622 PRINT 'OK   load shed: no active meters below -> 53622' ELSE PRINT 'FAIL shed no meters: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_load_shed 8, 5, N'   '; PRINT 'FAIL empty reason accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53620 PRINT 'OK   load shed: empty reason -> 53620' ELSE PRINT 'FAIL shed reason: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_tso_load_shed 8, 99999, N'Δοκιμή'; PRINT 'FAIL unknown transformer accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53621 PRINT 'OK   load shed: unknown transformer -> 53621' ELSE PRINT 'FAIL shed unknown: ' + ERROR_MESSAGE(); END CATCH;
+IF (SELECT COUNT(*) FROM LOAD_SHED_ORDER) = @s_o0 AND (SELECT COUNT(*) FROM REMOTE_COMMAND) = @s_c0
+    PRINT 'OK   load shed: refused calls left no order and no command behind' ELSE PRINT 'FAIL refused load shed left rows';
+
+-- ---------- sp_tso_list_shed_orders ----------
+DECLARE @s_lst TABLE (ShedOrderID INT, CreatedAt DATETIME2(0), Status VARCHAR(16), Reason NVARCHAR(500), TransformerID INT,
+                      TransformerName NVARCHAR(50), OrderedByName NVARCHAR(50), Commands INT, AwaitingApproval INT, Sent INT,
+                      Acknowledged INT, Failed INT, Cancelled INT);
+INSERT @s_lst EXEC sp_tso_list_shed_orders 8;
+IF (SELECT COUNT(*) FROM @s_lst) = (SELECT COUNT(*) FROM LOAD_SHED_ORDER)
+   AND (SELECT Commands FROM @s_lst WHERE ShedOrderID = @s_oid) = 3 AND (SELECT Sent FROM @s_lst WHERE ShedOrderID = @s_oid) = 3
+   AND (SELECT TransformerName FROM @s_lst WHERE ShedOrderID = @s_oid) = (SELECT Name FROM TRANSFORMER WHERE TransformerID = 2)
+    PRINT 'OK   list shed orders: transformer name and command counts by status' ELSE PRINT 'FAIL list shed orders';
