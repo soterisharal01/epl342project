@@ -22,11 +22,11 @@ IMPORT = os.path.join(ROOT, 'sql', 'import.sql')
 BASE = 100000
 PW = '$2y$10$9.385gryv47XiLky6c9V8O8Q4hKNuLvd3U/2gssSr7furIeuVaorS'   # same demo hash as base.py (Mdms2026!)
 
-N_CONSUMERS = 2000
-N_EXTRA_PREMISES = 200
-N_TECH = 30
-N_CONTRACTS = 1500
-N_READING_METERS = 80         # 2 per leaf (department DB is capped at 27 MB, see data/README.md)
+N_CONSUMERS = 1000
+N_EXTRA_PREMISES = 100
+N_TECH = 25
+N_CONTRACTS = 800
+N_READING_METERS = 40         # 1 per leaf (department DB is capped at 27 MB, see data/README.md)
 READ_START = datetime(2026, 11, 1)
 READ_DAYS = 7
 SLOTS = 96
@@ -176,7 +176,7 @@ emit('TRANSFORMER', ['TransformerID', 'Name', 'Latitude', 'Longitude', 'Geofence
 NP = N_CONSUMERS + N_EXTRA_PREMISES
 prem, pleaf = [], []
 reading_idx = [i for i in range(N_READING_METERS)]          # meters 0..199 (5 per leaf) get readings
-prosumer = {i for i in reading_idx if i % 5 == 0}           # 40 prosumers (20%)
+prosumer = {i for i in reading_idx if i % 7 == 0}           # 6 prosumers
 for i in range(NP):
     leaf = LEAVES[i % NL]
     b = leaf[1]
@@ -243,7 +243,7 @@ emit('PAYMENT', ['PaymentID', 'Amount', 'PaidAt', 'Reference', 'InvoiceID', 'Ban
 
 emit('PORTFOLIO', ['PortfolioID', 'Name', 'AggregatorID'], [(BASE + k, f'Χαρτοφυλάκιο LRG-{k + 1}', 1) for k in range(5)], True)
 inc = []
-for n, i in enumerate(sorted(prosumer) + list(range(1, 2000, 7))):
+for n, i in enumerate(sorted(prosumer) + list(range(1, N_CONSUMERS, 7))):
     if any(x[1] == BASE + i for x in inc):
         continue
     inc.append((BASE + (n % 5), BASE + i, date(2026, 5, 1), None))
@@ -266,7 +266,7 @@ for i in range(N_CONSUMERS):
 emit('METER', ['MeterID', 'SerialNumber', 'NetworkID', 'Firmware', 'MaxLoadAmps', 'Latitude', 'Longitude', 'Status', 'ModelID', 'CommTypeID', 'TransformerID'], meters, True)
 emit('METER_CONNECTED_PHASE', ['MeterID', 'ConnectedPhase'], phases)
 sreq = []
-for k in range(150):
+for k in range(80):
     i = R.randrange(N_CONSUMERS)
     st = R.choice(['Submitted', 'Assigned', 'Resolved', 'Cancelled'])
     sreq.append((BASE + k, R.choice(['Meter check', 'Fault report']), R.choice(['Ο μετρητής δείχνει λάθος κατανάλωση.', 'Διακοπές επικοινωνίας του μετρητή.', 'Ζητώ έλεγχο του μετρητή.']),
@@ -441,15 +441,16 @@ assert all(u[13] == 'Approved' and u[15] == 2 and u[14] and u[11] and u[12] for 
 
 print('self-checks OK')
 
-# stored-size estimate: department DB cap is 27 MB (base objects use a few MB), so the set must stay <= 15 MB incl. indexes
-ROWB = {'USER_ACCOUNT': 330, 'CONSUMER_NOTIFICATION_CHANNEL': 20, 'IN_CATEGORY': 12, 'GEOFENCE': 80, 'TRANSFORMER': 80, 'PREMISE': 140,
-        'HOLDING': 30, 'BANK_ACCOUNT': 90, 'ACCOUNT_FOR': 12, 'SUPPLY_CONTRACT': 40, 'INVOICE': 50, 'PAYMENT': 80, 'PORTFOLIO': 60,
-        'INCLUDES': 30, 'METER': 130, 'METER_CONNECTED_PHASE': 20, 'SERVICE_REQUEST': 200, 'FIELD_TASK': 230, 'METER_INSTALLATION': 70,
-        'DOCUMENT': 150, 'VEE_RUN': 40, 'TELEMETRY_PACKET': 330, 'RAW_READING': 40, 'VALIDATED_READING': 50, 'METER_AGGREGATE': 50,
+# stored-size estimate: department DB cap is 27 MB and system objects use 16.5 MB, so the large set must stay <= 7 MB
+# measured on the department DB (clustered index bytes/row); x1.2 for other indexes. Others: estimates.
+ROWB = {'USER_ACCOUNT': 224, 'CONSUMER_NOTIFICATION_CHANNEL': 40, 'IN_CATEGORY': 12, 'GEOFENCE': 80, 'TRANSFORMER': 80, 'PREMISE': 96,
+        'HOLDING': 30, 'BANK_ACCOUNT': 98, 'ACCOUNT_FOR': 12, 'SUPPLY_CONTRACT': 40, 'INVOICE': 52, 'PAYMENT': 70, 'PORTFOLIO': 60,
+        'INCLUDES': 30, 'METER': 93, 'METER_CONNECTED_PHASE': 20, 'SERVICE_REQUEST': 200, 'FIELD_TASK': 163, 'METER_INSTALLATION': 93,
+        'DOCUMENT': 150, 'VEE_RUN': 40, 'TELEMETRY_PACKET': 454, 'RAW_READING': 65, 'VALIDATED_READING': 75, 'METER_AGGREGATE': 50,
         'TRANSFORMER_AGGREGATE': 50}
-EST_MB = sum(n * ROWB[t] * 1.5 for t, n in COUNTS) / 1e6
-print(f'estimated stored size (rows x bytes x 1.5 for indexes): {EST_MB:.1f} MB')
-assert EST_MB <= 15, EST_MB
+EST_MB = sum(n * ROWB[t] * 1.2 for t, n in COUNTS) / 1e6
+print(f'estimated stored size (measured bytes/row x 1.2): {EST_MB:.1f} MB')
+assert EST_MB <= 7, EST_MB
 
 # ---------------------------------------------------------------- header + footer of import.sql
 imp.close()
@@ -459,7 +460,7 @@ head = [
     '-- Run order: drop.sql -> create.sql -> procs_*.sql -> indexes.sql -> data/small/00_base.sql -> THIS FILE.',
     '-- Runs on a database that has only the base data. IDs of every IDENTITY table start at 100000.',
     '-- The same rows are in data/large/NN_TABLE.dat (CSV, UTF-8, header row, empty field = NULL, times UTC).',
-    '-- Sized for the 27 MB department database cap. No long transaction: every GO batch (~2000 rows) commits on its own (XACT_ABORT ON); on an error rebuild and rerun.',
+    '-- Sized for the 27 MB department database cap (16.5 MB used by system objects). No long transaction: every GO batch (~2000 rows) commits on its own (XACT_ABORT ON); on an error rebuild and rerun.',
     'SET NOCOUNT ON;', 'SET XACT_ABORT ON;', 'GO', '']
 foot = ['', "PRINT N'import.sql: OK';"]
 foot += [f"PRINT N'  {t}: {n}';" for t, n in COUNTS]

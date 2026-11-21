@@ -34,17 +34,17 @@ Loads **after** `data/small/00_base.sql`. All IDENTITY IDs start at 100000. User
 
 | Table | Rows |
 |---|---|
-| USER_ACCOUNT | 2,030 (2,000 consumers, 30 approved technicians) |
+| USER_ACCOUNT | 1,025 (1,000 consumers, 25 approved technicians) |
 | GEOFENCE / TRANSFORMER | 44 / 44 (4 mid-level + 40 new leaves under base transformers 2 and 3) |
-| PREMISE / HOLDING | 2,200 / 2,200 |
-| BANK_ACCOUNT / SUPPLY_CONTRACT | 1,500 / 1,500 |
-| INVOICE / PAYMENT | 4,500 (3 months per contract) / 3,000 |
-| METER / METER_CONNECTED_PHASE | 2,000 Active / 3,000 |
-| FIELD_TASK / METER_INSTALLATION | 2,000 Done installations / 2,000 Confirmed |
-| TELEMETRY_PACKET | 560 (one per meter per day, tiny JSON) |
-| RAW_READING / VALIDATED_READING | 64,512 / 64,512 (80 meters x 7 days x 96, 16 prosumers also 2.8.0) |
-| METER_AGGREGATE / TRANSFORMER_AGGREGATE | 672 / 336 (Day rows) |
+| PREMISE / HOLDING | 1,100 / 1,100 |
+| BANK_ACCOUNT / SUPPLY_CONTRACT | 800 / 800 |
+| INVOICE / PAYMENT | 2,400 (3 months per contract) / 1,600 |
+| METER / METER_CONNECTED_PHASE | 1,000 Active / 1,500 |
+| FIELD_TASK / METER_INSTALLATION | 1,000 Done installations / 1,000 Confirmed |
+| TELEMETRY_PACKET | 280 (one per reading meter per day, tiny JSON) |
+| RAW_READING / VALIDATED_READING | 30,912 / 30,912 (40 meters x 7 days x 96, 6 prosumers also 2.8.0) |
+| METER_AGGREGATE / TRANSFORMER_AGGREGATE | 322 / 322 (Day rows) |
 
-**Size cap:** each student database on the department server holds at most 27 MB of data (20 MB log). After create + base data only about 15 MB is left, so the set is sized to an estimated 13 MB stored (rows x bytes x 1.5, printed by the generator). It is still far above "thousands of rows" (161,301 rows). Import commits every ~2,000 rows (`GO`).
+**Size cap:** each student database on the department server holds at most 27 MB of data (20 MB log), and system objects (catalog, procedure code) already use 16.5 MB. So the large set must stay under about 7 MB stored. The generator estimates it from measured bytes per row x 1.2 (now 6.8 MB) and refuses to write above 7 MB. Total 78,609 rows, still far above "thousands of rows". Import commits every ~2,000 rows (`GO`).
 
 Import = run `sql/import.sql` in SSMS (`BULK INSERT` on the department server cannot see our files). Decisions B8, B9.
