@@ -4,7 +4,7 @@ Lock: free
 
 Branch: task/DOC-1-user-manual
 Doc: docs/21-user-manual.md (deliverable list: docs/18-deliverables-and-timeline.md)
-Status: finished (in review)
+Status: draft (task stays open; the draft text can be merged so others can see it)
 
 ## Next step
 After review and merge: (1) when TEC-6..10 is merged, replace the "(in review)" parts of sections 3.4, 3.5 and 4.5 with the

@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Task: DOC-1 in [tasks.md](tasks.md) · Deliverable list: [18-deliverables-and-timeline.md](18-deliverables-and-timeline.md)
 
-> **Status: text written for every page on `main` (DOC-1).** Screenshots are still missing: they are added from the
+> **Status: DRAFT, NOT FINISHED (DOC-1 stays open on the task board).** Text written for every page on `main` as of 21/11. Screenshots are still missing: they are added from the
 > local demo or the demo account before the document is converted to `docx/`. The meter installation, meter confirmation,
 > remote command and tamper pages (TEC-6..10) are described from their open branch and marked *(in review)*.
 
