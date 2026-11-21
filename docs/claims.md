@@ -13,7 +13,6 @@ The task's PR deletes its row, so finished tasks disappear when merged.
 | TEC-2 | task/TEC-2-docs-approval | 2026-11-21 | TEC-2/3/4 documents, availability, approval (stopped early) |
 | MKT-4 | task/MKT-4-pages | 2026-11-21 | Supplier/aggregator pages (stopped early) |
 | DAT-1 | task/DAT-1-large-data | 2026-11-21 | Large data set DAT-1..4 (stopped early) |
-| TEC-6 | task/TEC-6-install | 2026-11-21 17:20 | TEC-6/7 install + confirm, TEC-8 commands, TEC-9 anti-tamper, TEC-10 pages |
 | TSO-6 | task/TSO-6-map | 2026-11-21 17:20 | Leaflet map (bonus +10%) |
 | GDP-3 | task/GDP-3-pages | 2026-11-21 17:20 | GDPR pages: consumer, operator, admin |
 | PRF-1 | task/PRF-1-indexes | 2026-11-21 17:20 | PRF-1/2/3: 3 indexes + before/after case |

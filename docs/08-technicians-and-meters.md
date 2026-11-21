@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: TEC-1 … TEC-10 in [tasks.md](tasks.md)
 
-> **Status: partly built.** TEC-1, TEC-2, TEC-3, TEC-4 and TEC-5 are written and await the coordinator's test run. The other tasks are plans.
+> **Status: built, awaiting the coordinator's test run.** TEC-1 to TEC-10 are written.
 
 ## Requirements
 
@@ -65,21 +65,30 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 - [x] 2.1 Approval, rejection and **every** status change of a technician are logged.
 - [ ] 2.2 Task types: installation, replacement, technical check, anti-tamper. Each task: premise and/or meter, technician, type, schedule, status, result.
 - [ ] 2.2 The technician **accepts** the task and **sees the meter's location**. Notes, findings, evidence = the task's history.
-- [ ] 2.3 Physical meter ↔ Premise ID, with serial, type, firmware, communication, phases, Amps, photos, and the 3 equipment documents (calibration, CE & protocol, telemetry encryption) with code, dates, file.
-- [ ] 2.3 The meter's transformer comes from its coordinates (agreement X7).
-- [ ] 2.3 A new or replaced meter is **not** available automatically. The Operator checks, records the result, confirms, and **only then** `Active`.
-- [ ] 2.3 Replacement does **not** destroy the premise's old time series.
-- [ ] 2.4 A command is a **command record**, not a field change: requester/executor, target, time, status, **successive attempts** until ACK. Only where role and flow allow it (B15).
-- [ ] 2.4 Security / anti-tamper checks: responsible person, date, comments/findings, people to notify. Critical findings go to the event log (agreement X8) and can become a **new task** (X4).
+- [x] 2.3 Physical meter ↔ Premise ID, with serial, type, firmware, communication, phases, Amps, photos, and the 3 equipment documents (calibration, CE & protocol, telemetry encryption) with code, dates, file.
+- [x] 2.3 The meter's transformer comes from its coordinates (agreement X7).
+- [x] 2.3 A new or replaced meter is **not** available automatically. The Operator checks, records the result, confirms, and **only then** `Active`.
+- [x] 2.3 Replacement does **not** destroy the premise's old time series.
+- [x] 2.4 A command is a **command record**, not a field change: requester/executor, target, time, status, **successive attempts** until ACK. Only where role and flow allow it (B15).
+- [x] 2.4 Security / anti-tamper checks: responsible person, date, comments/findings, people to notify. Critical findings go to the event log (agreement X8) and can become a **new task** (X4).
 
-## Planned
+### TEC-6 to TEC-10 (install, confirm, commands, anti-tamper, pages)
 
-| Task | Procedures | Tables | Page |
-|---|---|---|---|
-| TEC-6 ★ | `sp_tech_install_meter`: one transaction writes `METER` (`Status = 'Pending confirmation'`), `METER_INSTALLATION`, `METER_CONNECTED_PHASE`. A replacement closes the old installation and **keeps** its readings. Then `sp_tech_add_meter_document` | `METER`, `METER_INSTALLATION`, `METER_CONNECTED_PHASE`, `DOCUMENT` | `technician/install.php` |
-| TEC-7 ★ | `sp_operator_confirm_meter(@UserID, @InstallationID, @Approve, @Comment)` | `METER_INSTALLATION`, `METER`, `AUDIT_LOG` | `operator/tec_meters.php` |
-| TEC-8 | `sp_tech_request_command`, `sp_command_record_attempt` (simulated ACK) | `REMOTE_COMMAND`, `COMMAND_ATTEMPT` | `technician/commands.php` |
-| TEC-9 | `sp_task_create` with type Anti-tamper check, `sp_event_create_task` (agreement X4) | `FIELD_TASK`, `NOTIFIES`, `EVENT`, `LEADS_TO` | `operator/tec_events.php` |
-| TEC-10 | Pages for the tasks above | | |
+| Item | What it does |
+|---|---|
+| `sp_tech_install_meter` | Own `Accepted` Installation/Replacement task. One transaction: `METER` (`Pending confirmation`, `TransformerID` = **leaf** geofence containing the coordinates, X7, smallest geofence first like `sp_tso_locate`), `METER_CONNECTED_PHASE` (count must equal `METER_MODEL.PhaseCount`), `METER_INSTALLATION` (`Pending`, `TaskID`). Replacement: closes the old open installation (`RemovedAt`), old meter `Retired`, **readings untouched**. Returns `MeterID, InstallationID, TransformerID`. Photos: existing `sp_tech_add_attachment`. |
+| `sp_tech_add_meter_document` | Calibration certificate / CE and protocol declaration / Encryption certificate for a meter the technician installed, while the installation is `Pending`. |
+| `sp_tech_list_installs`, `sp_ref_list_comm_types` | Own installations with document count; public lookup of communication types for the form. |
+| `sp_operator_list_pending_meters`, `sp_operator_list_meter_documents` | Pending installations (documents, photos, transformer, technician) and one meter's documents. |
+| `sp_operator_confirm_meter` | `@Approve = 1` needs all 3 document types present, not `Rejected`, not expired; then installation `Confirmed`, valid `Pending` documents `Accepted`, meter `Active`. `@Approve = 0` needs a comment: installation `Rejected`, meter **stays** `Pending confirmation` (a new task is needed for a retry). `AUDIT_LOG` rows for each change. |
+| `sp_tech_request_command` | Types `Disconnect`, `Reconnect`, `Firmware upgrade` (B15; `Load shed` is TSO only). Only for a non-retired meter where the technician has an `Accepted` task (on the meter, or on the premise where it is installed). Status `Awaiting approval`. `Parameters` must be JSON. |
+| `sp_operator_approve_command` | `Awaiting approval` -> `Sent` (`ApprovedBy`), or with `@Approve = 0` + comment -> `Cancelled`. |
+| `sp_command_record_attempt` | Operator or the requesting technician (simulated device). Command must be `Sent`. `AttemptNo` = max + 1 under `UPDLOCK` on the command row. `ACK` -> `Acknowledged`; `NAK`/`Timeout` keep `Sent`; the 3rd failure -> `Failed`. Audit only on status changes. Returns `AttemptNo, Status`. |
+| `sp_command_list`, `sp_command_list_attempts`, `sp_tech_list_command_targets` | Operator: all commands; technician: own. Attempts of a command. Meters a technician may command. |
+| `sp_tech_record_tamper_check` | Own `Accepted` Anti-tamper task: `TASK_NOTE` `Finding`, `NOTIFIES` for the user list, and if `@Critical` an `EVENT` `'Tamper finding'` (B14/X8, `Critical`, `Open`, meter from the task or its premise's open installation). |
+| `sp_operator_list_open_events`, `sp_event_create_task` | Open events; X4: Open event with a meter -> `FIELD_TASK` Anti-tamper check (meter + premise of its open installation) + `LEADS_TO` + event `In progress`. Event without a meter is refused. |
+| Pages | `technician/40_install.php`, `technician/50_commands.php` (also the tamper-check form), `operator/tec_30_meters.php`, `operator/tec_40_events.php` (events and command approval). |
+| Tests | One block at the end of `test_technician.sql`: own premise in leaf 4, meters `SN-TEC6-*`, everything deleted at the end (Active meters on leaves 4/5/6 return to the starting count). |
 
-Base data already has `tech1` (Approved), `tech2` (Pending) and meter 5 (`Pending confirmation`) for demos.
+`THROW` numbers: 52131 task not Accepted, 52132 task type, 52133 task already has an installation, 52134 serial/network ID exists, 52135 phases, 52136 no leaf for the coordinates (X7), 52137 invalid meter data, 52138 model/comm type missing, 52139 meter document type, 52140 meter not installed by you, 52141 installation not Pending. Confirm: 52330 installation missing, 52331 not Pending, 52332 documents missing, 52333 rejection needs a comment, 52334 no decision. Commands: 52340 command type, 52341 no Accepted task for the meter, 52342 meter missing/Retired, 52343 Parameters not JSON, 52344 command missing, 52345 not Awaiting approval, 52346 rejection needs a comment, 52347 outcome, 52348 command not Sent, 52349 role / not your command. Anti-tamper: 52360 task not Anti-tamper, 52361 task not Accepted, 52362 event missing, 52363 event not Open, 52364 event without a meter. Reused: 52102, 52103, 52112, 52113, 52120, 52126, 52302-52304. Next free: 52142 (to 52199), 52335, 52350, 52365.
+
