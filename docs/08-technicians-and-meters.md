@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: TEC-1 … TEC-10 in [tasks.md](tasks.md)
 
-> **Status: partly built.** TEC-1 (registration + categories) and TEC-5 (field tasks) are written and awaiting the coordinator's test run. The other tasks are plans.
+> **Status: partly built.** TEC-1, TEC-2, TEC-3, TEC-4 and TEC-5 are written and await the coordinator's test run. The other tasks are plans.
 
 ## Requirements
 
@@ -36,15 +36,33 @@
 
 `THROW` numbers used: 52000 role, 52001 short username, 52002 duplicate username, 52003 email, 52004 under 18, 52005 photo, 52006 categories, 52007 phone. TEC-5: 52100 operator role, 52101 task type, 52102 schedule, 52103 technician not approved, 52104 request not Submitted, 52105 request missing, 52106 premise differs from request, 52107 no target, 52108 install/replace needs premise, 52109 Installation with meter, 52110 Replacement without meter, 52111 premise/meter missing, 52112 outside availability, 52113 bad notify user, 52120 task missing or not yours, 52121 reassign only Assigned, 52122 cancel Done/Cancelled, 52123 accept only Assigned, 52124 task Cancelled, 52125 note kind, 52126 empty text/path, 52127 complete only Accepted, 52128 empty result, 52129 empty cancel reason, 52130 bad status filter. Next free: 52131.
 
+### TEC-2, TEC-3, TEC-4 (documents, availability, approval)
+
+| Item | What it does |
+|---|---|
+| `sp_tech_assert_any` | Active Technician with approval status Pending, Approved or Suspended (not Rejected). Used for what a technician does **before** approval. |
+| `sp_tech_add_document`, `sp_tech_list_documents` | Technician files `ID card`, `Installer licence` or `Training certificate` (number, issue, optional expiry, file path), `ReviewStatus = 'Pending'`, returns `DocumentID`. Lists own documents with the review result. |
+| `sp_ref_list_municipalities` | `MunicipalityID, Label` lookup for the availability form. |
+| `sp_tech_declare_availability` | Approved technician. `AVAILABILITY` + `AVAILABLE_IN` in one transaction. Not in the past, `ToTime > FromTime`, no overlap with another slot that day (`UPDLOCK, HOLDLOCK` on the day's slots), at least one municipality, all existing. |
+| `sp_tech_list_availability`, `sp_tech_remove_availability` | Own slots (optional date range, municipality names joined). Remove a slot unless a non-cancelled task of the technician overlaps it. `AVAILABLE_IN` rows cascade. |
+| `sp_operator_list_pending_technicians` | Pending technicians with categories and document counts (Pending / Accepted / Rejected). |
+| `sp_operator_list_technician_documents`, `sp_operator_review_document` | Operator sees a technician's documents; reviews a **Pending** document once (Accepted or Rejected, a rejection needs a comment). `AUDIT_LOG` with old/new/comment. |
+| `sp_operator_decide_technician` | Only for a Pending technician. **Approval rule:** at least one `Accepted`, unexpired (`ExpiryDate` NULL or after today UTC) document of **each** of the 3 types. Reject needs a comment. Sets `ApprovalStatus`, `ApprovedBy`, `ApprovalDecidedAt` and writes `AUDIT_LOG`. |
+| `sp_operator_set_technician_status` | `Approved` <-> `Suspended` only; suspending needs a comment; updates `ApprovedBy`/`ApprovalDecidedAt` (the CHECK needs them) and writes `AUDIT_LOG`. |
+| Pages | `technician/10_documents.php`, `technician/30_availability.php`, `operator/tec_10_technicians.php`. |
+| Tests | 61 `OK` checks in `test_technician.sql`: users `test_tec2_a` (approved, suspended, reinstated) and `test_tec2_b` (rejected); tech1 availability on 2027-07-01 is removed at the end. |
+
+`THROW` numbers: 52300 technician role/status, 52301 doc type, 52302 doc number, 52303 doc dates, 52304 doc file, 52310 availability in the past, 52311 times, 52312 overlap, 52313 municipalities, 52314 slot not found, 52315 active task inside slot, 52320 technician not found, 52321 document not found, 52322 document already reviewed, 52324 decision only for Pending, 52325 missing accepted documents, 52326 comment required, 52327 invalid decision/status, 52328 status transition not allowed. Next free: 52329 (52323 unused).
+
 ## Planned (after TEC-1)
 ## Spec checklist
 
 The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
 
-- [ ] 2.1 A technician registers alone but **can do nothing** before an Operator approves (login **and** every procedure check it).
-- [ ] 2.1 At least **one** category by specialty. **Daily** time and area availability.
-- [ ] 2.1 Active email, date of birth, photo, and the 3 documents (ID card, installer licence, training certificate) with number, issue date, expiry where it exists, file.
-- [ ] 2.1 Approval, rejection and **every** status change of a technician are logged.
+- [x] 2.1 A technician registers alone but **can do nothing** before an Operator approves (login **and** every procedure check it).
+- [x] 2.1 At least **one** category by specialty. **Daily** time and area availability.
+- [x] 2.1 Active email, date of birth, photo, and the 3 documents (ID card, installer licence, training certificate) with number, issue date, expiry where it exists, file.
+- [x] 2.1 Approval, rejection and **every** status change of a technician are logged.
 - [ ] 2.2 Task types: installation, replacement, technical check, anti-tamper. Each task: premise and/or meter, technician, type, schedule, status, result.
 - [ ] 2.2 The technician **accepts** the task and **sees the meter's location**. Notes, findings, evidence = the task's history.
 - [ ] 2.3 Physical meter ↔ Premise ID, with serial, type, firmware, communication, phases, Amps, photos, and the 3 equipment documents (calibration, CE & protocol, telemetry encryption) with code, dates, file.
@@ -58,9 +76,6 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 
 | Task | Procedures | Tables | Page |
 |---|---|---|---|
-| TEC-2 | `sp_tech_add_document`, `sp_tech_list_documents` | `DOCUMENT` | `technician/documents.php` |
-| TEC-3 | `sp_tech_declare_availability` (AVAILABILITY + AVAILABLE_IN) | `AVAILABILITY`, `AVAILABLE_IN`, `MUNICIPALITY` | `technician/availability.php` |
-| TEC-4 ★ | `sp_operator_list_pending_technicians`, `sp_operator_review_document`, `sp_operator_decide_technician` | `USER_ACCOUNT`, `DOCUMENT`, `AUDIT_LOG` | `operator/tec_technicians.php` |
 | TEC-6 ★ | `sp_tech_install_meter`: one transaction writes `METER` (`Status = 'Pending confirmation'`), `METER_INSTALLATION`, `METER_CONNECTED_PHASE`. A replacement closes the old installation and **keeps** its readings. Then `sp_tech_add_meter_document` | `METER`, `METER_INSTALLATION`, `METER_CONNECTED_PHASE`, `DOCUMENT` | `technician/install.php` |
 | TEC-7 ★ | `sp_operator_confirm_meter(@UserID, @InstallationID, @Approve, @Comment)` | `METER_INSTALLATION`, `METER`, `AUDIT_LOG` | `operator/tec_meters.php` |
 | TEC-8 | `sp_tech_request_command`, `sp_command_record_attempt` (simulated ACK) | `REMOTE_COMMAND`, `COMMAND_ATTEMPT` | `technician/commands.php` |
