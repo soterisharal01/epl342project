@@ -65,7 +65,7 @@ change them only through the schema-change process or in the coordinating sessio
 |---|---|---|---|---|---|---|
 | GDP-1 | ★ GDPR: submit → operator pre-approves → admin decides → apply | III.1.4 | | 27/11 | 👀 | |
 | GDP-2 | Retention: raw 3 years, or 1 month after GDPR | III.1.4 | | 27/11 | 👀 | Agreement X5 |
-| GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | ○ | |
+| GDP-3 | PHP pages: consumer, operator and admin GDPR; retention button | IV | GDP-1, GDP-2 | 29/11 | 👀 | |
 
 ## TEC: technicians and meters ([08](08-technicians-and-meters.md))
 
@@ -98,9 +98,9 @@ change them only through the schema-change process or in the coordinating sessio
 | DSO-1 | ★ Ingest JSON packet → `TELEMETRY_PACKET` + `RAW_READING`, failures as events | III.3.1 | | 25/11 | 👀 | Agreements X2, X4 |
 | DSO-2 | ★ VEE: validation (range, spike, gaps), estimation (interpolation), write `VALIDATED_READING` | III.3.2 | | 26/11 | 👀 | Base data has Pending raw rows to work on |
 | DSO-3 | Suspect readings + manual edit | III.3.2 | DSO-2 | 26/11 | 👀 | |
-| DSO-4 | ★ Aggregates: meter (Day/Month/Year) + leaf transformer | III.3.2 | DSO-2 | 27/11 | ○ | |
-| DSO-5 | Analytics: under/over-voltage, phase imbalance, **technical losses**, suspected theft → `EVENT` (types in B14) | II.C | | 27/11 | ○ | |
-| DSO-6 | PHP pages: DSO | IV | DSO-1, DSO-2, DSO-4 | 29/11 | ○ | |
+| DSO-4 | ★ Aggregates: meter (Day/Month/Year) + leaf transformer | III.3.2 | DSO-2 | 27/11 | 👀 | |
+| DSO-5 | Analytics: under/over-voltage, phase imbalance, **technical losses**, suspected theft → `EVENT` (types in B14) | II.C | | 27/11 | 👀 | |
+| DSO-6 | PHP pages: DSO | IV | DSO-1, DSO-2, DSO-4 | 29/11 | 👀 | |
 
 ## TSO: transformer tree ([10](10-tso-transformers.md))
 
@@ -111,7 +111,7 @@ change them only through the schema-change process or in the coordinating sessio
 | TSO-3 | ★ Aggregates at any level (month → quarter) | Professor | | 27/11 | 👀 | |
 | TSO-4 | ★ Load shedding on every meter below a transformer | II.D | | 27/11 | 👀 | Agreement X3 |
 | TSO-5 | PHP pages: TSO | IV | TSO-1, TSO-2, TSO-3, TSO-4 | 29/11 | ○ | |
-| TSO-6 | Leaflet map (bonus +10%) | Bonus | TSO-1 | 2/12 | ○ | Only if time allows |
+| TSO-6 | Leaflet map (bonus +10%) | Bonus | TSO-1 | 2/12 | 👀 | Only if time allows |
 
 ## DAT: large data ([13](13-data-sets.md))
 
@@ -127,9 +127,9 @@ change them only through the schema-change process or in the coordinating sessio
 
 | ID | Task | Doc | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
-| PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | ○ | |
-| PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | ○ | |
-| PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | ○ | |
+| PRF-1 | Index on invoices | [14](14-indexes-and-performance.md) | | 1/12 | 👀 | |
+| PRF-2 | Index on field tasks | [14](14-indexes-and-performance.md) | TEC-5 | 1/12 | 👀 | |
+| PRF-3 | Index on readings + before/after case | [14](14-indexes-and-performance.md) | DSO-2 | 1/12 | 👀 | |
 | PRF-4 | 10,000-request test (95% < 2 s) | [14](14-indexes-and-performance.md) | DAT-4 | 1/12 | ○ | |
 | SEC-1 | SQL injection and access check of every page | [16](16-security.md) | all page tasks | 1/12 | ○ | |
 | SEC-2 | Security document | [16](16-security.md) | | 2/12 | ○ | Chapter (b) of DOC-4 |
