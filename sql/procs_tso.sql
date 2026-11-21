@@ -555,3 +555,67 @@ BEGIN
     ORDER BY o.ShedOrderID DESC;
 END;
 GO
+
+-- ---------------------------------------------------------------------
+-- TSO-6 (bonus): δεδομένα για τον χάρτη Leaflet, ΕΝΑ result set (το call_proc διαβάζει μόνο το πρώτο).
+-- Στήλη Kind: 'Transformer' (μία γραμμή ανά μετασχηματιστή) ή 'Meter' (μία ανά μετρητή).
+-- Στήλες που δεν ταιριάζουν στο είδος είναι NULL. Μόνο ανάγνωση.
+-- Ρόλοι: ενεργός TSO, DSO ή Operator (οι DSO/Operator βλέπουν το ίδιο δίκτυο, δεν αλλάζει τίποτα).
+-- ImportKWh/ExportKWh: άθροισμα 1.8.0/2.8.0 από TRANSFORMER_CURRENT_STATE σε όλο το υποδέντρο.
+-- Λάθος: 53800 ο χρήστης δεν είναι ενεργός TSO/DSO/Operator.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_tso_map_data
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @UserID AND Role IN ('TSO', 'DSO', 'Operator') AND AccountStatus = 'Active')
+        THROW 53800, N'Δεν επιτρέπεται: ο χάρτης είναι μόνο για ενεργό TSO, DSO ή Operator.', 1;
+
+    DECLARE @Closure TABLE (AncestorID INT NOT NULL, DescendantID INT NOT NULL);
+    WITH down AS (
+        SELECT t.TransformerID AS AncestorID, t.TransformerID AS DescendantID, 0 AS Depth FROM TRANSFORMER t
+        UNION ALL
+        SELECT d.AncestorID, c.TransformerID, d.Depth + 1
+        FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.DescendantID
+        WHERE d.Depth < 100
+    )
+    INSERT @Closure (AncestorID, DescendantID)
+    SELECT AncestorID, DescendantID FROM down OPTION (MAXRECURSION 100);
+
+    DECLARE @Sums TABLE (TransformerID INT PRIMARY KEY, ImportKWh DECIMAL(18,4) NOT NULL, ExportKWh DECIMAL(18,4) NOT NULL);
+    INSERT @Sums (TransformerID, ImportKWh, ExportKWh)
+    SELECT c.AncestorID,
+           CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '1.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4)),
+           CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '2.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4))
+    FROM @Closure c
+    LEFT JOIN TRANSFORMER_CURRENT_STATE cs ON cs.TransformerID = c.DescendantID
+    GROUP BY c.AncestorID;
+
+    WITH tree AS (
+        SELECT t.TransformerID, 0 AS Level FROM TRANSFORMER t WHERE t.ParentTransformerID IS NULL
+        UNION ALL
+        SELECT c.TransformerID, tr.Level + 1 FROM tree tr JOIN TRANSFORMER c ON c.ParentTransformerID = tr.TransformerID
+        WHERE tr.Level < 100
+    )
+    SELECT CAST('Transformer' AS VARCHAR(12)) AS Kind,
+           t.TransformerID AS Id, t.Name AS Name, CAST(NULL AS VARCHAR(40)) AS SerialNumber,
+           t.Latitude AS Latitude, t.Longitude AS Longitude,
+           t.ParentTransformerID AS ParentId, tree.Level AS Level,
+           CAST(CASE WHEN EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = t.TransformerID) THEN 0 ELSE 1 END AS BIT) AS IsLeaf,
+           g.MinLat AS MinLat, g.MinLon AS MinLon, g.MaxLat AS MaxLat, g.MaxLon AS MaxLon,
+           s.ImportKWh AS ImportKWh, s.ExportKWh AS ExportKWh,
+           CAST(NULL AS VARCHAR(20)) AS Status, CAST(NULL AS INT) AS TransformerID
+    FROM TRANSFORMER t
+    JOIN GEOFENCE g ON g.GeofenceID = t.GeofenceID
+    JOIN tree ON tree.TransformerID = t.TransformerID
+    LEFT JOIN @Sums s ON s.TransformerID = t.TransformerID
+    UNION ALL
+    SELECT 'Meter', m.MeterID, NULL, m.SerialNumber, m.Latitude, m.Longitude,
+           NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+           m.Status, m.TransformerID
+    FROM METER m
+    ORDER BY Kind DESC, Id
+    OPTION (MAXRECURSION 100);
+END;
+GO
