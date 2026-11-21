@@ -587,7 +587,12 @@ BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_mA, 'Calibration certificate', 
 BEGIN CATCH IF ERROR_NUMBER() = 52302 PRINT 'OK   blank document number -> 52302' ELSE PRINT 'FAIL doc number: ' + ERROR_MESSAGE(); END CATCH;
 BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_mA, 'Calibration certificate', N'C-1', '2026-01-01', '2025-01-01', N'docs/x.pdf'; PRINT 'FAIL expiry before issue'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 52303 PRINT 'OK   expiry before issue -> 52303' ELSE PRINT 'FAIL doc dates: ' + ERROR_MESSAGE(); END CATCH;
-BEGIN TRY EXEC sp_tech_add_meter_document 5, 1, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL document for a meter the technician did not install'; END TRY
+-- Base meters 1-5 were all installed by tech1 (user 5), so no base meter is "foreign" to him:
+-- meter 1 tests an installation already confirmed (52141); a meter with no installation of his tests 52140.
+BEGIN TRY EXEC sp_tech_add_meter_document 5, 1, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL document for an installation already confirmed'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 52141 PRINT 'OK   document for an installation already confirmed -> 52141' ELSE PRINT 'FAIL doc confirmed install: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @t6_foreign INT = (SELECT ISNULL(MAX(MeterID), 0) + 1000 FROM METER);
+BEGIN TRY EXEC sp_tech_add_meter_document 5, @t6_foreign, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL document for a meter the technician did not install'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 52140 PRINT 'OK   document for a meter not installed by me -> 52140' ELSE PRINT 'FAIL doc foreign meter: ' + ERROR_MESSAGE(); END CATCH;
 BEGIN TRY EXEC sp_tech_add_meter_document 6, @t6_mA, 'Calibration certificate', N'C-1', '2026-01-01', NULL, N'docs/x.pdf'; PRINT 'FAIL Pending technician added a document'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 52000 PRINT 'OK   meter document by Pending technician -> 52000' ELSE PRINT 'FAIL doc role: ' + ERROR_MESSAGE(); END CATCH;

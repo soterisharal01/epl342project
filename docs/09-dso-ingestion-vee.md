@@ -35,6 +35,20 @@ Example packet:
 | DSO-3 | `sql/procs_dso.sql` | `sp_dso_list_suspect(@UserID, @MeterID = NULL)`: Suspect raw rows with previous/next neighbours and a reason. Error 53110. `sp_dso_edit_reading(@UserID, @MeterID, @ObisCode, @IntervalStart, @NewValue, @Reason)`: manual fix of one Suspect row, errors 53120-53124. `sp_dso_list_runs(@UserID)`: runs with counts. |
 | DSO-2/3 | `sql/tests/test_dso.sql` | VEE over the base data, the 22/11 scenario (spike 25.4 suspect, gap 10:30 estimated 2.1), edit, immutability, roles. |
 | DSO-2/3 | `sources/dso/20_vee.php` | Run form, runs list, suspect list with an edit form per row. |
+| DSO-4 | `sql/procs_dso.sql` | `sp_dso_build_aggregates(@UserID, @Day, @ForceMonth = 0, @ForceYear = 0)`: from `VALIDATED_READING` of that UTC day (only cumulative `1.8.0`/`2.8.0`) **inserts** `METER_AGGREGATE` Day rows (`SumValue`, `ReadingCount`, `EstimatedCount`) and `TRANSFORMER_AGGREGATE` Day rows for **leaf** transformers (`MeterCount`). On the last day of a month also Month rows (from the Day rows), on 31/12 also Year rows; `@ForceMonth`/`@ForceYear` build them earlier. Rows that exist are skipped: aggregates are **final**, never updated or recomputed, so a second call writes 0. One transaction, one `AUDIT_LOG` row. Returns `Day, MeterRows, TransformerRows, MonthRows, YearRows`. Error 53300. |
+| DSO-4 | `sql/procs_dso.sql` | `sp_dso_build_aggregates_pending(@UserID, @From = NULL, @UpTo = NULL)`: builds every day before `@UpTo` (default today UTC) that has validated cumulative readings without a Day aggregate, oldest first, in one transaction. `sp_dso_run_vee` is **not** changed: the DSO runs this after VEE. Error 53301. Internal helper `sp_dso_build_aggregates_day` does the work (no own transaction). |
+| DSO-4 | `sql/procs_dso.sql` | `sp_dso_list_aggregates(@UserID, @MeterID = NULL, @PeriodType = 'Day', @From, @To)` and `sp_dso_list_transformer_aggregates(@UserID, @TransformerID = NULL, @PeriodType = 'Day', @From, @To)`. Errors 53302-53304. |
+| DSO-5 | `sql/procs_dso.sql` | `sp_dso_detect_events(@UserID, @From, @To)` (max 31 days) writes `EVENT` rows from validated data and returns the new count per type (`Undervoltage, Overvoltage, PhaseUnbalance, SuspectedTheft, Total`). Never duplicates: no event if one exists for the same meter, type and `OccurredAt` (so the voltage events VEE already wrote are not repeated). Errors 53310, 53311. |
+| DSO-5 | `sql/procs_dso.sql` | `sp_dso_list_events(@UserID, @Status = NULL, @Type = NULL)` (newest 500; error 53320). `sp_dso_losses_report(@UserID, @From, @To)`: per leaf and day, transformer aggregate vs the sum of its meters' aggregates (error 53312). |
+| DSO-4/5 | `sql/tests/test_dso.sql` | 46 more `OK`/`FAIL` checks: roles, day build equals validated sums, finality, leaf-only, force month/year, pending, lists, the 23/11 analytics scenario (under/over-voltage, phase unbalance, suspected theft), no duplicates on rerun, losses report. |
+| DSO-6 | `sources/dso/30_aggregates.php`, `40_events.php` | Aggregates page (build a day with force options, build all pending, lists of meter and transformer aggregates by period type). Events page (detect for a period, filtered event list, losses report). With `10_ingest.php` and `20_vee.php` the DSO menu follows the flow ingest, VEE, aggregates, events. |
+
+**Analytics rules** (constants at the top of `sp_dso_detect_events`, all on validated data in `[@From, @To)`):
+
+- **Undervoltage / Overvoltage**: `32.7.0`/`52.7.0`/`72.7.0` outside the active `VoltageBand` rule (207-253 V default). One event per meter and interval (the most extreme phase).
+- **Phase unbalance**: all three currents `31/51/71.7.0` present, the largest at least 1 A, and (max - min) / max above **25%**.
+- **Suspected theft**: at least **8** consecutive 15-minute `1.8.0` energies of at most 0.01 kWh for a meter while the **other meters of the same transformer** average at least 0.05 kWh over the same span. One Critical event at the start of the run. Edge runs cut by the requested period may be missed. It is a hint for a field check.
+- **Technical losses**: not an event. The schema has no independent reading at a transformer (even `TRANSFORMER_CURRENT_STATE` is derived from the meters), so `sp_dso_losses_report` compares the leaf aggregate with its meters' aggregates and exposes data mismatches (difference, meters with data vs active). With a measured transformer reading the same comparison gives real losses.
 
 **How VEE decides** (comments in `sp_dso_run_vee` say the same):
 
@@ -69,7 +83,7 @@ Example packet:
 | DSO-1 ★ | Done, see "What exists" | | |
 | DSO-2 ★ | Done, see "What exists". Plan was: `sp_dso_run_vee(@UserID, @From, @To)`: `VEE_RUN` → for each Pending row check the rules (`VEE_RULE`, `RULE_FOR`) → estimates in `READING_EDIT` → **INSERT** `VALIDATED_READING` (Validated, Estimated or Edited) → raw becomes Validated, or Suspect if it needs a person | `RAW_READING`, `VEE_RULE`, `RULE_FOR`, `VEE_RUN`, `READING_EDIT`, `VALIDATED_READING` | `dso/vee.php` |
 | DSO-3 | Done, see "What exists" | | |
-| DSO-4 ★ | `sp_dso_build_aggregates(@UserID, @Day)`: `METER_AGGREGATE` (Day, plus Month/Year when the period closes) and `TRANSFORMER_AGGREGATE` on leaves | `METER_AGGREGATE`, `TRANSFORMER_AGGREGATE` | `dso/aggregates.php` |
+| DSO-4 ★ | Done, see "What exists". Plan was: `sp_dso_build_aggregates(@UserID, @Day)`: `METER_AGGREGATE` (Day, plus Month/Year when the period closes) and `TRANSFORMER_AGGREGATE` on leaves | `METER_AGGREGATE`, `TRANSFORMER_AGGREGATE` | `dso/aggregates.php` |
 | DSO-5 | `sp_dso_detect_events(@UserID, @From, @To)` → `EVENT`. One or two simple rules are enough | `VALIDATED_READING`, `EVENT` | `dso/events.php` |
 | DSO-6 | Pages for the tasks above | | |
 
@@ -91,5 +105,5 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 - [x] 3.2 Validation: syntax, supported OBIS, limits, gaps and inconsistencies in the series. Estimation for what is missing or unusable. Editing with original value, new value, origin.
 - [x] 3.2 The result distinguishes at least validated/estimated and keeps which value is used afterwards.
 - [x] 3.2 The two spec examples work in the demo: spike 25.4 → suspect; gap at 10:30 → estimate 2.1 with status estimated.
-- [ ] 3.2 After VEE: **immutable**. Finishing VEE triggers the aggregates (day, month, year), which are also final and never recomputed.
-- [ ] II.C Analytics: sags/swells, **technical losses**, phase imbalance, suspected theft (event types in B14).
+- [x] 3.2 After VEE: **immutable**. Finishing VEE triggers the aggregates (day, month, year), which are also final and never recomputed.
+- [x] II.C Analytics: sags/swells, **technical losses**, phase imbalance, suspected theft (event types in B14).
