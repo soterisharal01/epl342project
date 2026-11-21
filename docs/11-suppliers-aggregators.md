@@ -37,6 +37,18 @@ Test data: supplier1 (UserID 9, supplier 1) owns premises 1, 2, 4 (meters 1, 2, 
 aggregator1 (UserID 10) has portfolio 1 with premises 3 and 4 (meters 3, 4).
 
 ## Planned (PHP pages: MKT-4)
+## Spec checklist
+
+The assignment PDF is not in the repo, so this list carries the spec for this area, sentence by sentence. A task is done only when every line it touches is covered; the PR copies the lines with ✓, and the reviewer checks them again. The list common to every task is in [19-conventions.md](19-conventions.md), section 8.
+
+- [ ] 5.1 Access **only** to the data of their own customers/portfolios, through database calls with identity and permission checks (our procedures are the "APIs").
+- [ ] 5.1 **No** uncontrolled access to raw data.
+- [ ] 5.1 Aggregates from **validated** readings, per period and geofence, with total import, total export and net difference.
+- [ ] 5.2 Forecasting/balancing algorithms are **not** needed, only the data.
+- [ ] 5.2 Day-Ahead: daily form, from stored validated data.
+- [ ] 5.2 Intraday: 15-minute **provisional** values from the latest readings, **before** VEE (counter differences, B2).
+
+## Planned
 
 | Task | Procedures | Tables | Page |
 |---|---|---|---|
