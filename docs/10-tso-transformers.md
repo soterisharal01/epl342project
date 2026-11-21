@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: TSO-1 … TSO-6 in [tasks.md](tasks.md)
 
-> **Status: TSO-1 … TSO-4 written (in review, not yet run on a database). TSO-5, TSO-6 are plans.**
+> **Status: TSO-1 … TSO-4 written (in review, not yet run on a database). TSO-5 is a plan. TSO-6 (map) is written, in review.**
 
 ## Requirements (spec III.4 + the professor's changes)
 
@@ -69,12 +69,24 @@ load shed on transformer 2 gives 3 commands for meters 1, 2, 4, refusals leave n
 
 THROW numbers used by the area so far: 53500–53509 (TSO-1), 53600–53601 (TSO-2), 53610–53612 (TSO-3), 53620–53622 (TSO-4).
 
+### TSO-6: map (bonus, `sql/procs_tso.sql`, page `sources/tso/50_map.php`)
+
+| Procedure | What it does |
+|---|---|
+| `sp_tso_map_data(@UserID)` | Read only, **one** result set (`call_proc` reads only the first). Column `Kind` is `'Transformer'` (id, name, lat, lon, parent, level, leaf flag, geofence MinLat/MinLon/MaxLat/MaxLon, import/export kWh = `1.8.0`/`2.8.0` summed from `TRANSFORMER_CURRENT_STATE` over the subtree) or `'Meter'` (id, serial, lat, lon, status, transformer id). Columns that do not fit the kind are NULL. Allowed for an active TSO, DSO or Operator (they see the same network, nothing changes); otherwise 53800. |
+
+How the map works: the page `50_map.php` (TSO only) calls the procedure, puts the rows into a script as JSON (`json_encode` with `JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT`),
+and Leaflet draws: geofence rectangles (leaves filled, higher levels dashed), a marker per transformer (popup: name, level, import/export), a circle per meter coloured by status
+(green Active, orange Pending confirmation, grey Retired), and a layer control to switch the three layers. Popups are built with text nodes, never `innerHTML`. The view fits the network.
+Leaflet 1.9.4 is vendored in `sources/lib/leaflet/` so the UI works from the zip offline. The OpenStreetMap background tiles need the internet; offline the vector layers still show on a blank background.
+Tests (`test_tso.sql`, prefix `@m6_`): Consumer refused with 53800, transformers 1-6 present with geofence/level/leaf, meters 1-5 with coordinates, Operator allowed.
+THROW numbers: 53800 (TSO-6).
+
 ## Planned
 
 | Task | What | Page |
 |---|---|---|
 | TSO-5 | Review of the pages above | |
-| TSO-6 | Bonus: Leaflet map of transformers, geofences and meters, `sp_tso_map_data` | `tso/map.php` |
 
 ## Spec checklist
 

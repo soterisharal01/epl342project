@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Tasks: GDP-1 … GDP-3 in [tasks.md](tasks.md)
 
-> **Status: GDP-1 and GDP-2 written (in review, not yet run against the database); GDP-3 planned.**
+> **Status: GDP-1, GDP-2 and GDP-3 written (in review, not yet run against the database).**
 
 ## Requirements
 
@@ -89,3 +89,14 @@ Design choices:
 
 Schema hooks: the CHECKs `CK_GDPR_REQUEST_Stage` and `CK_GDPR_REQUEST_Order` enforce the stage order, and the trigger
 `TR_VALIDATED_READING_Immutable` allows DELETE only under the purge flag ([04-database-schema.md](04-database-schema.md)).
+
+## Pages (GDP-3)
+
+| Page | Role | Procedures |
+|---|---|---|
+| `sources/consumer/80_gdpr.php` (menu: Δικαίωμα στη λήθη) | Consumer | `sp_gdpr_submit` (needs a confirmation checkbox), `sp_gdpr_list`. Explains the stages, what is erased, that invoices and payments stay, the 1-month retention and that login stops after apply. Shows own requests with the date of each stage. |
+| `sources/operator/gdp_10_review.php` (menu: Αιτήματα GDPR) | Operator | `sp_gdpr_list` (status filter), `sp_gdpr_start_review`, `sp_gdpr_preapprove` (approve or reject, with comment). |
+| `sources/admin/gdp_10_decide.php` (menu: Αιτήματα GDPR) | Admin | `sp_gdpr_list` (status filter), `sp_gdpr_decide` (approve or reject, with comment), `sp_gdpr_apply` (confirmation checkbox; the returned summary row is shown in the flash message: what was erased and what was kept). |
+| `sources/admin/gdp_retention.php` (GDP-2) | Admin | `sp_retention_preview`, `sp_retention_purge`. |
+
+All pages use `call_proc`, `check_csrf()` on every POST, `h()` on output and Post/Redirect/Get with `flash()`. No new procedure was needed: the stage dates in `sp_gdpr_list` are the status history (comments are in `AUDIT_LOG.ResultComment`).
