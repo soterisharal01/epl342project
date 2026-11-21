@@ -22,7 +22,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 | ID | Task | Spec | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|---|
 | ADM-1 | ★ Consumer self-registration (procedure + page) | III.1.1 | | 24/11 | ✓ | `sp_auth_register_consumer`, `register_consumer.php` (PR #4) |
-| ADM-2 | Admin: create Operator/DSO/TSO/Supplier/Aggregator users, suspend/activate, view the audit log | General | | 25/11 | ○ | |
+| ADM-2 | Admin: create Operator/DSO/TSO/Supplier/Aggregator users, suspend/activate, view the audit log | General | | 25/11 | 👀 | |
 | ADM-3 | Operator catalogs: meter models, service types, tariffs | General | | 25/11 | ○ | |
 | ADM-4 | PHP pages: admin users, log, operator catalogs | IV | ADM-2, ADM-3 | 29/11 | ○ | |
 
