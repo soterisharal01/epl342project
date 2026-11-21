@@ -14,18 +14,18 @@ FROM sys.database_query_store_options;
 
 -- 3. Row counts: expected = rows of the large set (docs/13-data-sets.md).
 SELECT t.Name, t.Expected, t.Actual, CASE WHEN t.Actual = t.Expected THEN 'OK' ELSE 'FAIL' END AS Verdict
-FROM (VALUES
-  ('USER_ACCOUNT (large)',          1025,  (SELECT COUNT(*) FROM USER_ACCOUNT WHERE UserID >= 100000)),
-  ('PREMISE (large)',               1100,  (SELECT COUNT(*) FROM PREMISE WHERE PremiseID >= 100000)),
-  ('METER (large)',                 1000,  (SELECT COUNT(*) FROM METER WHERE MeterID >= 100000)),
-  ('INVOICE (large)',               2400,  (SELECT COUNT(*) FROM INVOICE WHERE InvoiceID >= 100000)),
-  ('PAYMENT (large)',               1600,  (SELECT COUNT(*) FROM PAYMENT WHERE PaymentID >= 100000)),
-  ('RAW_READING (large meters)',   30912,  (SELECT COUNT(*) FROM RAW_READING WHERE MeterID >= 100000)),
-  ('VALIDATED_READING (large)',    30912,  (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID >= 100000)),
-  ('METER_AGGREGATE (large)',        322,  (SELECT COUNT(*) FROM METER_AGGREGATE WHERE MeterID >= 100000)),
-  ('TELEMETRY_PACKET (large)',       280,  (SELECT COUNT(*) FROM TELEMETRY_PACKET WHERE PacketID >= 100000)),
-  ('Base users (admin..aggregator1)', 10,  (SELECT COUNT(*) FROM USER_ACCOUNT WHERE UserID < 1000))
-) AS t(Name, Expected, Actual);
+FROM (
+  SELECT 'USER_ACCOUNT (large)' AS Name, 1025 AS Expected, (SELECT COUNT(*) FROM USER_ACCOUNT WHERE UserID >= 100000) AS Actual UNION ALL
+  SELECT 'PREMISE (large)' AS Name, 1100 AS Expected, (SELECT COUNT(*) FROM PREMISE WHERE PremiseID >= 100000) AS Actual UNION ALL
+  SELECT 'METER (large)' AS Name, 1000 AS Expected, (SELECT COUNT(*) FROM METER WHERE MeterID >= 100000) AS Actual UNION ALL
+  SELECT 'INVOICE (large)' AS Name, 2400 AS Expected, (SELECT COUNT(*) FROM INVOICE WHERE InvoiceID >= 100000) AS Actual UNION ALL
+  SELECT 'PAYMENT (large)' AS Name, 1600 AS Expected, (SELECT COUNT(*) FROM PAYMENT WHERE PaymentID >= 100000) AS Actual UNION ALL
+  SELECT 'RAW_READING (large meters)' AS Name, 30912 AS Expected, (SELECT COUNT(*) FROM RAW_READING WHERE MeterID >= 100000) AS Actual UNION ALL
+  SELECT 'VALIDATED_READING (large)' AS Name, 30912 AS Expected, (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID >= 100000) AS Actual UNION ALL
+  SELECT 'METER_AGGREGATE (large)' AS Name, 322 AS Expected, (SELECT COUNT(*) FROM METER_AGGREGATE WHERE MeterID >= 100000) AS Actual UNION ALL
+  SELECT 'TELEMETRY_PACKET (large)' AS Name, 280 AS Expected, (SELECT COUNT(*) FROM TELEMETRY_PACKET WHERE PacketID >= 100000) AS Actual UNION ALL
+  SELECT 'Base users (UserID < 1000)' AS Name, 10 AS Expected, (SELECT COUNT(*) FROM USER_ACCOUNT WHERE UserID < 1000) AS Actual
+) AS t;
 
 -- 4. The three indexes of indexes.sql exist.
 SELECT n.Name, CASE WHEN i.name IS NULL THEN 'FAIL missing' ELSE 'OK' END AS Verdict
