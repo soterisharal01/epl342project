@@ -117,7 +117,7 @@ The row turns `👀` on the task branch when the PR opens, and `✓` on `main` a
 
 | ID | Task | Needs | Due | Status | Notes |
 |---|---|---|---|---|---|
-| REL-0 | Docs restructure: README menu, component docs, start/stop protocol, no personal ownership | | 21/11 | 👀 | |
+| REL-0 | Docs restructure: README menu, component docs, start/stop protocol, no personal ownership | | 21/11 | 👀 | PR #7 |
 | REL-1 | Integration on the demo database `sharal01` + `~sharal01/public_html/mdms` | all ★ tasks | 30/11 | ○ | |
 | DOC-1 | User manual (with every component's section) | | 2/12 | ○ | docx (a) |
 | DOC-2 | New ER diagram (Chen, ERD+) + relational diagram matching the final `create.sql` | REL-1 | 2/12 | ○ | Decision B13 |
