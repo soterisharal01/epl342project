@@ -180,3 +180,172 @@ IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = 3 AND Username = N'consumer
    AND EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = 4 AND Username = N'consumer2' AND AccountStatus = 'Active')
     PRINT 'OK   base consumers untouched' ELSE PRINT 'FAIL base consumers changed';
 GO
+
+-- =====================================================================
+-- GDP-2: διατήρηση δεδομένων (sp_retention_preview, sp_retention_purge, fn_retention_cutoff)
+-- Ο καταναλωτής A (GDPR εφαρμόστηκε παραπάνω, RawRetentionMonths = 1) παίρνει δικό του υποστατικό με μετρητή.
+-- Τρεις δοκιμαστικοί μετρητές (ο καθένας με 5 ωμές + 5 επικυρωμένες μετρήσεις, 1.8.0):
+--   MA: υποστατικό του A από 2025-06-01 (1 μήνας)      MB: υποστατικό του B (36 μήνες)
+--   MN: υποστατικό ΧΩΡΙΣ κάτοχο (εφεδρικά 36 μήνες)
+-- Χρόνοι: t0 = 2023-06-01 (πριν την εγκατάσταση -> εφεδρικά 36), t1 = 2026-10-01, t2 = 2026-11-24 23:45,
+--         t3 = 2026-11-25 00:00, t4 = 2026-12-01.   Με @AsOf = 2026-12-25 (όριο 1 μήνα = 2026-11-25, 36 μηνών = 2023-12-25):
+--   MA: σβήνονται t0, t1, t2 (3)   MB: μόνο t0 (1)   MN: μόνο t0 (1).
+-- Τα βασικά demo (μετρητές 1-4, 18-20/11/2026, 36 μήνες) δεν πρέπει να χαθούν ποτέ.
+-- =====================================================================
+SET NOCOUNT ON;
+
+DECLARE @a INT = (SELECT MAX(u.UserID) FROM USER_ACCOUNT u JOIN HOLDING h ON h.UserID = u.UserID
+                  JOIN PREMISE p ON p.PremiseID = h.PremiseID
+                  WHERE p.Address = N'Οδός GDPR 1' AND u.RawRetentionMonths = 1);
+DECLARE @b INT = (SELECT UserID FROM USER_ACCOUNT WHERE Username = N'test_gdp_b');
+IF @a IS NULL OR @b IS NULL
+BEGIN
+    PRINT 'FAIL retention setup: GDP-1 test users not found (run the GDP-1 part first)';
+    RETURN;
+END
+IF EXISTS (SELECT 1 FROM METER WHERE SerialNumber = 'SN-GDP2-1')
+BEGIN
+    PRINT 'FAIL retention setup: fixture already exists (needs a fresh database)';
+    RETURN;
+END
+
+-- ---------- Υποδομή: 3 υποστατικά, 3 μετρητές, εγκαταστάσεις, αναγνώσεις ----------
+DECLARE @m TABLE (Tag INT PRIMARY KEY, MeterID INT, PremiseID INT);
+DECLARE @i INT = 1, @pid INT, @mid INT, @tid INT, @pk BIGINT;
+WHILE @i <= 3
+BEGIN
+    INSERT PREMISE (Address, PostalCode, Latitude, Longitude, UsageType, ParishID, SchemeID)
+    VALUES (CONCAT(N'Οδός Διατήρησης ', @i), '1010', 35.17, 33.36, 'Residential', 1, 1);
+    SET @pid = SCOPE_IDENTITY();
+    IF @i = 1 INSERT HOLDING (UserID, PremiseID, StartDate, EndDate) VALUES (@a, @pid, '2025-06-01', NULL);
+    IF @i = 2 INSERT HOLDING (UserID, PremiseID, StartDate, EndDate) VALUES (@b, @pid, '2025-06-01', NULL);
+    INSERT METER (SerialNumber, NetworkID, Firmware, MaxLoadAmps, Latitude, Longitude, Status, ModelID, CommTypeID, TransformerID)
+    VALUES (CONCAT('SN-GDP2-', @i), CONCAT('EAC-GDP2-', @i), '1.0', 60, 35.145, 33.39, 'Active', 1, 1, 4);
+    SET @mid = SCOPE_IDENTITY();
+    INSERT FIELD_TASK (TaskType, ScheduledFrom, ScheduledTo, Status, Result, CreatedAt, CompletedAt, TechnicianID, PremiseID)
+    VALUES ('Installation', '2025-06-01 09:00:00', '2025-06-01 11:00:00', 'Done', N'Εγκαταστάθηκε (GDP-2 test)', '2025-05-30 09:00:00', '2025-06-01 10:00:00', 5, @pid);
+    SET @tid = SCOPE_IDENTITY();
+    INSERT METER_INSTALLATION (InstalledAt, ConfirmationStatus, ConfirmedAt, ConfirmComment, MeterID, PremiseID, ConfirmedBy, TaskID)
+    VALUES ('2025-06-01 10:00:00', 'Confirmed', '2025-06-02 09:00:00', N'GDP-2 test', @mid, @pid, 2, @tid);
+    INSERT TELEMETRY_PACKET (ReceivedNetworkID, TransmissionTimestamp, ReceivedAt, NetworkType, RawPayload, IngestStatus, MeterID)
+    VALUES (CONCAT('EAC-GDP2-', @i), '2026-10-01 00:00:00', '2026-10-01 00:00:10', 'NB-IoT', N'{}', 'Accepted', @mid);
+    SET @pk = SCOPE_IDENTITY();
+    INSERT @m VALUES (@i, @mid, @pid);
+    INSERT RAW_READING (MeterID, ObisCode, IntervalStart, ReceivedValue, VeeStatus, PacketID)
+    SELECT @mid, '1.8.0', t.T, 100.0, 'Validated', @pk
+    FROM (VALUES (CAST('2023-06-01 00:00:00' AS DATETIME2(0))), ('2026-10-01 00:00:00'), ('2026-11-24 23:45:00'),
+                 ('2026-11-25 00:00:00'), ('2026-12-01 00:00:00')) t (T);
+    INSERT VALIDATED_READING (MeterID, ObisCode, IntervalStart, Value, Quality, RunID)
+    SELECT @mid, '1.8.0', t.T, 0.1, 'Validated', 1
+    FROM (VALUES (CAST('2023-06-01 00:00:00' AS DATETIME2(0))), ('2026-10-01 00:00:00'), ('2026-11-24 23:45:00'),
+                 ('2026-11-25 00:00:00'), ('2026-12-01 00:00:00')) t (T);
+    SET @i += 1;
+END
+DECLARE @ma INT = (SELECT MeterID FROM @m WHERE Tag = 1), @mb INT = (SELECT MeterID FROM @m WHERE Tag = 2), @mn INT = (SELECT MeterID FROM @m WHERE Tag = 3);
+-- διορθώσεις: MA t1 (σβήνεται), MA t3 (μένει), MB t0 (σβήνεται), MB t1 (μένει)
+INSERT READING_EDIT (MeterID, ObisCode, IntervalStart, EditNo, OldValue, NewValue, Origin, Reason, EditedBy)
+VALUES (@ma, '1.8.0', '2026-10-01 00:00:00', 1, 0.1, 0.2, 'Manual edit', N'test', 1),
+       (@ma, '1.8.0', '2026-11-25 00:00:00', 1, 0.1, 0.2, 'Manual edit', N'test', 1),
+       (@mb, '1.8.0', '2023-06-01 00:00:00', 1, 0.1, 0.2, 'Manual edit', N'test', 1),
+       (@mb, '1.8.0', '2026-10-01 00:00:00', 1, 0.1, 0.2, 'Manual edit', N'test', 1);
+-- aggregate που δεν πρέπει να χαθεί
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+VALUES (@ma, '1.8.0', 'Month', '2026-10-01', 9.5, 5, 0);
+
+DECLARE @baseRaw INT = (SELECT COUNT(*) FROM RAW_READING WHERE MeterID BETWEEN 1 AND 4);
+DECLARE @baseVal INT = (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID BETWEEN 1 AND 4);
+DECLARE @aggBefore INT = (SELECT COUNT(*) FROM METER_AGGREGATE);
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID IN (@ma, @mb, @mn)) = 15 AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID IN (@ma, @mb, @mn)) = 15
+   AND @baseRaw > 0 AND @baseVal > 0
+    PRINT 'OK   GDP-2 setup: 3 meters x 5 raw + 5 validated, base demo readings present' ELSE PRINT 'FAIL GDP-2 setup';
+
+-- ---------- fn_retention_cutoff ----------
+IF (SELECT RetentionMonths FROM fn_retention_cutoff('2026-12-25') WHERE MeterID = @ma) = 1
+   AND (SELECT RetentionMonths FROM fn_retention_cutoff('2026-12-25') WHERE MeterID = @mb) = 36
+   AND NOT EXISTS (SELECT 1 FROM fn_retention_cutoff('2026-12-25') WHERE MeterID = @mn)
+   AND (SELECT Cutoff FROM fn_retention_cutoff('2026-12-25') WHERE MeterID = @ma) = '2026-11-25'
+    PRINT 'OK   fn_retention_cutoff: A = 1 month, B = 36, no holder -> no segment' ELSE PRINT 'FAIL fn_retention_cutoff';
+
+-- ---------- Preview ----------
+DECLARE @pv TABLE (MeterID INT, SerialNumber VARCHAR(40), RetentionMonths INT, Cutoff DATETIME2(0),
+                   RawToDelete INT, ValidatedToDelete INT, EditsToDelete INT, AsOf DATETIME2(0));
+INSERT @pv EXEC sp_retention_preview 1, '2026-12-25';
+IF EXISTS (SELECT 1 FROM @pv WHERE MeterID = @ma AND RetentionMonths = 1 AND RawToDelete = 2 AND ValidatedToDelete = 2 AND EditsToDelete = 1)
+   AND EXISTS (SELECT 1 FROM @pv WHERE MeterID = @ma AND RetentionMonths = 36 AND RawToDelete = 1 AND ValidatedToDelete = 1 AND EditsToDelete = 0)
+   AND EXISTS (SELECT 1 FROM @pv WHERE MeterID = @mb AND RetentionMonths = 36 AND RawToDelete = 1 AND ValidatedToDelete = 1 AND EditsToDelete = 1)
+   AND NOT EXISTS (SELECT 1 FROM @pv WHERE MeterID = @mb AND RetentionMonths = 1)
+   AND EXISTS (SELECT 1 FROM @pv WHERE MeterID = @mn AND RetentionMonths = 36 AND RawToDelete = 1 AND ValidatedToDelete = 1 AND EditsToDelete = 0)
+    PRINT 'OK   preview @AsOf 2026-12-25: A 2+1 (1 month / fallback), B 1 (36 months), no-holder meter 1' ELSE PRINT 'FAIL preview counts';
+IF NOT EXISTS (SELECT 1 FROM @pv WHERE MeterID BETWEEN 1 AND 4 AND (RawToDelete > 0 OR ValidatedToDelete > 0))
+   AND EXISTS (SELECT 1 FROM @pv WHERE MeterID = 1 AND RetentionMonths = 36)
+    PRINT 'OK   preview: base demo meters 1-4 have nothing to delete' ELSE PRINT 'FAIL preview base meters';
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID IN (@ma, @mb, @mn)) = 15 PRINT 'OK   preview deletes nothing' ELSE PRINT 'FAIL preview deleted rows';
+DECLARE @pn TABLE (MeterID INT, SerialNumber VARCHAR(40), RetentionMonths INT, Cutoff DATETIME2(0),
+                   RawToDelete INT, ValidatedToDelete INT, EditsToDelete INT, AsOf DATETIME2(0));
+INSERT @pn EXEC sp_retention_preview 1;
+IF EXISTS (SELECT 1 FROM @pn) AND (SELECT MIN(AsOf) FROM @pn) BETWEEN DATEADD(MINUTE, -5, SYSUTCDATETIME()) AND DATEADD(MINUTE, 1, SYSUTCDATETIME())
+    PRINT 'OK   preview @AsOf NULL -> now (UTC)' ELSE PRINT 'FAIL preview default AsOf';
+
+-- ---------- Λάθος ρόλος / λάθος ημερομηνία ----------
+BEGIN TRY EXEC sp_retention_purge 2, '2026-12-25'; PRINT 'FAIL operator purged'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51402 PRINT 'OK   operator purge -> 51402' ELSE PRINT 'FAIL operator purge: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_retention_purge 3, '2026-12-25'; PRINT 'FAIL consumer purged'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51402 PRINT 'OK   consumer purge -> 51402' ELSE PRINT 'FAIL consumer purge: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_retention_preview 2, '2026-12-25'; PRINT 'FAIL operator previewed'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51402 PRINT 'OK   operator preview -> 51402' ELSE PRINT 'FAIL operator preview: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_retention_purge 1, '2099-01-01'; PRINT 'FAIL far-future AsOf accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51450 PRINT 'OK   AsOf far in the future -> 51450' ELSE PRINT 'FAIL future AsOf: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY EXEC sp_retention_preview 1, '2099-01-01'; PRINT 'FAIL far-future preview accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51450 PRINT 'OK   preview AsOf far in the future -> 51450' ELSE PRINT 'FAIL future preview: ' + ERROR_MESSAGE(); END CATCH;
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID IN (@ma, @mb, @mn)) = 15 PRINT 'OK   refused calls deleted nothing' ELSE PRINT 'FAIL refused calls deleted rows';
+
+-- ---------- Trigger: χωρίς flag η διαγραφή αποτυγχάνει ----------
+BEGIN TRY DELETE VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-12-01'; PRINT 'FAIL validated delete without flag'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 50006 PRINT 'OK   DELETE VALIDATED_READING without flag -> 50006' ELSE PRINT 'FAIL trigger: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Εκκαθάριση χωρίς τίποτα να λήγει: @AsOf = 2026-05-01 ----------
+DECLARE @p0 TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf DATETIME2(0));
+INSERT @p0 EXEC sp_retention_purge 1, '2026-05-01';
+IF EXISTS (SELECT 1 FROM @p0 WHERE RawDeleted = 0 AND ValidatedDeleted = 0 AND EditsDeleted = 0 AND AsOf = '2026-05-01')
+   AND (SELECT COUNT(*) FROM RAW_READING WHERE MeterID IN (@ma, @mb, @mn)) = 15
+   AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID IN (@ma, @mb, @mn)) = 15
+    PRINT 'OK   purge @AsOf 2026-05-01 -> 0 deleted, rows unchanged' ELSE PRINT 'FAIL purge with nothing to delete';
+IF (SELECT CAST(SESSION_CONTEXT(N'mdms_purge') AS INT)) = 0 PRINT 'OK   session flag back to 0 after purge' ELSE PRINT 'FAIL session flag not reset';
+
+-- ---------- Εκκαθάριση @AsOf = 2026-12-25 ----------
+DECLARE @p1 TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf DATETIME2(0));
+INSERT @p1 EXEC sp_retention_purge 1, '2026-12-25';
+IF EXISTS (SELECT 1 FROM @p1 WHERE RawDeleted = (SELECT SUM(RawToDelete) FROM @pv) AND ValidatedDeleted = (SELECT SUM(ValidatedToDelete) FROM @pv)
+           AND EditsDeleted = (SELECT SUM(EditsToDelete) FROM @pv) AND RawDeleted >= 5 AND AsOf = '2026-12-25')
+    PRINT 'OK   purge result = preview totals (>= 5 raw, 5 validated, 2 edits)' ELSE PRINT 'FAIL purge result vs preview';
+IF (SELECT CAST(SESSION_CONTEXT(N'mdms_purge') AS INT)) = 0 PRINT 'OK   session flag back to 0 after purge (2)' ELSE PRINT 'FAIL session flag not reset (2)';
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID = @ma) = 2 AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID = @ma) = 2
+   AND NOT EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @ma AND IntervalStart < '2026-11-25')
+   AND NOT EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @ma AND IntervalStart < '2026-11-25')
+    PRINT 'OK   consumer with RawRetentionMonths = 1: only rows from 2026-11-25 on remain (cutoff itself kept)' ELSE PRINT 'FAIL A purge';
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID = @mb) = 4 AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID = @mb) = 4
+   AND NOT EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @mb AND IntervalStart = '2023-06-01')
+   AND EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @mb AND IntervalStart = '2026-10-01')
+    PRINT 'OK   36-month consumer keeps 2026-10-01 rows (only the pre-installation 2023 row went)' ELSE PRINT 'FAIL B purge';
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID = @mn) = 4 AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID = @mn) = 4
+    PRINT 'OK   premise without holder: 36-month fallback' ELSE PRINT 'FAIL fallback purge';
+IF (SELECT COUNT(*) FROM READING_EDIT WHERE MeterID = @ma) = 1 AND EXISTS (SELECT 1 FROM READING_EDIT WHERE MeterID = @ma AND IntervalStart = '2026-11-25')
+   AND (SELECT COUNT(*) FROM READING_EDIT WHERE MeterID = @mb) = 1 AND EXISTS (SELECT 1 FROM READING_EDIT WHERE MeterID = @mb AND IntervalStart = '2026-10-01')
+    PRINT 'OK   READING_EDIT rows of purged readings deleted, others kept' ELSE PRINT 'FAIL READING_EDIT purge';
+IF (SELECT COUNT(*) FROM RAW_READING WHERE MeterID BETWEEN 1 AND 4) = @baseRaw AND (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID BETWEEN 1 AND 4) = @baseVal
+    PRINT 'OK   base demo readings (meters 1-4) untouched' ELSE PRINT 'FAIL base demo readings deleted';
+IF (SELECT COUNT(*) FROM METER_AGGREGATE) = @aggBefore AND EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = @ma AND PeriodType = 'Month' AND PeriodStart = '2026-10-01' AND SumValue = 9.5)
+    PRINT 'OK   METER_AGGREGATE untouched' ELSE PRINT 'FAIL METER_AGGREGATE changed';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'RETENTION' AND ObjectID = '2026-12-25 00:00:00' AND Action = 'Retention purge' AND PerformedBy = 1
+           AND ResultComment LIKE N'%ωμές%')
+    PRINT 'OK   purge -> AUDIT_LOG with counts' ELSE PRINT 'FAIL purge audit';
+
+-- ---------- Δεύτερη εκτέλεση: δεν υπάρχει τίποτα άλλο ----------
+DECLARE @p2 TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf DATETIME2(0));
+INSERT @p2 EXEC sp_retention_purge 1, '2026-12-25';
+IF EXISTS (SELECT 1 FROM @p2 WHERE RawDeleted = 0 AND ValidatedDeleted = 0 AND EditsDeleted = 0) PRINT 'OK   second purge -> 0 deleted (idempotent)' ELSE PRINT 'FAIL second purge';
+
+-- ---------- Trigger ακόμα ενεργό ----------
+BEGIN TRY DELETE VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-12-01'; PRINT 'FAIL validated delete after purge'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 50006 PRINT 'OK   DELETE VALIDATED_READING after purge still refused -> 50006' ELSE PRINT 'FAIL trigger after purge: ' + ERROR_MESSAGE(); END CATCH;
+GO
