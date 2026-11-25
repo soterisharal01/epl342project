@@ -280,6 +280,9 @@ VALUES (@ma, '1.8.0', '2026-10-01 00:00:00', 1, 0.1, 0.2, 'Manual edit', N'test'
 -- aggregate που δεν πρέπει να χαθεί
 INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
 VALUES (@ma, '1.8.0', 'Month', '2026-10-01', 9.5, 5, 0);
+-- FIX-2: οι σωρευτικές τιμές του A που λήγουν (1/10, 24/11) σβήνονται μόνο επειδή έχουν ήδη Day aggregate
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+VALUES (@ma, '1.8.0', 'Day', '2026-10-01', 0.1, 1, 0), (@ma, '1.8.0', 'Day', '2026-11-24', 0.1, 1, 0);
 
 DECLARE @baseRaw INT = (SELECT COUNT(*) FROM RAW_READING WHERE MeterID BETWEEN 1 AND 4);
 DECLARE @baseVal INT = (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID BETWEEN 1 AND 4);
@@ -374,6 +377,25 @@ DECLARE @p2 TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf 
 INSERT @p2 EXEC sp_retention_purge 1, '2026-12-25';
 IF EXISTS (SELECT 1 FROM @p2 WHERE RawDeleted = 0 AND ValidatedDeleted = 0 AND EditsDeleted = 0) PRINT 'OK   second purge -> 0 deleted (idempotent)' ELSE PRINT 'FAIL second purge';
 
+-- ---------- FIX-2: μια σωρευτική τιμή χωρίς Day aggregate δεν σβήνεται ακόμη ----------
+-- A (1 μήνας): 10/11 λήγει στις 25/12, αλλά η ημέρα 10/11 δεν έχει aggregate -> μένει. Με το aggregate -> σβήνεται.
+DECLARE @f2pk BIGINT = (SELECT TOP 1 PacketID FROM TELEMETRY_PACKET WHERE MeterID = @ma);
+INSERT RAW_READING (MeterID, ObisCode, IntervalStart, ReceivedValue, VeeStatus, PacketID) VALUES (@ma, '1.8.0', '2026-11-10 00:00:00', 100.0, 'Validated', @f2pk);
+INSERT VALIDATED_READING (MeterID, ObisCode, IntervalStart, Value, Quality, RunID) VALUES (@ma, '1.8.0', '2026-11-10 00:00:00', 0.1, 'Validated', 1);
+DECLARE @f2a TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf DATETIME2(0));
+INSERT @f2a EXEC sp_retention_purge 1, '2026-12-25';
+IF EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+   AND EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+    PRINT 'OK   FIX-2 purge keeps an expired cumulative value whose day has no aggregate yet' ELSE PRINT 'FAIL FIX-2 purge deleted a value without its day aggregate';
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+VALUES (@ma, '1.8.0', 'Day', '2026-11-10', 0.1, 1, 0);
+DELETE @f2a;
+INSERT @f2a EXEC sp_retention_purge 1, '2026-12-25';
+IF NOT EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+   AND NOT EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+   AND EXISTS (SELECT 1 FROM @f2a WHERE RawDeleted = 1 AND ValidatedDeleted = 1)
+    PRINT 'OK   FIX-2 purge deletes it once the day aggregate exists' ELSE PRINT 'FAIL FIX-2 purge after the aggregate';
+
 -- ---------- Trigger ακόμα ενεργό ----------
 BEGIN TRY DELETE VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-12-01'; PRINT 'FAIL validated delete after purge'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 50006 PRINT 'OK   DELETE VALIDATED_READING after purge still refused -> 50006' ELSE PRINT 'FAIL trigger after purge: ' + ERROR_MESSAGE(); END CATCH;
@@ -383,6 +405,7 @@ EXEC sp_set_session_context N'mdms_purge', 1;
 DELETE READING_EDIT WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE VALIDATED_READING WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE RAW_READING WHERE MeterID IN (SELECT MeterID FROM @m);
+DELETE METER_AGGREGATE WHERE MeterID IN (SELECT MeterID FROM @m);   -- FIX-2: τα aggregates σβήνονται μόνο με το flag
 EXEC sp_set_session_context N'mdms_purge', 0;
 DELETE EVENT WHERE MeterID IN (SELECT MeterID FROM @m) OR PacketID IN (SELECT PacketID FROM TELEMETRY_PACKET WHERE MeterID IN (SELECT MeterID FROM @m));
 DELETE TELEMETRY_PACKET WHERE MeterID IN (SELECT MeterID FROM @m);
@@ -390,7 +413,6 @@ DECLARE @gdp2tasks TABLE (TaskID INT);
 INSERT @gdp2tasks SELECT TaskID FROM METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE FIELD_TASK WHERE TaskID IN (SELECT TaskID FROM @gdp2tasks);
-DELETE METER_AGGREGATE WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE DOCUMENT WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE METER_CONNECTED_PHASE WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE METER WHERE MeterID IN (SELECT MeterID FROM @m);
