@@ -151,7 +151,7 @@ change them only through the schema-change process or in the coordinating sessio
 | REL-4 | `12.zip` + printed `docx/` + Moodle upload before 11:00 | REL-3 | 4/12 | ○ | Pack ready, needs the human: `python sql/tools/make_zip.py`, checklist in [23](23-release.md) section 4 |
 | REL-5 | `sql/select.sql`: demo and analytic queries for the exam (not part of the build) | | 2/12 | ✓ | 27 queries; parse check on a database pending |
 | FIX-1 | Spec re-check fixes: current state stored for every node (III.4.2, B16); aggregates only from finished VEE days (III.3.2); a new tenant sees nothing of the previous holder (B18) | | 26/11 | 👀 | Found by a line-by-line check of the spec; 773 OK locally. **After merge: rebuild `sharal01` (REL-1 runbook).** |
-| FIX-2 | Review fixes after FIX-1: pending closes finished months/years whose month row was skipped (late Suspect edit, empty last day); consumer history test passes after November | FIX-1 | 27/11 | 👀 | Written without a database; then run locally with FIX-3 on top: 784 OK, 0 FAIL (Docker, 25/11) |
+| FIX-2 | Review fixes after FIX-1: pending closes finished months/years whose month row was skipped (late Suspect edit, empty last day); consumer history test passes after November; pending technicians upload documents; unit check on ingestion | FIX-1 | 27/11 | 👀 | 25/11: full build + tests on a member database in SSMS, 0 FAIL. PR #46 |
 | FIX-3 | Review follow-up: aggregates immutable by trigger; retention purge keeps days without a Day aggregate; explicit isolation levels in 4 procedures (doc 15) | FIX-2 | 27/11 | 👀 | 792 OK locally. Schema change (2 triggers): **every member rebuilds; rebuild `sharal01` after merge** |
 
 ## Old IDs

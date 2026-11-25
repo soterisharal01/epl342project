@@ -6,7 +6,7 @@
 //             sp_tech_add_attachment, sp_tech_complete_task, sp_task_get, sp_task_notes, sp_task_attachments
 // =====================================================================
 require_once __DIR__ . '/../layout.php';
-require_role('Technician');
+require_approved_technician();   // FIX-2: μόνο εγκεκριμένος Τεχνικός
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
