@@ -30,6 +30,9 @@ function menu_items(string $role): array
             $items[$folder . '/' . basename($f)] = $m[1];
         }
     }
+    if ($role === 'Technician' && technician_limited()) {   // FIX-2: πριν την έγκριση μόνο τα έγγραφα
+        $items = array_intersect_key($items, array_flip(TECH_LIMITED_PAGES));
+    }
     return $items;
 }
 

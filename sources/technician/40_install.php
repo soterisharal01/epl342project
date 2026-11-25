@@ -8,7 +8,7 @@
 //             sp_ref_list_meter_models, sp_ref_list_comm_types
 // =====================================================================
 require_once __DIR__ . '/../layout.php';
-require_role('Technician');
+require_approved_technician();   // FIX-2: μόνο εγκεκριμένος Τεχνικός
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();

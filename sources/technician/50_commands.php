@@ -8,7 +8,7 @@
 // Εδώ και ο έλεγχος anti-tamper (sp_tech_record_tamper_check, sp_tech_list_tasks).
 // =====================================================================
 require_once __DIR__ . '/../layout.php';
-require_role('Technician');
+require_approved_technician();   // FIX-2: μόνο εγκεκριμένος Τεχνικός
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
