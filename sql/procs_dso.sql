@@ -768,6 +768,7 @@ GO
 -- DSO-4: aggregates (ημερήσια/μηνιαία/ετήσια αθροίσματα). Λάθη 53300-53399.
 --   53300 sp_dso_build_aggregates: λείπει η ημέρα
 --   53301 sp_dso_build_aggregates_pending: λάθος περίοδος (@From >= @UpTo)
+--   53305 sp_dso_build_aggregates: η ημέρα δεν έχει τελειώσει (σήμερα ή μέλλον, UTC)
 --   53302 sp_dso_list_aggregates: άγνωστος @PeriodType
 --   53303 sp_dso_list_aggregates: δεν υπάρχει ο μετρητής
 --   53304 sp_dso_list_aggregates: λάθος περίοδος (@From > @To)
@@ -785,6 +786,14 @@ GO
 --    του μήνα (έως και την @Day). Έτος: στις 31/12 (ή @ForceYear = 1), από τις γραμμές Day του έτους.
 --    Το force είναι ρητή απόφαση του DSO: ό,τι λείπει μέχρι τότε δεν θα μπει ποτέ (τελικό).
 --  * Μια ημέρα που δεν έχει επικυρωμένες τιμές δεν γράφει τίποτα (ReadingCount >= 1).
+--  * ΜΟΝΟ ΟΡΙΣΤΙΚΟΠΟΙΗΜΕΝΑ (spec III.3.2: «η ολοκλήρωση του VEE είναι το σημείο ενεργοποίησης»):
+--    ένας μετρητής/κωδικός που έχει ακόμη ωμή μέτρηση 'Pending' ή 'Suspect' μέσα στην ημέρα ΔΕΝ παίρνει
+--    aggregate τώρα (αλλιώς το «τελικό» άθροισμα θα έμενε για πάντα λάθος όταν διορθωθεί η ύποπτη τιμή).
+--    Το ίδιο για το φύλλο-μετασχηματιστή αν κάποιος μετρητής του δεν τελείωσε, και για τον αυτόματο μήνα/έτος
+--    αν κάτι στο διάστημα δεν τελείωσε (το force είναι ρητή απόφαση του DSO και κλείνει τον μήνα όπως είναι).
+--    Παραλείπονται χωρίς λάθος· τα χτίζει επόμενη κλήση (π.χ. η pending) μετά το VEE ή τη διόρθωση.
+--    Πόσες σειρές της ημέρας παραλείφθηκαν γράφεται στο AUDIT_LOG.
+--  * Η σημερινή (UTC) ή μελλοντική ημέρα δεν χτίζεται: δεν έχει τελειώσει, άρα θα «κλείδωνε» μισά δεδομένα (53305).
 -- Δομή: ο πυρήνας sp_dso_build_aggregates_day δεν ανοίγει δικό του transaction (το ανοίγει
 -- ο καλών), ώστε και η pending να είναι ένα ατομικό σύνολο.
 -- =====================================================================
@@ -802,12 +811,26 @@ BEGIN
     DECLARE @YearStart DATE = DATEFROMPARTS(YEAR(@Day), 1, 1);
     DECLARE @Cnt INT;
     SELECT @MeterRows = 0, @TrRows = 0, @MonthRows = 0, @YearRows = 0;
+    IF @Day >= CAST(SYSUTCDATETIME() AS DATE)
+        THROW 53305, N'Η ημέρα δεν έχει τελειώσει ακόμη (UTC): τα aggregates χτίζονται μόνο για ολοκληρωμένες ημέρες.', 1;
+
+    -- Σειρές (μετρητής, κωδικός) με ωμές μετρήσεις που δεν πέρασαν ακόμη το VEE ('Pending') ή περιμένουν
+    -- διόρθωση ('Suspect'), από την αρχή του έτους μέχρι το τέλος της ημέρας (καλύπτει ημέρα, μήνα, έτος).
+    DECLARE @Open TABLE (MeterID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL, IntervalStart DATETIME2(0) NOT NULL);
+    INSERT @Open (MeterID, ObisCode, IntervalStart)
+    SELECT r.MeterID, r.ObisCode, r.IntervalStart
+      FROM RAW_READING r
+     WHERE r.VeeStatus IN ('Pending', 'Suspect') AND r.ObisCode IN ('1.8.0', '2.8.0')
+       AND r.IntervalStart >= CAST(@YearStart AS DATETIME2(0)) AND r.IntervalStart < @Next;
+    DECLARE @Skipped INT = (SELECT COUNT(*) FROM (SELECT DISTINCT MeterID, ObisCode FROM @Open
+                                                  WHERE IntervalStart >= @From) x);
 
     -- Ημέρα, μετρητές
     INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
     SELECT v.MeterID, v.ObisCode, 'Day', @Day, SUM(v.Value), COUNT(*), SUM(CASE WHEN v.Quality = 'Estimated' THEN 1 ELSE 0 END)
       FROM VALIDATED_READING v
      WHERE v.ObisCode IN ('1.8.0', '2.8.0') AND v.IntervalStart >= @From AND v.IntervalStart < @Next
+       AND NOT EXISTS (SELECT 1 FROM @Open o WHERE o.MeterID = v.MeterID AND o.ObisCode = v.ObisCode AND o.IntervalStart >= @From)
        AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
                         WHERE a.MeterID = v.MeterID AND a.ObisCode = v.ObisCode AND a.PeriodType = 'Day' AND a.PeriodStart = @Day)
      GROUP BY v.MeterID, v.ObisCode;
@@ -820,6 +843,8 @@ BEGIN
       JOIN METER m ON m.MeterID = v.MeterID
      WHERE v.ObisCode IN ('1.8.0', '2.8.0') AND v.IntervalStart >= @From AND v.IntervalStart < @Next
        AND NOT EXISTS (SELECT 1 FROM TRANSFORMER c WHERE c.ParentTransformerID = m.TransformerID)
+       AND NOT EXISTS (SELECT 1 FROM @Open o JOIN METER om ON om.MeterID = o.MeterID
+                        WHERE om.TransformerID = m.TransformerID AND o.ObisCode = v.ObisCode AND o.IntervalStart >= @From)
        AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
                         WHERE a.TransformerID = m.TransformerID AND a.ObisCode = v.ObisCode AND a.PeriodType = 'Day' AND a.PeriodStart = @Day)
      GROUP BY m.TransformerID, v.ObisCode;
@@ -832,6 +857,8 @@ BEGIN
         SELECT d.MeterID, d.ObisCode, 'Month', @MonthStart, SUM(d.SumValue), SUM(d.ReadingCount), SUM(d.EstimatedCount)
           FROM METER_AGGREGATE d
          WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @MonthStart AND d.PeriodStart <= @Day
+           AND (@ForceMonth = 1 OR NOT EXISTS (SELECT 1 FROM @Open o WHERE o.MeterID = d.MeterID AND o.ObisCode = d.ObisCode
+                                                   AND o.IntervalStart >= CAST(@MonthStart AS DATETIME2(0))))
            AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
                             WHERE a.MeterID = d.MeterID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Month' AND a.PeriodStart = @MonthStart)
          GROUP BY d.MeterID, d.ObisCode;
@@ -840,6 +867,9 @@ BEGIN
         SELECT d.TransformerID, d.ObisCode, 'Month', @MonthStart, SUM(d.SumValue), MAX(d.MeterCount)
           FROM TRANSFORMER_AGGREGATE d
          WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @MonthStart AND d.PeriodStart <= @Day
+           AND (@ForceMonth = 1 OR NOT EXISTS (SELECT 1 FROM @Open o JOIN METER om ON om.MeterID = o.MeterID
+                            WHERE om.TransformerID = d.TransformerID AND o.ObisCode = d.ObisCode
+                              AND o.IntervalStart >= CAST(@MonthStart AS DATETIME2(0))))
            AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
                             WHERE a.TransformerID = d.TransformerID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Month' AND a.PeriodStart = @MonthStart)
          GROUP BY d.TransformerID, d.ObisCode;
@@ -853,6 +883,8 @@ BEGIN
         SELECT d.MeterID, d.ObisCode, 'Year', @YearStart, SUM(d.SumValue), SUM(d.ReadingCount), SUM(d.EstimatedCount)
           FROM METER_AGGREGATE d
          WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @YearStart AND d.PeriodStart <= @Day
+           AND (@ForceYear = 1 OR NOT EXISTS (SELECT 1 FROM @Open o WHERE o.MeterID = d.MeterID AND o.ObisCode = d.ObisCode
+                                                   AND o.IntervalStart >= CAST(@YearStart AS DATETIME2(0))))
            AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
                             WHERE a.MeterID = d.MeterID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Year' AND a.PeriodStart = @YearStart)
          GROUP BY d.MeterID, d.ObisCode;
@@ -861,6 +893,9 @@ BEGIN
         SELECT d.TransformerID, d.ObisCode, 'Year', @YearStart, SUM(d.SumValue), MAX(d.MeterCount)
           FROM TRANSFORMER_AGGREGATE d
          WHERE d.PeriodType = 'Day' AND d.PeriodStart >= @YearStart AND d.PeriodStart <= @Day
+           AND (@ForceYear = 1 OR NOT EXISTS (SELECT 1 FROM @Open o JOIN METER om ON om.MeterID = o.MeterID
+                            WHERE om.TransformerID = d.TransformerID AND o.ObisCode = d.ObisCode
+                              AND o.IntervalStart >= CAST(@YearStart AS DATETIME2(0))))
            AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE a WITH (UPDLOCK, HOLDLOCK)
                             WHERE a.TransformerID = d.TransformerID AND a.ObisCode = d.ObisCode AND a.PeriodType = 'Year' AND a.PeriodStart = @YearStart)
          GROUP BY d.TransformerID, d.ObisCode;
@@ -870,7 +905,8 @@ BEGIN
     INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
     VALUES ('AGGREGATE', CONVERT(VARCHAR(10), @Day, 120), 'Build aggregates', NULL, 'Final',
             CONCAT(N'Μετρητές: ', @MeterRows, N', μετασχηματιστές (φύλλα): ', @TrRows,
-                   N', μήνας: ', @MonthRows, N', έτος: ', @YearRows), @UserID);
+                   N', μήνας: ', @MonthRows, N', έτος: ', @YearRows,
+                   N', παραλείφθηκαν (VEE όχι ολοκληρωμένο): ', @Skipped), @UserID);
 END;
 GO
 
@@ -924,6 +960,7 @@ BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     EXEC sp_dso_assert @UserID;
     SET @UpTo = ISNULL(@UpTo, CAST(SYSUTCDATETIME() AS DATE));
+    IF @UpTo > CAST(SYSUTCDATETIME() AS DATE) SET @UpTo = CAST(SYSUTCDATETIME() AS DATE);   -- μόνο ολοκληρωμένες ημέρες
     IF @From IS NOT NULL AND @From >= @UpTo
         THROW 53301, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν από το όριο.', 1;
 
@@ -946,7 +983,7 @@ BEGIN
         BEGIN
             SELECT @d4_Day = MIN(Day) FROM #d4_pending;
             EXEC sp_dso_build_aggregates_day @UserID, @d4_Day, 0, 0, @d4_M OUTPUT, @d4_T OUTPUT, @d4_Mo OUTPUT, @d4_Y OUTPUT;
-            SELECT @d4_Days += 1, @d4_SumM += @d4_M, @d4_SumT += @d4_T, @d4_SumMo += @d4_Mo, @d4_SumY += @d4_Y;
+            SELECT @d4_Days += CASE WHEN @d4_M + @d4_T + @d4_Mo + @d4_Y > 0 THEN 1 ELSE 0 END, @d4_SumM += @d4_M, @d4_SumT += @d4_T, @d4_SumMo += @d4_Mo, @d4_SumY += @d4_Y;
             DELETE #d4_pending WHERE Day = @d4_Day;
         END;
         DROP TABLE #d4_pending;

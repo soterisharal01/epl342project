@@ -63,7 +63,7 @@ Column table legend: **Null** says whether the column may be empty. **Key** show
 | [`RULE_FOR`](#rule_for) | Telemetry and VEE | Many-to-many link saying which OBIS codes a VEE rule applies to. | — |
 | [`METER_AGGREGATE`](#meter_aggregate) | Aggregates and grid | Stored daily, monthly or yearly sum of validated readings per meter and OBIS code. | — |
 | [`TRANSFORMER_AGGREGATE`](#transformer_aggregate) | Aggregates and grid | Stored Day, Month or Year totals for leaf transformers; upper levels are computed with a recursive query. | — |
-| [`TRANSFORMER_CURRENT_STATE`](#transformer_current_state) | Aggregates and grid | Latest 15-minute import (1.8.0) and export (2.8.0) total per leaf transformer. | — |
+| [`TRANSFORMER_CURRENT_STATE`](#transformer_current_state) | Aggregates and grid | Latest 15-minute import (1.8.0) and export (2.8.0) total per transformer (leaves and all ancestors). | — |
 | [`PORTFOLIO`](#portfolio) | Market | A named group of premises managed by an aggregator. | — |
 | [`INCLUDES`](#includes) | Market | Membership of a premise in a portfolio, with its dates. | — |
 | [`GDPR_REQUEST`](#gdpr_request) | Compliance | A consumer's erasure request moving through the stages Submitted, Under review, Pre-approved, Approved or Rejected, Applied. | — |
@@ -888,7 +888,7 @@ Stored Day, Month or Year totals for leaf transformers; upper levels are compute
 
 ### TRANSFORMER_CURRENT_STATE
 
-Latest 15-minute import (1.8.0) and export (2.8.0) total per leaf transformer.
+Latest 15-minute import (1.8.0) and export (2.8.0) total per transformer (leaves and all ancestors).
 
 | Column | Type | Null | Key | Meaning |
 |---|---|---|---|---|

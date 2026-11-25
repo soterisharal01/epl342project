@@ -383,7 +383,10 @@ GO
 -- Λάθη: 51100 ξένος μετρητής, 51101 ξένο υποστατικό, 51102 μη έγκυρο διάστημα,
 --   51103 εκτός περιόδου εγκατάστασης, 51104 διάστημα > 31 ημέρες, 51105 μήνας χωρίς αγορά,
 --   51106 μήνας εκτός διατήρησης, 51107 μη έγκυρη περίοδος, 51108 τρέχων/μελλοντικός μήνας στην αγορά,
---   51109 μη έγκυροι μήνες, 51110 επικάλυψη αγοράς, 51111 αγορά εκτός διατήρησης, 51112 δεν υπάρχει υπηρεσία.
+--   51109 μη έγκυροι μήνες, 51110 επικάλυψη αγοράς, 51111 αγορά εκτός διατήρησης, 51112 δεν υπάρχει υπηρεσία,
+--   51113 αγορά για μήνες πριν αρχίσετε να κρατάτε το υποστατικό.
+-- Απόφαση B18: ο καταναλωτής βλέπει ΜΟΝΟ την περίοδο που κρατά το υποστατικό (HOLDING.StartDate και μετά).
+-- Ένας νέος ένοικος δεν βλέπει τις μετρήσεις/αθροίσματα του προηγούμενου, ούτε αγοράζει ιστορικό του.
 -- =====================================================================
 
 -- Μετρητές που ο χρήστης μπορεί να δει: επιβεβαιωμένες εγκαταστάσεις σε υποστατικά που κρατά ΣΗΜΕΡΑ,
@@ -420,6 +423,21 @@ BEGIN
     ORDER BY InstalledAt DESC;
     IF @prem IS NULL
         THROW 51103, N'Το διάστημα δεν βρίσκεται μέσα στην περίοδο εγκατάστασης του μετρητή.', 1;
+
+    -- B18: τίποτα πριν από την ημέρα που ο χρήστης άρχισε να κρατά το υποστατικό (το διάστημα κόβεται εκεί).
+    DECLARE @hs DATE = (SELECT MIN(StartDate) FROM HOLDING
+                        WHERE UserID = @UserID AND PremiseID = @prem
+                          AND StartDate <= CAST(SYSUTCDATETIME() AS DATE)
+                          AND (EndDate IS NULL OR EndDate >= CAST(SYSUTCDATETIME() AS DATE)));
+    IF @hs IS NOT NULL AND @From < CAST(@hs AS DATETIME2) SET @From = CAST(@hs AS DATETIME2);
+    IF @From >= @To
+    BEGIN
+        SELECT CAST(NULL AS DATETIME2(0)) AS IntervalStart, CAST(NULL AS DECIMAL(15,4)) AS ImportKWh,
+               CAST(NULL AS DECIMAL(15,4)) AS ExportKWh, CAST(NULL AS DECIMAL(15,4)) AS VoltageL1,
+               CAST(NULL AS VARCHAR(9)) AS Quality
+        WHERE 1 = 0;
+        RETURN;
+    END;
 
     DECLARE @cur DATE = DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1);
     DECLARE @ret INT = (SELECT RawRetentionMonths FROM USER_ACCOUNT WHERE UserID = @UserID);
@@ -475,6 +493,13 @@ BEGIN
         THROW 51102, N'Μη έγκυρο διάστημα: η αρχή πρέπει να είναι πριν το τέλος.', 1;
     IF NOT EXISTS (SELECT 1 FROM fn_consumer_meters(@UserID) WHERE MeterID = @MeterID)
         THROW 51100, N'Ο μετρητής δεν ανήκει σε υποστατικό σας.', 1;
+    -- B18: μόνο περίοδοι που αρχίζουν από την ημέρα που ο χρήστης κρατά το υποστατικό και μετά
+    -- (ένας μήνας/χρόνος που άρχισε πριν δεν δείχνεται, γιατί περιέχει δεδομένα του προηγούμενου κατόχου).
+    DECLARE @hs DATE = (SELECT MIN(h.StartDate)
+                        FROM HOLDING h JOIN fn_consumer_meters(@UserID) cm ON cm.PremiseID = h.PremiseID AND cm.MeterID = @MeterID
+                        WHERE h.UserID = @UserID AND h.StartDate <= CAST(SYSUTCDATETIME() AS DATE)
+                          AND (h.EndDate IS NULL OR h.EndDate >= CAST(SYSUTCDATETIME() AS DATE)));
+    IF @hs IS NOT NULL AND @From < @hs SET @From = @hs;
     SELECT a.PeriodStart,
            ISNULL(SUM(CASE WHEN a.ObisCode = '1.8.0' THEN a.SumValue END), 0) AS ImportKWh,
            ISNULL(SUM(CASE WHEN a.ObisCode = '2.8.0' THEN a.SumValue END), 0) AS ExportKWh,
@@ -514,6 +539,12 @@ BEGIN
         THROW 51108, N'Αγοράζονται μόνο προηγούμενοι μήνες· ο τρέχων μήνας είναι δωρεάν και οι μελλοντικοί δεν υπάρχουν.', 1;
     IF @MonthFrom < DATEADD(MONTH, -@ret, @cur)
         BEGIN SET @msg = CONCAT(N'Ο μήνας ', CONVERT(NVARCHAR(7), @MonthFrom, 23), N' είναι εκτός της περιόδου διατήρησης (', @ret, N' μήνες).'); THROW 51111, @msg, 1; END;
+    DECLARE @hs DATE = (SELECT MIN(StartDate) FROM HOLDING
+                        WHERE UserID = @UserID AND PremiseID = @PremiseID
+                          AND StartDate <= CAST(SYSUTCDATETIME() AS DATE)
+                          AND (EndDate IS NULL OR EndDate >= CAST(SYSUTCDATETIME() AS DATE)));
+    IF @MonthFrom < DATEFROMPARTS(YEAR(@hs), MONTH(@hs), 1)
+        BEGIN SET @msg = CONCAT(N'Κρατάτε το υποστατικό από ', CONVERT(NVARCHAR(10), @hs, 23), N'· δεν αγοράζεται ιστορικό προηγούμενου κατόχου.'); THROW 51113, @msg, 1; END;
     DECLARE @fee DECIMAL(10,2) = (SELECT Fee FROM SERVICE_TYPE WHERE ServiceTypeID = 1);
     IF @fee IS NULL
         THROW 51112, N'Η υπηρεσία ιστορικού δεν είναι διαθέσιμη.', 1;

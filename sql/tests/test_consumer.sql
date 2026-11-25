@@ -360,3 +360,21 @@ DELETE FROM EVENT WHERE Description LIKE N'test_con3%';
 
 
 PRINT 'test_consumer.sql: τέλος';
+
+-- ---------- B18: νέος κάτοχος δεν βλέπει τα δεδομένα του προηγούμενου ----------
+-- Σαν να ήρθε ο consumer1 στο υποστατικό 1 στις 19/11. Transaction + ROLLBACK: δεν αλλάζει τίποτα για άλλα tests.
+BEGIN TRAN;
+UPDATE HOLDING SET StartDate = '2026-11-19' WHERE UserID = 3 AND PremiseID = 1;
+DECLARE @b18 TABLE (IntervalStart DATETIME2(0), ImportKWh DECIMAL(15,4), ExportKWh DECIMAL(15,4), VoltageL1 DECIMAL(15,4), Quality VARCHAR(9));
+INSERT @b18 EXEC sp_consumer_readings 3, 1, '2026-11-18', '2026-11-20';
+IF EXISTS (SELECT 1 FROM @b18) AND NOT EXISTS (SELECT 1 FROM @b18 WHERE IntervalStart < '2026-11-19')
+    PRINT 'OK   B18 readings: nothing before the holding start (19/11)' ELSE PRINT 'FAIL B18 readings show the previous holder';
+DECLARE @b18h TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), EstimatedCount INT);
+INSERT @b18h EXEC sp_consumer_history 3, 1, 'Day', '2026-11-18', '2026-11-19';
+IF NOT EXISTS (SELECT 1 FROM @b18h WHERE PeriodStart < '2026-11-19') AND EXISTS (SELECT 1 FROM @b18h WHERE PeriodStart = '2026-11-19')
+    PRINT 'OK   B18 history: no aggregate row before the holding start' ELSE PRINT 'FAIL B18 history shows the previous holder';
+DECLARE @b18prev DATE = DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1));
+UPDATE HOLDING SET StartDate = CAST(SYSUTCDATETIME() AS DATE) WHERE UserID = 3 AND PremiseID = 1;
+BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @b18prev, @b18prev; PRINT 'FAIL B18 bought history of the previous holder'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51113 PRINT 'OK   B18 buy history before the holding start refused' ELSE PRINT 'FAIL B18 buy: ' + ERROR_MESSAGE(); END CATCH;
+IF @@TRANCOUNT > 0 ROLLBACK;
