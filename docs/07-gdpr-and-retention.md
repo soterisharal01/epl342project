@@ -101,6 +101,3 @@ Schema hooks: the CHECKs `CK_GDPR_REQUEST_Stage` and `CK_GDPR_REQUEST_Order` enf
 | `sources/admin/gdp_retention.php` (GDP-2) | Admin | `sp_retention_preview`, `sp_retention_purge`. |
 
 All pages use `call_proc`, `check_csrf()` on every POST, `h()` on output and Post/Redirect/Get with `flash()`. No new procedure was needed: the stage dates in `sp_gdpr_list` are the status history (comments are in `AUDIT_LOG.ResultComment`).
-
-### FIX-2: the purge never loses a day aggregate
-A cumulative value (`1.8.0`, `2.8.0`) younger than 36 months is deleted by `sp_retention_purge` / `sp_retention_purge_core` (and counted by `sp_retention_preview`) **only if** its day already has a `METER_AGGREGATE` Day row. Otherwise it stays until the DSO builds that day (for example a Suspect value still waiting for an edit), so a 1-month GDPR retention can never delete the data a day total is built from. After 36 months every row is deleted as before. Tests: `FIX-2 purge keeps …` and `FIX-2 purge deletes it once …` in `sql/tests/test_gdpr.sql`.

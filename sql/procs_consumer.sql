@@ -563,10 +563,6 @@ BEGIN
         THROW 51112, N'Η υπηρεσία ιστορικού δεν είναι διαθέσιμη.', 1;
     DECLARE @months INT = DATEDIFF(MONTH, @MonthFrom, @MonthTo) + 1;
     DECLARE @amount DECIMAL(10,2) = @months * @fee;
-    -- Ρητό isolation level (spec IV, ταυτοχρονία): έλεγχος «δεν έχει ήδη αγοραστεί» και INSERT στην ίδια
-    -- SERIALIZABLE συναλλαγή, ώστε δύο ταυτόχρονες αγορές του ίδιου μήνα να μην περάσουν και οι δύο.
-    -- Ισχύει μόνο μέσα σε αυτό το procedure (η SQL Server το επαναφέρει όταν τελειώσει).
-    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
     BEGIN TRY
         BEGIN TRAN;
         IF EXISTS (SELECT 1 FROM SERVICE_PURCHASE WITH (UPDLOCK, HOLDLOCK)

@@ -54,8 +54,6 @@ BEGIN
         THROW 51413, N'Μη έγκυρο είδος αιτήματος (διαγραφή ή μείωση διατήρησης).', 1;
     IF @RequestType = 'Retention' AND EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @UserID AND RawRetentionMonths = 1)
         THROW 51414, N'Η διατήρηση των αναλυτικών μετρήσεών σας είναι ήδη 1 μήνας.', 1;
-    -- Ρητό isolation level: ο έλεγχος «δεν υπάρχει ανοιχτό αίτημα» και το INSERT σε SERIALIZABLE συναλλαγή.
-    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
     BEGIN TRY
         BEGIN TRAN;
         -- κλειδώνουμε τη γραμμή του χρήστη ώστε δύο ταυτόχρονες υποβολές να περάσουν η μία μετά την άλλη
@@ -239,9 +237,6 @@ GO
 --   Διαγράφονται και οι γραμμές READING_EDIT των ίδιων μετρήσεων: κρατούν OldValue/NewValue, δηλαδή τις
 --   ίδιες τιμές που σβήνουμε, άρα θα έμεναν ως «διαρροή» των δεδομένων. Τα METER_AGGREGATE,
 --   TRANSFORMER_AGGREGATE και τα δεδομένα μετασχηματιστών ΔΕΝ πειράζονται (μένουν για πάντα).
---   FIX-2: μια σωρευτική τιμή (1.8.0/2.8.0) νεότερη από 36 μήνες σβήνεται ΜΟΝΟ αν υπάρχει ήδη το Day aggregate
---   της ημέρας της (METER_AGGREGATE). Αλλιώς μένει μέχρι να χτιστεί (π.χ. ύποπτη τιμή που περιμένει διόρθωση),
---   ώστε η διαγραφή να μη χάνει ποτέ το ημερήσιο άθροισμα. Μετά τους 36 μήνες σβήνεται πάντα.
 -- =====================================================================
 
 -- Τμήματα χρόνου ανά μετρητή: ποιος καταναλωτής κρατούσε το υποστατικό και πόσους μήνες κρατιούνται οι μετρήσεις.
@@ -283,17 +278,16 @@ BEGIN
                             INDEX ix_seg (MeterID, SegFrom));
         INSERT @seg SELECT MeterID, SegFrom, SegTo, UserID, RetentionMonths, Cutoff FROM fn_retention_cutoff(@asof0);
         DECLARE @minCutoff DATETIME2(0) = DATEADD(MONTH, -1, @asof0);   -- ο μικρότερος δυνατός χρόνος διατήρησης
-        DECLARE @maxCutoff DATETIME2(0) = DATEADD(MONTH, -36, @asof0);  -- μετά από 36 μήνες σβήνεται πάντα
 
         WITH k AS (
-            SELECT r.MeterID, r.ObisCode, r.IntervalStart, CAST(1 AS INT) AS Raw, CAST(0 AS INT) AS Val, CAST(0 AS INT) AS Ed
+            SELECT r.MeterID, r.IntervalStart, CAST(1 AS INT) AS Raw, CAST(0 AS INT) AS Val, CAST(0 AS INT) AS Ed
             FROM RAW_READING r WHERE r.IntervalStart < @minCutoff
             UNION ALL
-            SELECT v.MeterID, v.ObisCode, v.IntervalStart, 0, 1, 0 FROM VALIDATED_READING v WHERE v.IntervalStart < @minCutoff
+            SELECT v.MeterID, v.IntervalStart, 0, 1, 0 FROM VALIDATED_READING v WHERE v.IntervalStart < @minCutoff
             UNION ALL
-            SELECT e.MeterID, e.ObisCode, e.IntervalStart, 0, 0, 1 FROM READING_EDIT e WHERE e.IntervalStart < @minCutoff
+            SELECT e.MeterID, e.IntervalStart, 0, 0, 1 FROM READING_EDIT e WHERE e.IntervalStart < @minCutoff
         ), m AS (
-            SELECT k.MeterID, k.ObisCode, k.Raw, k.Val, k.Ed, k.IntervalStart,
+            SELECT k.MeterID, k.Raw, k.Val, k.Ed, k.IntervalStart,
                    COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
                              WHERE sg.MeterID = k.MeterID AND k.IntervalStart >= sg.SegFrom AND k.IntervalStart < sg.SegTo), 36) AS Months
             FROM k
@@ -301,10 +295,6 @@ BEGIN
             SELECT MeterID, Months, SUM(Raw) AS RawToDelete, SUM(Val) AS ValidatedToDelete, SUM(Ed) AS EditsToDelete
             FROM m
             WHERE IntervalStart < DATEADD(MONTH, -Months, @asof0)
-              -- FIX-2: σωρευτικές τιμές μέσα στα 36 μήνες σβήνονται μόνο αφού υπάρχει το Day aggregate τους
-              AND (ObisCode NOT IN ('1.8.0', '2.8.0') OR IntervalStart < @maxCutoff
-                   OR EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = m.MeterID AND a.ObisCode = m.ObisCode
-                                 AND a.PeriodType = 'Day' AND a.PeriodStart = CAST(m.IntervalStart AS DATE)))
             GROUP BY MeterID, Months
         )
         SELECT mt.MeterID, mt.SerialNumber, d.Months AS RetentionMonths, DATEADD(MONTH, -d.Months, @asof0) AS Cutoff,
@@ -357,7 +347,6 @@ BEGIN
                             RetentionMonths TINYINT NOT NULL, INDEX ix_seg (MeterID, SegFrom));
         INSERT @seg SELECT MeterID, SegFrom, SegTo, RetentionMonths FROM fn_retention_cutoff(@asof0);
         DECLARE @minCutoff DATETIME2(0) = DATEADD(MONTH, -1, @asof0);
-        DECLARE @maxCutoff DATETIME2(0) = DATEADD(MONTH, -36, @asof0);  -- μετά από 36 μήνες σβήνεται πάντα
         DECLARE @batch INT = 5000, @n INT, @nRaw INT = 0, @nVal INT = 0, @nEd INT = 0;
 
         EXEC sp_set_session_context N'mdms_purge', 1;
@@ -368,10 +357,7 @@ BEGIN
             DELETE TOP (@batch) e FROM READING_EDIT e
             WHERE e.IntervalStart < @minCutoff
               AND e.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
-                    WHERE sg.MeterID = e.MeterID AND e.IntervalStart >= sg.SegFrom AND e.IntervalStart < sg.SegTo), 36), @asof0)
-              AND (e.ObisCode NOT IN ('1.8.0', '2.8.0') OR e.IntervalStart < @maxCutoff
-                   OR EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = e.MeterID AND a.ObisCode = e.ObisCode
-                                 AND a.PeriodType = 'Day' AND a.PeriodStart = CAST(e.IntervalStart AS DATE)));
+                    WHERE sg.MeterID = e.MeterID AND e.IntervalStart >= sg.SegFrom AND e.IntervalStart < sg.SegTo), 36), @asof0);
             SET @n = @@ROWCOUNT;
             COMMIT;
             SET @nEd += @n;
@@ -383,10 +369,7 @@ BEGIN
             DELETE TOP (@batch) v FROM VALIDATED_READING v
             WHERE v.IntervalStart < @minCutoff
               AND v.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
-                    WHERE sg.MeterID = v.MeterID AND v.IntervalStart >= sg.SegFrom AND v.IntervalStart < sg.SegTo), 36), @asof0)
-              AND (v.ObisCode NOT IN ('1.8.0', '2.8.0') OR v.IntervalStart < @maxCutoff
-                   OR EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = v.MeterID AND a.ObisCode = v.ObisCode
-                                 AND a.PeriodType = 'Day' AND a.PeriodStart = CAST(v.IntervalStart AS DATE)));
+                    WHERE sg.MeterID = v.MeterID AND v.IntervalStart >= sg.SegFrom AND v.IntervalStart < sg.SegTo), 36), @asof0);
             SET @n = @@ROWCOUNT;
             COMMIT;
             SET @nVal += @n;
@@ -398,10 +381,7 @@ BEGIN
             DELETE TOP (@batch) r FROM RAW_READING r
             WHERE r.IntervalStart < @minCutoff
               AND r.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
-                    WHERE sg.MeterID = r.MeterID AND r.IntervalStart >= sg.SegFrom AND r.IntervalStart < sg.SegTo), 36), @asof0)
-              AND (r.ObisCode NOT IN ('1.8.0', '2.8.0') OR r.IntervalStart < @maxCutoff
-                   OR EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = r.MeterID AND a.ObisCode = r.ObisCode
-                                 AND a.PeriodType = 'Day' AND a.PeriodStart = CAST(r.IntervalStart AS DATE)));
+                    WHERE sg.MeterID = r.MeterID AND r.IntervalStart >= sg.SegFrom AND r.IntervalStart < sg.SegTo), 36), @asof0);
             SET @n = @@ROWCOUNT;
             COMMIT;
             SET @nRaw += @n;

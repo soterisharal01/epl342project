@@ -22,7 +22,7 @@ Ingestion only inserts into `TELEMETRY_PACKET` and `RAW_READING`. VEE reads `RAW
 
 ## 2. Isolation level and why
 
-All connections use SQL Server's default **READ COMMITTED**. Two procedures raise it explicitly for their own transaction with `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE` (FIX-2), because each one checks "nothing like this exists yet" and then inserts: `sp_consumer_buy_history` (no second purchase of the same month for a premise) and `sp_gdpr_submit` (no second open GDPR request for a user). SQL Server restores the caller's level when the procedure ends, so nothing else is affected. Everywhere else, a procedure that needs a stronger guarantee asks for it **per statement** with a lock hint (a hint is an isolation level for one table in one statement, so the effect is the same without holding range locks on every other table the procedure reads):
+All connections use SQL Server's default **READ COMMITTED**. No procedure and no PHP file changes the isolation level (there is no `SET TRANSACTION ISOLATION LEVEL` in `sql/` or `sources/`). Where a procedure needs a stronger guarantee it asks for it **per statement** with a lock hint:
 
 | Hint | Used for |
 |---|---|
