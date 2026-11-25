@@ -76,6 +76,37 @@ function require_role(string ...$roles): void
     }
 }
 
+// FIX-2: ο Τεχνικός που περιμένει έγκριση (Pending) ή είναι σε αναστολή (Suspended) μπαίνει, αλλά βλέπει
+// ΜΟΝΟ τα έγγραφά του: πρέπει να ανεβάσει Ταυτότητα, Άδεια και Πιστοποιητικό για να τον εγκρίνει ο Operator
+// (sp_tech_add_document δέχεται και Pending, sp_tech_assert_any). Η κατάσταση διαβάζεται ΦΡΕΣΚΙΑ από τη βάση,
+// ώστε μετά την έγκριση να ανοίξουν οι υπόλοιπες σελίδες χωρίς νέο login.
+const TECH_LIMITED_PAGES = ['technician/10_documents.php'];
+
+function technician_limited(): bool
+{
+    $u = current_user();
+    if (!$u || $u['Role'] !== 'Technician') {
+        return false;
+    }
+    static $status = null;
+    if ($status === null) {
+        $rows = call_proc('sp_user_get_profile', [uid()]);
+        $status = ($rows && isset($rows[0]['ApprovalStatus'])) ? (string)$rows[0]['ApprovalStatus'] : 'Pending';
+        $_SESSION['user']['ApprovalStatus'] = $status;
+    }
+    return $status !== 'Approved';
+}
+
+// Σελίδες εργασιών του Τεχνικού: μόνο αφού εγκριθεί. Αλλιώς πίσω στα έγγραφα με εξήγηση.
+function require_approved_technician(): void
+{
+    require_role('Technician');
+    if (technician_limited()) {
+        flash('Η εγγραφή σας δεν έχει εγκριθεί ακόμη (ή είναι σε αναστολή). Ανεβάστε τα έγγραφά σας· οι εργασίες ανοίγουν μετά την έγκριση από τον Λειτουργό Συστήματος.', 'error');
+        redirect('technician/10_documents.php');
+    }
+}
+
 function csrf_token(): string
 {
     if (empty($_SESSION['csrf'])) {

@@ -5,7 +5,8 @@
 // Βήματα:
 //  1. sp_auth_get_login(username) -> hash κωδικού, ρόλος, κατάσταση
 //  2. password_verify(κωδικός, hash)   (η βάση ΔΕΝ κρατά ποτέ τον ίδιο τον κωδικό)
-//  3. Λογαριασμός Suspended -> όχι είσοδος. Τεχνικός Pending/Rejected -> όχι είσοδος.
+//  3. Λογαριασμός Suspended -> όχι είσοδος. Τεχνικός Rejected -> όχι είσοδος.
+//     Τεχνικός Pending/Suspended -> είσοδος ΜΟΝΟ στα έγγραφά του (FIX-2, auth.php technician_limited()).
 //  4. Κάθε προσπάθεια γράφεται στο AUDIT_LOG (sp_auth_log_login).
 //  5. Επιτυχία -> session με UserID και Role -> home.php (το μενού του ρόλου).
 // =====================================================================
@@ -38,14 +39,10 @@ if ($u['AccountStatus'] !== 'Active') {
     flash('Ο λογαριασμός σας είναι σε αναστολή. Επικοινωνήστε με τον Λειτουργό Συστήματος.', 'error');
     redirect('index.php');
 }
-if ($u['Role'] === 'Technician' && $u['ApprovalStatus'] !== 'Approved') {
+if ($u['Role'] === 'Technician' && !in_array($u['ApprovalStatus'], ['Approved', 'Pending', 'Suspended'], true)) {
     call_proc('sp_auth_log_login', [$username, 0, $ip]);
-    $why = [
-        'Pending'   => 'Η εγγραφή σας περιμένει έγκριση από τον Λειτουργό Συστήματος.',
-        'Rejected'  => 'Η εγγραφή σας απορρίφθηκε από τον Λειτουργό Συστήματος.',
-        'Suspended' => 'Ο λογαριασμός τεχνικού είναι σε αναστολή.',
-    ];
-    flash($why[$u['ApprovalStatus']] ?? 'Ο λογαριασμός δεν είναι ενεργός.', 'error');
+    flash($u['ApprovalStatus'] === 'Rejected' ? 'Η εγγραφή σας απορρίφθηκε από τον Λειτουργό Συστήματος.'
+                                              : 'Ο λογαριασμός δεν είναι ενεργός.', 'error');
     redirect('index.php');
 }
 
@@ -53,4 +50,10 @@ call_proc('sp_auth_log_login', [$username, 1, $ip]);
 session_regenerate_id(true);           // νέο session id μετά το login (κατά του session fixation)
 unset($u['PasswordHash']);             // το hash δεν μένει στο session
 $_SESSION['user'] = $u;
+if ($u['Role'] === 'Technician' && $u['ApprovalStatus'] !== 'Approved') {
+    flash($u['ApprovalStatus'] === 'Pending'
+        ? 'Η εγγραφή σας περιμένει έγκριση. Ανεβάστε Ταυτότητα, Άδεια Εγκαταστάτη και Πιστοποιητικό Κατάρτισης για να εξεταστεί.'
+        : 'Ο λογαριασμός τεχνικού είναι σε αναστολή. Μπορείτε να ανανεώσετε τα έγγραφά σας.');
+    redirect('technician/10_documents.php');
+}
 redirect('home.php');

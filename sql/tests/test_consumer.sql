@@ -226,7 +226,19 @@ IF (SELECT COUNT(*) FROM @hd) = 2
                    WHERE a.SumValue IS NULL OR a.SumValue <> h.ImportKWh OR h.ExportKWh <> 0 OR h.NetKWh <> h.ImportKWh)
     PRINT 'OK   history: Day rows match METER_AGGREGATE' ELSE PRINT 'FAIL history day';
 DECLARE @hd2 TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), EstimatedCount INT);
+-- FIX-2: από 1/12 ο Νοέμβριος είναι παλιός μήνας και θέλει αγορά (FIX-1). Ο consumer2 τον αγοράζει μέσα σε
+-- transaction, που ακυρώνεται μετά τον έλεγχο, ώστε το test να περνά και μετά τον Νοέμβριο.
+DECLARE @hd2_cur DATE = DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1);
+DECLARE @hd2_bh TABLE (PurchaseID INT, InvoiceID INT, Amount DECIMAL(10,2));
+BEGIN TRAN;
+BEGIN TRY
+    IF @hd2_cur > '2026-11-01'
+        INSERT @hd2_bh EXEC sp_consumer_buy_history 4, 3, '2026-11-01', '2026-11-01';
+END TRY
+BEGIN CATCH PRINT 'FAIL FIX-2 consumer2 could not buy November: ' + ERROR_MESSAGE(); END CATCH;
+IF XACT_STATE() = -1 ROLLBACK;
 INSERT @hd2 EXEC sp_consumer_history 4, 3, 'Day', '2026-11-18', '2026-11-18';
+IF @@TRANCOUNT > 0 ROLLBACK;
 IF (SELECT COUNT(*) FROM @hd2) = 1
    AND EXISTS (SELECT 1 FROM @hd2 h WHERE h.ImportKWh = (SELECT SumValue FROM METER_AGGREGATE WHERE MeterID = 3 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-18')
                                       AND h.ExportKWh = (SELECT SumValue FROM METER_AGGREGATE WHERE MeterID = 3 AND ObisCode = '2.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-18')

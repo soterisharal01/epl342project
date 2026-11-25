@@ -142,19 +142,26 @@ BEGIN
                                   DATEADD(MILLISECOND, -DATEPART(MILLISECOND, @Ts3),
                                           DATEADD(SECOND, -DATEPART(SECOND, @Ts3), @Ts3))) AS DATETIME2(0));
 
-            DECLARE @items TABLE (Idx INT, Obis VARCHAR(100) NULL, Val DECIMAL(15,4) NULL, Reason NVARCHAR(100) NULL);
-            INSERT @items (Idx, Obis, Val)
+            DECLARE @items TABLE (Idx INT, Obis VARCHAR(100) NULL, Val DECIMAL(15,4) NULL, Unit NVARCHAR(20) NULL, Reason NVARCHAR(100) NULL);
+            INSERT @items (Idx, Obis, Val, Unit)
             SELECT TRY_CONVERT(INT, j.[key]), x.obis,
-                   COALESCE(TRY_CONVERT(DECIMAL(15,4), x.val), TRY_CONVERT(DECIMAL(15,4), TRY_CONVERT(FLOAT, x.val)))
+                   COALESCE(TRY_CONVERT(DECIMAL(15,4), x.val), TRY_CONVERT(DECIMAL(15,4), TRY_CONVERT(FLOAT, x.val))),
+                   NULLIF(LTRIM(RTRIM(x.unit)), N'')
             FROM OPENJSON(@Arr) AS j
             CROSS APPLY OPENJSON(CASE WHEN j.[type] = 5 THEN j.[value] ELSE N'{}' END)
-                 WITH (obis VARCHAR(100) '$.obis', val NVARCHAR(60) '$.value') AS x;
+                 WITH (obis VARCHAR(100) '$.obis', val NVARCHAR(60) '$.value', unit NVARCHAR(20) '$.unit') AS x;
 
             -- Ποιες γραμμές δεν μπορούν να αποθηκευτούν, και γιατί (η πρώτη αιτία κερδίζει).
             UPDATE @items SET Reason = N'ελλιπές ή μη αριθμητικό στοιχείο' WHERE Obis IS NULL OR Val IS NULL;
             UPDATE i SET Reason = N'άγνωστος κωδικός OBIS'
               FROM @items i
              WHERE i.Reason IS NULL AND NOT EXISTS (SELECT 1 FROM OBIS_CODE o WHERE o.ObisCode = i.Obis);
+            -- FIX-2 (spec III.3.1 «μονάδα και κωδικό»): η μονάδα του πακέτου πρέπει να είναι αυτή του κωδικού
+            -- (OBIS_CODE.Unit, χωρίς διάκριση πεζών/κεφαλαίων: kvarh = kVARh). Π.χ. 1.8.0 σε Wh αντί για kWh θα
+            -- έγραφε τιμή 1000 φορές μεγαλύτερη. Αν το πακέτο δεν δίνει μονάδα, ισχύει η μονάδα του κωδικού.
+            UPDATE i SET Reason = LEFT(CONCAT(N'λάθος μονάδα ', i.Unit, N' (αναμένεται ', o.Unit, N')'), 100)
+              FROM @items i JOIN OBIS_CODE o ON o.ObisCode = i.Obis
+             WHERE i.Reason IS NULL AND i.Unit IS NOT NULL AND UPPER(i.Unit) <> UPPER(o.Unit);
             UPDATE i SET Reason = N'επαναλαμβάνεται μέσα στο πακέτο'
               FROM @items i
              WHERE i.Reason IS NULL
@@ -948,6 +955,8 @@ GO
 -- (1.8.0/2.8.0) χωρίς Day aggregate για τον μετρητή/κωδικό. Πλήρης ημέρα = πριν από @UpTo
 -- (προεπιλογή: η σημερινή ημερομηνία UTC). @From (προεπιλογή: από την αρχή) περιορίζει από κάτω.
 -- Οι ημέρες με σειρά από την παλιά στη νέα (ώστε μήνας/έτος να βγαίνουν μετά τις ημέρες τους).
+-- Μετά τις ημέρες: «κλείνει» κάθε μήνα/έτος που τελείωσε πριν από @UpTo και λείπει ακόμη η γραμμή του
+-- (π.χ. μια ύποπτη μέτρηση διορθώθηκε αφού είχε χτιστεί η τελευταία ημέρα του μήνα).
 -- Ένα transaction για όλες. Το sp_dso_run_vee ΔΕΝ αλλάζει: το DSO καλεί αυτό μετά το VEE.
 -- Επιστρέφει: DaysBuilt, MeterRows, TransformerRows, MonthRows, YearRows.
 -- ---------------------------------------------------------------------
@@ -987,6 +996,32 @@ BEGIN
             DELETE #d4_pending WHERE Day = @d4_Day;
         END;
         DROP TABLE #d4_pending;
+
+        -- Κλείσιμο μηνών/ετών που έχουν ΤΕΛΕΙΩΣΕΙ (τελευταία ημέρα πριν από @UpTo) αλλά κάποιος μετρητής/κωδικός
+        -- έχει ημέρες χωρίς Month/Year γραμμή. Συμβαίνει όταν η τελευταία ημέρα του μήνα χτίστηκε όσο υπήρχε
+        -- ακόμη ύποπτη μέτρηση στον μήνα (παραλείφθηκε) και η μέτρηση διορθώθηκε αργότερα, ή όταν η τελευταία
+        -- ημέρα δεν είχε καμία μέτρηση. Ο πυρήνας καλείται για την τελευταία ημέρα του μήνα (31/12 για το έτος)·
+        -- τα NOT EXISTS του πυρήνα δεν γράφουν ποτέ δεύτερη γραμμή, και οι σειρές με ανοιχτό VEE περιμένουν ακόμη.
+        SELECT DISTINCT x.Day
+          INTO #d4_close
+          FROM METER_AGGREGATE d
+         CROSS APPLY (VALUES ('Month', DATEFROMPARTS(YEAR(d.PeriodStart), MONTH(d.PeriodStart), 1), EOMONTH(d.PeriodStart)),
+                             ('Year',  DATEFROMPARTS(YEAR(d.PeriodStart), 1, 1), DATEFROMPARTS(YEAR(d.PeriodStart), 12, 31))) x (PType, PStart, Day)
+         WHERE d.PeriodType = 'Day' AND d.ObisCode IN ('1.8.0', '2.8.0')
+           AND x.Day < @UpTo
+           AND (@From IS NULL OR x.Day >= @From)
+           AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE p
+                            WHERE p.MeterID = d.MeterID AND p.ObisCode = d.ObisCode
+                              AND p.PeriodType = x.PType AND p.PeriodStart = x.PStart);
+
+        WHILE EXISTS (SELECT 1 FROM #d4_close)
+        BEGIN
+            SELECT @d4_Day = MIN(Day) FROM #d4_close;
+            EXEC sp_dso_build_aggregates_day @UserID, @d4_Day, 0, 0, @d4_M OUTPUT, @d4_T OUTPUT, @d4_Mo OUTPUT, @d4_Y OUTPUT;
+            SELECT @d4_SumM += @d4_M, @d4_SumT += @d4_T, @d4_SumMo += @d4_Mo, @d4_SumY += @d4_Y;
+            DELETE #d4_close WHERE Day = @d4_Day;
+        END;
+        DROP TABLE #d4_close;
         COMMIT;
     END TRY
     BEGIN CATCH

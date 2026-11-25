@@ -46,7 +46,7 @@ the header of that file (it is nobody's real password).
 | `operator` | Operator | |
 | `consumer1`, `consumer2` | Consumer | own premises with installed meters |
 | `tech1` | Technician | already approved |
-| `tech2` | Technician | still **Pending**: cannot log in until the Operator approves |
+| `tech2` | Technician | still **Pending**: logs in but sees only «Τα έγγραφά μου» until the Operator approves |
 | `dso1` | DSO | |
 | `tso1` | TSO | |
 | `supplier1` | Supplier | |
@@ -63,7 +63,7 @@ checks the role again on the server, so typing the address of another role's pag
 - **Consumer** (`register_consumer.php`): username, email, first and last name, phone, password twice, «Εγγραφή».
   The account is active at once.
 - **Technician** (`register_technician.php`): the same plus date of birth, photo (file path) and the technician's
-  categories. After «Εγγραφή» the account is **Pending**: the technician can log in only after the Operator approves them (4.1).
+  categories. After «Εγγραφή» the account is **Pending**: the technician logs in and sees only «Τα έγγραφά μου», where they upload ID card, installer licence and training certificate. The other pages open once the Operator approves them (4.1).
 
 ![Consumer registration](img/manual/public-register-consumer.png)
 *Consumer registration.*
