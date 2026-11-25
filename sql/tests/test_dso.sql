@@ -545,6 +545,36 @@ IF EXISTS (SELECT 1 FROM @d4_pend WHERE DaysBuilt = 0 AND MeterRows = 0 AND Tran
    AND EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Month' AND PeriodStart = '2026-11-01' AND SumValue = @d4_msum)
     PRINT 'OK   pending again: nothing to do, the month row was not recomputed' ELSE PRINT 'FAIL pending rerun';
 
+-- ---------- FIX-2: ένας μήνας που τελείωσε «κλείνει» και χωρίς να χτιστεί η τελευταία του ημέρα ----------
+-- Σαν να διορθώθηκε αργά μια ύποπτη μέτρηση ή να μην είχε μετρήσεις η 31/10: ο μετρητής 2 έχει ημέρες
+-- Οκτωβρίου χωρίς Month γραμμή. Η pending (όριο 1/11) πρέπει να γράψει τον μήνα = άθροισμα των ημερών του.
+-- Transaction + ROLLBACK: δεν αλλάζει τίποτα για τα επόμενα tests.
+BEGIN TRAN;
+DECLARE @f2_p TABLE (DaysBuilt INT, MeterRows INT, TransformerRows INT, MonthRows INT, YearRows INT);
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+SELECT v.MeterID, '1.8.0', 'Day', v.d, v.s, 96, 0
+  FROM (VALUES (2, CAST('2026-10-10' AS DATE), CAST(5 AS DECIMAL(18,4))), (2, CAST('2026-10-11' AS DATE), CAST(7 AS DECIMAL(18,4)))) v (MeterID, d, s)
+ WHERE NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = v.MeterID AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = v.d);
+IF EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Month' AND PeriodStart = '2026-10-01')
+    PRINT 'FAIL FIX-2 setup: October month row already exists'
+ELSE
+BEGIN
+    INSERT @f2_p EXEC sp_dso_build_aggregates_pending 7, '2026-10-01', '2026-11-01';
+    IF EXISTS (SELECT 1 FROM METER_AGGREGATE m WHERE m.MeterID = 2 AND m.ObisCode = '1.8.0' AND m.PeriodType = 'Month' AND m.PeriodStart = '2026-10-01'
+                  AND m.SumValue = (SELECT SUM(d.SumValue) FROM METER_AGGREGATE d WHERE d.MeterID = 2 AND d.ObisCode = '1.8.0'
+                                      AND d.PeriodType = 'Day' AND d.PeriodStart >= '2026-10-01' AND d.PeriodStart <= '2026-10-31')
+                  AND m.ReadingCount = (SELECT SUM(d.ReadingCount) FROM METER_AGGREGATE d WHERE d.MeterID = 2 AND d.ObisCode = '1.8.0'
+                                          AND d.PeriodType = 'Day' AND d.PeriodStart >= '2026-10-01' AND d.PeriodStart <= '2026-10-31'))
+       AND EXISTS (SELECT 1 FROM @f2_p WHERE MonthRows >= 1)
+        PRINT 'OK   FIX-2 finished month closed by pending although its last day was never built' ELSE PRINT 'FAIL FIX-2 finished month not closed';
+    DELETE @f2_p;
+    INSERT @f2_p EXEC sp_dso_build_aggregates_pending 7, '2026-10-01', '2026-11-01';
+    IF EXISTS (SELECT 1 FROM @f2_p WHERE MonthRows = 0)
+       AND (SELECT COUNT(*) FROM METER_AGGREGATE WHERE MeterID = 2 AND ObisCode = '1.8.0' AND PeriodType = 'Month' AND PeriodStart = '2026-10-01') = 1
+        PRINT 'OK   FIX-2 second run: the closed month is not written again' ELSE PRINT 'FAIL FIX-2 month written twice';
+END;
+ROLLBACK;
+
 -- ---------- Αναφορά απωλειών ----------
 DECLARE @d4_ls TABLE (TransformerID INT, Name NVARCHAR(100), ObisCode VARCHAR(20), PeriodStart DATE, TransformerSum DECIMAL(18,4), MetersSum DECIMAL(18,4),
                       Difference DECIMAL(18,4), DifferencePct DECIMAL(9,2), MeterCount INT, MetersWithData INT, ActiveMeters INT);
