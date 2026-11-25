@@ -378,3 +378,21 @@ UPDATE HOLDING SET StartDate = CAST(SYSUTCDATETIME() AS DATE) WHERE UserID = 3 A
 BEGIN TRY EXEC sp_consumer_buy_history 3, 1, @b18prev, @b18prev; PRINT 'FAIL B18 bought history of the previous holder'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51113 PRINT 'OK   B18 buy history before the holding start refused' ELSE PRINT 'FAIL B18 buy: ' + ERROR_MESSAGE(); END CATCH;
 IF @@TRANCOUNT > 0 ROLLBACK;
+
+-- ---------- Αθροίσματα: ίδιοι κανόνες πρόσβασης (παλιοί μήνες μόνο με αγορά) ----------
+-- Ο προηγούμενος μήνας είναι αγορασμένος (παραπάνω), ο προ-προηγούμενος όχι. Transaction + ROLLBACK.
+BEGIN TRAN;
+DECLARE @pa1 DATE = DATEADD(MONTH, -1, DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1));
+DECLARE @pa2 DATE = DATEADD(MONTH, -2, @pa1);
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+VALUES (1, '1.8.0', 'Day', DATEADD(DAY, 4, @pa1), 10, 96, 0), (1, '1.8.0', 'Day', DATEADD(DAY, 4, @pa2), 11, 96, 0);
+DECLARE @pah TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), EstimatedCount INT);
+DECLARE @paTo DATE = CAST(SYSUTCDATETIME() AS DATE);
+INSERT @pah EXEC sp_consumer_history 3, 1, 'Day', @pa2, @paTo;
+IF EXISTS (SELECT 1 FROM @pah WHERE PeriodStart = DATEADD(DAY, 4, @pa1))
+   AND NOT EXISTS (SELECT 1 FROM @pah WHERE PeriodStart = DATEADD(DAY, 4, @pa2))
+    PRINT 'OK   history: bought month shown, unbought earlier month hidden' ELSE PRINT 'FAIL history ignores purchases';
+IF EXISTS (SELECT 1 FROM @pah WHERE PeriodStart >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1))
+   OR NOT EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 1 AND PeriodType = 'Day' AND PeriodStart >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1))
+    PRINT 'OK   history: current month free' ELSE PRINT 'FAIL history current month';
+ROLLBACK;

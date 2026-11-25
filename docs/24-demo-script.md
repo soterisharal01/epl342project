@@ -47,7 +47,7 @@ Presenter 1 opens and closes, Presenter 2 and 3 carry the middle, Presenter 4 ha
 
 Login `consumer1`.
 1. "Τα υποστατικά μου": premises and the meter on each. Say: a consumer sees only own data (the procedure takes the user id from the session).
-2. "Μετρήσεις": pick the current period, "Εμφάνιση". Say: 15-minute import (1.8.0) and export (2.8.0) readings, validated only. "Ιστορικό (αθροίσματα)" shows aggregates: statistics use aggregates, detail only for the entitled.
+2. "Μετρήσεις": on 3-4/12 the base readings (18-23/11) are a **past** month, so first "Αγορά ιστορικού" for November (shows the paid-history rule and its invoice), then pick 18/11-20/11, "Εμφάνιση". Say: 15-minute import (1.8.0) and export (2.8.0) readings, validated only. "Ιστορικό (αθροίσματα)" shows aggregates: statistics use aggregates, detail only for the entitled.
 3. "Αιτήματα ελέγχου / βλάβης": "Νέο αίτημα", choose a premise and type, "Υποβολή". Say: this request is what the operator turns into a task in step 2.
 4. "Τιμολόγια και πληρωμές": invoices sorted by date (the index from step 8 serves this page).
 5. "Δικαίωμα στη λήθη": "Υποβολή αιτήματος διαγραφής". Say: not an immediate delete; it goes through review, pre-approval and a final admin decision (step 7).

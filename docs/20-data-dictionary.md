@@ -63,7 +63,7 @@ Column table legend: **Null** says whether the column may be empty. **Key** show
 | [`RULE_FOR`](#rule_for) | Telemetry and VEE | Many-to-many link saying which OBIS codes a VEE rule applies to. | — |
 | [`METER_AGGREGATE`](#meter_aggregate) | Aggregates and grid | Stored daily, monthly or yearly sum of validated readings per meter and OBIS code. | — |
 | [`TRANSFORMER_AGGREGATE`](#transformer_aggregate) | Aggregates and grid | Stored Day, Month or Year totals for leaf transformers; upper levels are computed with a recursive query. | — |
-| [`TRANSFORMER_CURRENT_STATE`](#transformer_current_state) | Aggregates and grid | Latest 15-minute import (1.8.0) and export (2.8.0) total per transformer (leaves and all ancestors). | — |
+| [`TRANSFORMER_CURRENT_STATE`](#transformer_current_state) | Aggregates and grid | Latest 15-minute import (1.8.0) and export (2.8.0) total per leaf transformer. | — |
 | [`PORTFOLIO`](#portfolio) | Market | A named group of premises managed by an aggregator. | — |
 | [`INCLUDES`](#includes) | Market | Membership of a premise in a portfolio, with its dates. | — |
 | [`GDPR_REQUEST`](#gdpr_request) | Compliance | A consumer's erasure request moving through the stages Submitted, Under review, Pre-approved, Approved or Rejected, Applied. | — |
@@ -888,7 +888,7 @@ Stored Day, Month or Year totals for leaf transformers; upper levels are compute
 
 ### TRANSFORMER_CURRENT_STATE
 
-Latest 15-minute import (1.8.0) and export (2.8.0) total per transformer (leaves and all ancestors).
+Latest 15-minute import (1.8.0) and export (2.8.0) total per leaf transformer.
 
 | Column | Type | Null | Key | Meaning |
 |---|---|---|---|---|
@@ -998,13 +998,15 @@ A consumer's erasure request moving through the stages Submitted, Under review, 
 | `PreApprovedAt` | DATETIME2(0) | yes |  | Pre approved at. |
 | `DecidedAt` | DATETIME2(0) | yes |  | Decided at. |
 | `AppliedAt` | DATETIME2(0) | yes |  | When the erasure was carried out. |
+| `RequestType` | VARCHAR(9) | no |  | Request type. |
 | `ConsumerID` | INT | no | FK USER_ACCOUNT | Consumer who asks for erasure. |
 | `PreApprovedBy` | INT | yes | FK USER_ACCOUNT | Operator who pre-approved. |
 | `DecidedBy` | INT | yes | FK USER_ACCOUNT | Operator who gave the final decision (at most one of DecidedBy and DecidedByAdmin). |
 | `DecidedByAdmin` | INT | yes | FK USER_ACCOUNT | Admin who gave the final decision instead of an operator. |
 
-- **Defaults:** `SubmittedAt` = `SYSUTCDATETIME()`; `Status` = `'Submitted'`
+- **Defaults:** `SubmittedAt` = `SYSUTCDATETIME()`; `Status` = `'Submitted'`; `RequestType` = `'Erasure'`
 - **Check** `CK_GDPR_REQUEST_Status`: Status is one of 'Submitted', 'Under review', 'Pre-approved', 'Approved', 'Rejected', 'Applied'
+- **Check** `CK_GDPR_REQUEST_RequestType`: RequestType is one of 'Erasure', 'Retention'
 - **Check** `CK_GDPR_REQUEST_OneFinal`: DecidedBy IS NULL OR DecidedByAdmin IS NULL
 - **Check** `CK_GDPR_REQUEST_PreApproval`: (PreApprovedBy IS NULL AND PreApprovedAt IS NULL) OR (PreApprovedBy IS NOT NULL AND PreApprovedAt IS NOT NULL)
 - **Check** `CK_GDPR_REQUEST_Decision`: (DecidedAt IS NULL AND DecidedBy IS NULL AND DecidedByAdmin IS NULL) OR (DecidedAt IS NOT NULL AND (DecidedBy IS NOT NULL OR DecidedByAdmin IS NOT NULL))

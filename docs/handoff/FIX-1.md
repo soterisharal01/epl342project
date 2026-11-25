@@ -16,6 +16,15 @@ A line-by-line check of the Phase B spec against `main` (2d9c6be). Three real de
 3. **B18, new tenant.** `sp_consumer_readings`, `sp_consumer_history`, `sp_consumer_buy_history` did not check `HOLDING.StartDate`,
    so a new tenant could see (and buy) the previous holder's readings. Now everything starts at the holding start (51113 for buying).
 
+## Second round (after the human's "yes")
+4. **III.1.2:** consumer aggregates (`sp_consumer_history`) follow the same paid-month rule as the 15-minute readings.
+5. **III.1.4:** `GDPR_REQUEST.RequestType` (`'Erasure'` default, `'Retention'`), schema change in `create.sql`. A `'Retention'` request
+   keeps the account and only sets `RawRetentionMonths = 1`. `sp_gdpr_apply` runs the purge automatically after the commit
+   (`sp_retention_purge_core`, shared with the Admin button). Consumer/operator/admin GDPR pages show the type.
+6. **III.5.1:** supplier/aggregator aggregates count only rows whose whole period is inside the contract/portfolio dates.
+Demo note: on 3-4/12 November is a past month, so the demo first buys November history (doc 24 updated).
+Tests: 782 OK, 0 FAIL.
+
 ## Next step
 Review and merge the PR (a member who did not author it). Then rebuild `sharal01` with the REL-1 runbook (docs/23-release.md),
 because the deployed database has the old procedures.

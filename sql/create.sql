@@ -805,6 +805,7 @@ CREATE TABLE GDPR_REQUEST (
     PreApprovedAt DATETIME2(0) NULL,
     DecidedAt DATETIME2(0) NULL,
     AppliedAt DATETIME2(0) NULL,
+    RequestType VARCHAR(9) NOT NULL CONSTRAINT DF_GDPR_REQUEST_RequestType DEFAULT 'Erasure' CONSTRAINT CK_GDPR_REQUEST_RequestType CHECK (RequestType IN ('Erasure', 'Retention')),
     ConsumerID INT NOT NULL,
     PreApprovedBy INT NULL,
     DecidedBy INT NULL,

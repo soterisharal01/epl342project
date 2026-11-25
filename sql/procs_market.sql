@@ -31,6 +31,8 @@ GO
 --   Supplier   -> υποστατικά με SUPPLY_CONTRACT του SupplierID του, που επικαλύπτεται με την περίοδο.
 --   Aggregator -> υποστατικά σε INCLUDES χαρτοφυλακίου του AggregatorID του, που επικαλύπτεται.
 --   Μετρητής   -> εγκατάσταση Confirmed στο υποστατικό, που δεν αφαιρέθηκε πριν την περίοδο.
+-- VFrom/VTo: οι ημερομηνίες που ο πελάτης είναι «δικός του» (συμβόλαιο ή συμμετοχή στο χαρτοφυλάκιο), ώστε τα
+-- αθροίσματα να μετρούν ΜΟΝΟ τις ημέρες εκείνες (όχι πριν αρχίσει ή αφού λήξει το συμβόλαιο). VTo NULL = ανοιχτό.
 -- Άλλος ρόλος / ανενεργός λογαριασμός -> καμία γραμμή.
 -- Inline table-valued function (καλείται χωρίς σχήμα, καμία scalar function).
 -- Χρήση:  SELECT DISTINCT MeterID FROM fn_market_premises(@UserID, @From, @To)
@@ -40,14 +42,14 @@ RETURNS TABLE
 AS
 RETURN (
     WITH prem AS (
-        SELECT sc.PremiseID
+        SELECT sc.PremiseID, sc.StartDate AS VFrom, sc.EndDate AS VTo
         FROM USER_ACCOUNT u
         JOIN SUPPLY_CONTRACT sc ON sc.SupplierID = u.SupplierID
                                AND sc.StartDate <= @To
                                AND (sc.EndDate IS NULL OR sc.EndDate >= @From)
         WHERE u.UserID = @UserID AND u.Role = 'Supplier' AND u.AccountStatus = 'Active'
         UNION
-        SELECT i.PremiseID
+        SELECT i.PremiseID, i.StartDate, i.EndDate
         FROM USER_ACCOUNT u
         JOIN PORTFOLIO po ON po.AggregatorID = u.AggregatorID
         JOIN INCLUDES i ON i.PortfolioID = po.PortfolioID
@@ -55,7 +57,7 @@ RETURN (
                        AND (i.EndDate IS NULL OR i.EndDate >= @From)
         WHERE u.UserID = @UserID AND u.Role = 'Aggregator' AND u.AccountStatus = 'Active'
     )
-    SELECT DISTINCT prem.PremiseID, mi.MeterID
+    SELECT DISTINCT prem.PremiseID, mi.MeterID, prem.VFrom, prem.VTo
     FROM prem
     JOIN METER_INSTALLATION mi ON mi.PremiseID = prem.PremiseID
                               AND mi.ConfirmationStatus = 'Confirmed'
@@ -86,7 +88,7 @@ BEGIN
     IF @From IS NULL OR @To IS NULL OR @From > @To
         THROW 52502, N'Μη έγκυρο διάστημα ημερομηνιών.', 1;
 
-    WITH my AS (SELECT DISTINCT MeterID FROM fn_market_premises(@UserID, @From, @To))
+    WITH my AS (SELECT MeterID, VFrom, VTo FROM fn_market_premises(@UserID, @From, @To))
     SELECT ma.PeriodStart,
            t.TransformerID,
            t.Name  AS TransformerName,
@@ -98,13 +100,18 @@ BEGIN
            COUNT(DISTINCT ma.MeterID) AS MeterCount,
            SUM(ma.EstimatedCount)     AS EstimatedCount
     FROM METER_AGGREGATE ma
-    JOIN my ON my.MeterID = ma.MeterID
     JOIN METER m ON m.MeterID = ma.MeterID
     JOIN TRANSFORMER t ON t.TransformerID = m.TransformerID
     JOIN GEOFENCE g ON g.GeofenceID = t.GeofenceID
     WHERE ma.PeriodType = @PeriodType
       AND ma.PeriodStart BETWEEN @From AND @To
       AND ma.ObisCode IN ('1.8.0', '2.8.0')
+      -- ολόκληρη η περίοδος της γραμμής μέσα στο συμβόλαιο/χαρτοφυλάκιο (EXISTS: καμία διπλομέτρηση)
+      AND EXISTS (SELECT 1 FROM my
+                  WHERE my.MeterID = ma.MeterID AND my.VFrom <= ma.PeriodStart
+                    AND (my.VTo IS NULL OR my.VTo >= CASE @PeriodType WHEN 'Day' THEN ma.PeriodStart
+                                                                     WHEN 'Month' THEN EOMONTH(ma.PeriodStart)
+                                                                     ELSE DATEFROMPARTS(YEAR(ma.PeriodStart), 12, 31) END))
     GROUP BY ma.PeriodStart, t.TransformerID, t.Name, g.Name
     ORDER BY ma.PeriodStart, t.TransformerID;
 END;
@@ -123,7 +130,7 @@ BEGIN
     IF @From IS NULL OR @To IS NULL OR @From > @To
         THROW 52502, N'Μη έγκυρο διάστημα ημερομηνιών.', 1;
 
-    WITH my AS (SELECT DISTINCT MeterID FROM fn_market_premises(@UserID, @From, @To))
+    WITH my AS (SELECT MeterID, VFrom, VTo FROM fn_market_premises(@UserID, @From, @To))
     SELECT ma.PeriodStart,
            CAST(SUM(CASE WHEN ma.ObisCode = '1.8.0' THEN ma.SumValue ELSE 0 END) AS DECIMAL(18,4)) AS ImportKWh,
            CAST(SUM(CASE WHEN ma.ObisCode = '2.8.0' THEN ma.SumValue ELSE 0 END) AS DECIMAL(18,4)) AS ExportKWh,
@@ -132,10 +139,15 @@ BEGIN
            COUNT(DISTINCT ma.MeterID) AS MeterCount,
            SUM(ma.EstimatedCount)     AS EstimatedCount
     FROM METER_AGGREGATE ma
-    JOIN my ON my.MeterID = ma.MeterID
     WHERE ma.PeriodType = @PeriodType
       AND ma.PeriodStart BETWEEN @From AND @To
       AND ma.ObisCode IN ('1.8.0', '2.8.0')
+      -- ολόκληρη η περίοδος της γραμμής μέσα στο συμβόλαιο/χαρτοφυλάκιο (EXISTS: καμία διπλομέτρηση)
+      AND EXISTS (SELECT 1 FROM my
+                  WHERE my.MeterID = ma.MeterID AND my.VFrom <= ma.PeriodStart
+                    AND (my.VTo IS NULL OR my.VTo >= CASE @PeriodType WHEN 'Day' THEN ma.PeriodStart
+                                                                     WHEN 'Month' THEN EOMONTH(ma.PeriodStart)
+                                                                     ELSE DATEFROMPARTS(YEAR(ma.PeriodStart), 12, 31) END))
     GROUP BY ma.PeriodStart
     ORDER BY ma.PeriodStart;
 END;

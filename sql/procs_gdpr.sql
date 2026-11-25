@@ -1,7 +1,12 @@
 -- =====================================================================
 -- procs_gdpr.sql : ΙΙΙ.1.4 Δικαίωμα λήθης (περιοχή GDP, GDP-1)
 -- Ροή: ο καταναλωτής υποβάλλει -> ο Operator εξετάζει / προεγκρίνει (ή απορρίπτει)
---      -> ο Admin αποφασίζει (εγκρίνει ή απορρίπτει) -> εφαρμογή (ανωνυμοποίηση).
+--      -> ο Admin αποφασίζει (εγκρίνει ή απορρίπτει) -> εφαρμογή.
+-- Δύο είδη αιτήματος (GDPR_REQUEST.RequestType), ίδια ροή εγκρίσεων:
+--   'Erasure'   δικαίωμα στη λήθη: ανωνυμοποίηση, ο λογαριασμός κλείνει, διατήρηση ωμών 1 μήνα.
+--   'Retention' ο λογαριασμός ΜΕΝΕΙ ενεργός, μόνο η διατήρηση των αναλυτικών μετρήσεων γίνεται 1 μήνας (spec III.1.4).
+-- Και στα δύο, η εφαρμογή τρέχει ΑΥΤΟΜΑΤΑ αμέσως μετά την εκκαθάριση (sp_retention_purge_core): οι
+-- παλαιότερες ωμές/επικυρωμένες μετρήσεις σβήνονται χωρίς να πατήσει κανείς το κουμπί διατήρησης.
 -- Κάθε στάδιο γράφεται στο AUDIT_LOG (παλιά και νέα κατάσταση). Λάθη: 51400-51499.
 -- Τρέχει μετά το procs_common.sql (αλφαβητικά μετά το procs_consumer.sql).
 --
@@ -39,11 +44,16 @@ GO
 -- 1. Υποβολή αιτήματος. Επιστρέφει GdprRequestID.
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE sp_gdpr_submit
-    @UserID INT
+    @UserID INT, @RequestType VARCHAR(9) = 'Erasure'
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     EXEC sp_gdpr_assert_role @UserID, 'Consumer';
+    SET @RequestType = ISNULL(@RequestType, 'Erasure');
+    IF @RequestType NOT IN ('Erasure', 'Retention')
+        THROW 51413, N'Μη έγκυρο είδος αιτήματος (διαγραφή ή μείωση διατήρησης).', 1;
+    IF @RequestType = 'Retention' AND EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @UserID AND RawRetentionMonths = 1)
+        THROW 51414, N'Η διατήρηση των αναλυτικών μετρήσεών σας είναι ήδη 1 μήνας.', 1;
     BEGIN TRY
         BEGIN TRAN;
         -- κλειδώνουμε τη γραμμή του χρήστη ώστε δύο ταυτόχρονες υποβολές να περάσουν η μία μετά την άλλη
@@ -52,11 +62,11 @@ BEGIN
         IF EXISTS (SELECT 1 FROM GDPR_REQUEST
                    WHERE ConsumerID = @UserID AND Status IN ('Submitted', 'Under review', 'Pre-approved', 'Approved'))
             THROW 51403, N'Έχετε ήδη ανοιχτό αίτημα διαγραφής.', 1;
-        INSERT GDPR_REQUEST (SubmittedAt, Status, ConsumerID)
-        VALUES (CAST(SYSUTCDATETIME() AS DATETIME2(0)), 'Submitted', @UserID);
+        INSERT GDPR_REQUEST (SubmittedAt, Status, ConsumerID, RequestType)
+        VALUES (CAST(SYSUTCDATETIME() AS DATETIME2(0)), 'Submitted', @UserID, @RequestType);
         DECLARE @id INT = SCOPE_IDENTITY();
-        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, PerformedBy)
-        VALUES ('GDPR_REQUEST', @id, 'Submit', NULL, 'Submitted', @UserID);
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('GDPR_REQUEST', @id, 'Submit', NULL, 'Submitted', @RequestType, @UserID);
         COMMIT;
         SELECT @id AS GdprRequestID;
     END TRY
@@ -85,7 +95,8 @@ BEGIN
     SELECT g.GdprRequestID, g.SubmittedAt, g.Status, g.PreApprovedAt, g.DecidedAt, g.AppliedAt,
            g.ConsumerID, c.Username, c.FirstName, c.LastName,
            g.PreApprovedBy, pa.Username AS PreApprovedByUsername,
-           COALESCE(g.DecidedByAdmin, g.DecidedBy) AS DecidedBy, de.Username AS DecidedByUsername
+           COALESCE(g.DecidedByAdmin, g.DecidedBy) AS DecidedBy, de.Username AS DecidedByUsername,
+           g.RequestType
     FROM GDPR_REQUEST g
     JOIN USER_ACCOUNT c ON c.UserID = g.ConsumerID
     LEFT JOIN USER_ACCOUNT pa ON pa.UserID = g.PreApprovedBy
@@ -202,77 +213,11 @@ GO
 --    ΔΙΑΓΡΑΦΟΝΤΑΙ/ΑΝΩΝΥΜΟΠΟΙΟΥΝΤΑΙ: στοιχεία USER_ACCOUNT, κανάλια ειδοποίησης,
 --      όρια κατανάλωσης (απενεργοποίηση), τραπεζικοί λογαριασμοί + ACCOUNT_FOR.
 --    ΜΕΝΟΥΝ: INVOICE, PAYMENT (με BankAccountID = NULL), HOLDING, SUPPLY_CONTRACT, μετρήσεις/aggregates.
---    RawRetentionMonths = 1: τις ωμές μετρήσεις > 1 μήνα τις σβήνει αργότερα η εργασία διατήρησης (GDP-2).
+--    RawRetentionMonths = 1: τις ωμές μετρήσεις > 1 μήνα τις σβήνει αμέσως η αυτόματη εκκαθάριση στο τέλος.
+--    Αίτημα 'Retention': ΜΟΝΟ RawRetentionMonths = 1 + εκκαθάριση· ο λογαριασμός μένει ενεργός.
 --    Το AUDIT_LOG παίρνει μόνο αριθμούς και IDs, ποτέ τα προσωπικά δεδομένα.
 -- ---------------------------------------------------------------------
-CREATE OR ALTER PROCEDURE sp_gdpr_apply
-    @UserID INT, @GdprRequestID INT
-AS
-BEGIN
-    SET NOCOUNT ON; SET XACT_ABORT ON;
-    EXEC sp_gdpr_assert_role @UserID, 'Admin';
-    BEGIN TRY
-        BEGIN TRAN;
-        DECLARE @old VARCHAR(12), @cid INT;
-        SELECT @old = Status, @cid = ConsumerID FROM GDPR_REQUEST WITH (UPDLOCK, HOLDLOCK) WHERE GdprRequestID = @GdprRequestID;
-        IF @old IS NULL THROW 51406, N'Το αίτημα δεν βρέθηκε.', 1;
-        IF @old <> 'Approved' THROW 51411, N'Εφαρμογή γίνεται μόνο σε αίτημα που έχει εγκριθεί από τον Admin.', 1;
-        IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WITH (UPDLOCK) WHERE UserID = @cid AND Role = 'Consumer')
-            THROW 51412, N'Ο χρήστης του αιτήματος δεν είναι Καταναλωτής.', 1;
-
-        DECLARE @anon NVARCHAR(50) = CONCAT(N'deleted_', @cid);
-        UPDATE USER_ACCOUNT
-        SET Username = @anon, FirstName = N'Διαγραμμένος', LastName = N'Διαγραμμένος',
-            Email = CONCAT('deleted', @cid, '@anon.invalid'), Phone = NULL,
-            PasswordHash = CONCAT('!ERASED!', CONVERT(VARCHAR(36), NEWID())),   -- δεν είναι έγκυρο hash: κανείς δεν μπαίνει
-            AccountStatus = 'Suspended', RawRetentionMonths = 1
-        WHERE UserID = @cid;
-
-        DECLARE @nChan INT, @nThr INT, @nPay INT, @nAf INT, @nBank INT;
-        DELETE CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = @cid;
-        SET @nChan = @@ROWCOUNT;
-        UPDATE CONSUMPTION_THRESHOLD SET IsActive = 0 WHERE UserID = @cid AND IsActive = 1;
-        SET @nThr = @@ROWCOUNT;
-
-        DECLARE @ba TABLE (BankAccountID INT PRIMARY KEY);
-        INSERT @ba SELECT BankAccountID FROM BANK_ACCOUNT WHERE UserID = @cid;
-        UPDATE PAYMENT SET BankAccountID = NULL WHERE BankAccountID IN (SELECT BankAccountID FROM @ba);
-        SET @nPay = @@ROWCOUNT;
-        DELETE ACCOUNT_FOR WHERE BankAccountID IN (SELECT BankAccountID FROM @ba);
-        SET @nAf = @@ROWCOUNT;
-        DELETE BANK_ACCOUNT WHERE BankAccountID IN (SELECT BankAccountID FROM @ba);
-        SET @nBank = @@ROWCOUNT;
-
-        DECLARE @now DATETIME2(0) = CAST(SYSUTCDATETIME() AS DATETIME2(0));
-        UPDATE GDPR_REQUEST
-        SET Status = 'Applied', AppliedAt = CASE WHEN @now >= DecidedAt THEN @now ELSE DecidedAt END
-        WHERE GdprRequestID = @GdprRequestID;
-
-        DECLARE @nInv INT = (SELECT COUNT(*) FROM INVOICE WHERE UserID = @cid);
-        DECLARE @nPaid INT = (SELECT COUNT(*) FROM PAYMENT p JOIN INVOICE i ON i.InvoiceID = p.InvoiceID WHERE i.UserID = @cid);
-        DECLARE @nHold INT = (SELECT COUNT(*) FROM HOLDING WHERE UserID = @cid);
-
-        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
-        VALUES ('GDPR_REQUEST', @GdprRequestID, 'Apply', @old, 'Applied',
-                CONCAT(N'Ανωνυμοποίηση χρήστη ', @cid, N': κανάλια ', @nChan, N', όρια ', @nThr,
-                       N', πληρωμές χωρίς λογαριασμό ', @nPay, N', τραπ. λογαριασμοί ', @nBank,
-                       N'; διατηρούνται τιμολόγια ', @nInv, N', πληρωμές ', @nPaid, N', κατοχές ', @nHold), @UserID);
-        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
-        VALUES ('USER_ACCOUNT', @cid, 'GDPR anonymise', NULL, 'Suspended', N'RawRetentionMonths 36 -> 1', @UserID);
-        COMMIT;
-
-        SELECT @GdprRequestID AS GdprRequestID, @cid AS ConsumerID, @anon AS AnonymisedUsername,
-               @nChan AS ChannelsDeleted, @nThr AS ThresholdsDeactivated, @nPay AS PaymentsDetached,
-               @nAf AS AccountForDeleted, @nBank AS BankAccountsDeleted,
-               @nInv AS InvoicesKept, @nPaid AS PaymentsKept, @nHold AS HoldingsKept,
-               CAST(1 AS TINYINT) AS RawRetentionMonths;
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0 ROLLBACK;
-        THROW;
-    END CATCH
-END;
-GO
+-- (Η sp_gdpr_apply ορίζεται στο τέλος του αρχείου, μετά τη sp_retention_purge_core που καλεί.)
 
 -- =====================================================================
 -- GDP-2: Διατήρηση δεδομένων (ΙΙΙ.1.4). THROW 51450-51499.
@@ -379,8 +324,10 @@ GO
 -- Σειρά: READING_EDIT, VALIDATED_READING, RAW_READING. Ένα session lock εμποδίζει δύο ταυτόχρονες εκκαθαρίσεις.
 -- Επιστρέφει RawDeleted, ValidatedDeleted, EditsDeleted, AsOf.
 -- ---------------------------------------------------------------------
-CREATE OR ALTER PROCEDURE sp_retention_purge
-    @UserID INT, @AsOf DATETIME2 = NULL
+-- Ο πυρήνας (χωρίς result set, αποτελέσματα σε OUTPUT) ώστε να τον καλεί και η sp_gdpr_apply αυτόματα.
+CREATE OR ALTER PROCEDURE sp_retention_purge_core
+    @UserID INT, @AsOf DATETIME2 = NULL,
+    @nRawOut INT OUTPUT, @nValOut INT OUTPUT, @nEdOut INT OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
@@ -452,7 +399,7 @@ BEGIN
 
         EXEC sp_releaseapplock @Resource = N'mdms_retention_purge', @LockOwner = N'Session';
         SET @haveLock = 0;
-        SELECT @nRaw AS RawDeleted, @nVal AS ValidatedDeleted, @nEd AS EditsDeleted, @asof0 AS AsOf;
+        SELECT @nRawOut = @nRaw, @nValOut = @nVal, @nEdOut = @nEd;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK;
@@ -460,5 +407,113 @@ BEGIN
         IF @haveLock = 1 EXEC sp_releaseapplock @Resource = N'mdms_retention_purge', @LockOwner = N'Session';
         THROW;
     END CATCH
+END;
+GO
+
+-- Το κουμπί «Εκκαθάριση» του Admin: ο πυρήνας + μία γραμμή αποτελέσματος.
+CREATE OR ALTER PROCEDURE sp_retention_purge
+    @UserID INT, @AsOf DATETIME2 = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @r INT, @v INT, @e INT;
+    EXEC sp_retention_purge_core @UserID, @AsOf, @r OUTPUT, @v OUTPUT, @e OUTPUT;
+    SELECT @r AS RawDeleted, @v AS ValidatedDeleted, @e AS EditsDeleted,
+           CAST(COALESCE(@AsOf, SYSUTCDATETIME()) AS DATETIME2(0)) AS AsOf;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 5. Admin: εφαρμογή (περιγραφή πιο πάνω, στο «5.»).
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE sp_gdpr_apply
+    @UserID INT, @GdprRequestID INT
+AS
+BEGIN
+    SET NOCOUNT ON; SET XACT_ABORT ON;
+    EXEC sp_gdpr_assert_role @UserID, 'Admin';
+    DECLARE @old VARCHAR(12), @cid INT, @type VARCHAR(9), @anon NVARCHAR(50) = NULL;
+    DECLARE @nChan INT = 0, @nThr INT = 0, @nPay INT = 0, @nAf INT = 0, @nBank INT = 0;
+    DECLARE @nInv INT, @nPaid INT, @nHold INT, @oldRet TINYINT;
+    BEGIN TRY
+        BEGIN TRAN;
+        SELECT @old = Status, @cid = ConsumerID, @type = RequestType
+        FROM GDPR_REQUEST WITH (UPDLOCK, HOLDLOCK) WHERE GdprRequestID = @GdprRequestID;
+        IF @old IS NULL THROW 51406, N'Το αίτημα δεν βρέθηκε.', 1;
+        IF @old <> 'Approved' THROW 51411, N'Εφαρμογή γίνεται μόνο σε αίτημα που έχει εγκριθεί από τον Admin.', 1;
+        IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WITH (UPDLOCK) WHERE UserID = @cid AND Role = 'Consumer')
+            THROW 51412, N'Ο χρήστης του αιτήματος δεν είναι Καταναλωτής.', 1;
+        SELECT @oldRet = RawRetentionMonths FROM USER_ACCOUNT WHERE UserID = @cid;
+
+        IF @type = 'Erasure'
+        BEGIN
+            SET @anon = CONCAT(N'deleted_', @cid);
+            UPDATE USER_ACCOUNT
+            SET Username = @anon, FirstName = N'Διαγραμμένος', LastName = N'Διαγραμμένος',
+                Email = CONCAT('deleted', @cid, '@anon.invalid'), Phone = NULL,
+                PasswordHash = CONCAT('!ERASED!', CONVERT(VARCHAR(36), NEWID())),   -- δεν είναι έγκυρο hash: κανείς δεν μπαίνει
+                AccountStatus = 'Suspended', RawRetentionMonths = 1
+            WHERE UserID = @cid;
+
+            DELETE CONSUMER_NOTIFICATION_CHANNEL WHERE UserID = @cid;
+            SET @nChan = @@ROWCOUNT;
+            UPDATE CONSUMPTION_THRESHOLD SET IsActive = 0 WHERE UserID = @cid AND IsActive = 1;
+            SET @nThr = @@ROWCOUNT;
+
+            DECLARE @ba TABLE (BankAccountID INT PRIMARY KEY);
+            INSERT @ba SELECT BankAccountID FROM BANK_ACCOUNT WHERE UserID = @cid;
+            UPDATE PAYMENT SET BankAccountID = NULL WHERE BankAccountID IN (SELECT BankAccountID FROM @ba);
+            SET @nPay = @@ROWCOUNT;
+            DELETE ACCOUNT_FOR WHERE BankAccountID IN (SELECT BankAccountID FROM @ba);
+            SET @nAf = @@ROWCOUNT;
+            DELETE BANK_ACCOUNT WHERE BankAccountID IN (SELECT BankAccountID FROM @ba);
+            SET @nBank = @@ROWCOUNT;
+        END
+        ELSE   -- 'Retention': μόνο η διατήρηση γίνεται 1 μήνας, ο λογαριασμός μένει ενεργός
+            UPDATE USER_ACCOUNT SET RawRetentionMonths = 1 WHERE UserID = @cid;
+
+        DECLARE @now DATETIME2(0) = CAST(SYSUTCDATETIME() AS DATETIME2(0));
+        UPDATE GDPR_REQUEST
+        SET Status = 'Applied', AppliedAt = CASE WHEN @now >= DecidedAt THEN @now ELSE DecidedAt END
+        WHERE GdprRequestID = @GdprRequestID;
+
+        SET @nInv = (SELECT COUNT(*) FROM INVOICE WHERE UserID = @cid);
+        SET @nPaid = (SELECT COUNT(*) FROM PAYMENT p JOIN INVOICE i ON i.InvoiceID = p.InvoiceID WHERE i.UserID = @cid);
+        SET @nHold = (SELECT COUNT(*) FROM HOLDING WHERE UserID = @cid);
+
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('GDPR_REQUEST', @GdprRequestID, 'Apply', @old, 'Applied',
+                CASE WHEN @type = 'Erasure'
+                     THEN CONCAT(N'Ανωνυμοποίηση χρήστη ', @cid, N': κανάλια ', @nChan, N', όρια ', @nThr,
+                                 N', πληρωμές χωρίς λογαριασμό ', @nPay, N', τραπ. λογαριασμοί ', @nBank,
+                                 N'; διατηρούνται τιμολόγια ', @nInv, N', πληρωμές ', @nPaid, N', κατοχές ', @nHold)
+                     ELSE CONCAT(N'Μείωση διατήρησης χρήστη ', @cid, N' σε 1 μήνα· ο λογαριασμός μένει ενεργός') END, @UserID);
+        INSERT AUDIT_LOG (ObjectType, ObjectID, Action, OldState, NewState, ResultComment, PerformedBy)
+        VALUES ('USER_ACCOUNT', @cid, CASE WHEN @type = 'Erasure' THEN 'GDPR anonymise' ELSE 'GDPR retention' END,
+                NULL, CASE WHEN @type = 'Erasure' THEN 'Suspended' ELSE 'Active' END,
+                CONCAT(N'RawRetentionMonths ', @oldRet, N' -> 1'), @UserID);
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+
+    -- Αυτόματη εκκαθάριση ΜΕΤΑ το COMMIT (έχει δικές της μικρές συναλλαγές ανά παρτίδα). Αν δεν τρέξει
+    -- (π.χ. τρέχει ήδη άλλη εκκαθάριση, 51451), η εφαρμογή ισχύει ήδη και τα σβήνει το επόμενο τρέξιμο.
+    DECLARE @pRaw INT = NULL, @pVal INT = NULL, @pEd INT = NULL;
+    BEGIN TRY
+        EXEC sp_retention_purge_core @UserID, NULL, @pRaw OUTPUT, @pVal OUTPUT, @pEd OUTPUT;
+    END TRY
+    BEGIN CATCH
+        SELECT @pRaw = NULL, @pVal = NULL, @pEd = NULL;
+    END CATCH
+
+    SELECT @GdprRequestID AS GdprRequestID, @cid AS ConsumerID, @anon AS AnonymisedUsername,
+           @nChan AS ChannelsDeleted, @nThr AS ThresholdsDeactivated, @nPay AS PaymentsDetached,
+           @nAf AS AccountForDeleted, @nBank AS BankAccountsDeleted,
+           @nInv AS InvoicesKept, @nPaid AS PaymentsKept, @nHold AS HoldingsKept,
+           CAST(1 AS TINYINT) AS RawRetentionMonths, @type AS RequestType,
+           @pRaw AS RawPurged, @pVal AS ValidatedPurged;
 END;
 GO
