@@ -8,7 +8,7 @@ Status: finished (in review), **not yet run on a database**
 
 ## Next step
 Run the full build with tests (`bash sql/tools/test_local.sh`, or `build_all.py --tests` + `run_sql.ps1` on your own database)
-and check that the three new lines print `OK` (`FIX-2 finished month closed…`, `FIX-2 second run…`, and `history: prosumer…`). Then merge.
+and check that the new FIX-2 lines print `OK` (`FIX-2 finished month closed…`, `FIX-2 second run…`, and `history: prosumer…`). Then merge.
 
 ## Done so far
 - 2026-11-25: review of PRs #44 and #45 (both merged). Two gaps found in FIX-1 and fixed here:
@@ -26,6 +26,11 @@ and check that the three new lines print `OK` (`FIX-2 finished month closed…`,
      deletes the test aggregates under the `mdms_purge` flag (ready for the trigger in open question 1).
   4. Explicit `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE` in `sp_consumer_buy_history` and `sp_gdpr_submit` (spec IV asks for
      isolation levels); doc 15 section 2 updated.
+  5. Web app: a Pending technician could not log in, so could never upload the 3 documents that `sp_operator_decide_technician`
+     requires, so a newly registered technician could never be approved. Now Pending/Suspended technicians log in and see only
+     «Τα έγγραφά μου» (`technician_limited()`, `require_approved_technician()` in `sources/auth.php`; menu filtered in `layout.php`;
+     pages 20-50 guarded). Checked with a fake sqlsrv driver (Pending: tasks page redirects, menu = documents; Approved: all 5).
+  6. `sp_dso_ingest_packet` refuses an item whose `unit` differs from `OBIS_CODE.Unit` (spec III.3.1 «μονάδα»). Test added.
 
 ## Blockers / open questions
 - The session had no SQL Server (the container image host is blocked), so this was **not executed**.
