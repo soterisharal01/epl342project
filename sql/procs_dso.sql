@@ -142,19 +142,26 @@ BEGIN
                                   DATEADD(MILLISECOND, -DATEPART(MILLISECOND, @Ts3),
                                           DATEADD(SECOND, -DATEPART(SECOND, @Ts3), @Ts3))) AS DATETIME2(0));
 
-            DECLARE @items TABLE (Idx INT, Obis VARCHAR(100) NULL, Val DECIMAL(15,4) NULL, Reason NVARCHAR(100) NULL);
-            INSERT @items (Idx, Obis, Val)
+            DECLARE @items TABLE (Idx INT, Obis VARCHAR(100) NULL, Val DECIMAL(15,4) NULL, Unit NVARCHAR(20) NULL, Reason NVARCHAR(100) NULL);
+            INSERT @items (Idx, Obis, Val, Unit)
             SELECT TRY_CONVERT(INT, j.[key]), x.obis,
-                   COALESCE(TRY_CONVERT(DECIMAL(15,4), x.val), TRY_CONVERT(DECIMAL(15,4), TRY_CONVERT(FLOAT, x.val)))
+                   COALESCE(TRY_CONVERT(DECIMAL(15,4), x.val), TRY_CONVERT(DECIMAL(15,4), TRY_CONVERT(FLOAT, x.val))),
+                   NULLIF(LTRIM(RTRIM(x.unit)), N'')
             FROM OPENJSON(@Arr) AS j
             CROSS APPLY OPENJSON(CASE WHEN j.[type] = 5 THEN j.[value] ELSE N'{}' END)
-                 WITH (obis VARCHAR(100) '$.obis', val NVARCHAR(60) '$.value') AS x;
+                 WITH (obis VARCHAR(100) '$.obis', val NVARCHAR(60) '$.value', unit NVARCHAR(20) '$.unit') AS x;
 
             -- Ποιες γραμμές δεν μπορούν να αποθηκευτούν, και γιατί (η πρώτη αιτία κερδίζει).
             UPDATE @items SET Reason = N'ελλιπές ή μη αριθμητικό στοιχείο' WHERE Obis IS NULL OR Val IS NULL;
             UPDATE i SET Reason = N'άγνωστος κωδικός OBIS'
               FROM @items i
              WHERE i.Reason IS NULL AND NOT EXISTS (SELECT 1 FROM OBIS_CODE o WHERE o.ObisCode = i.Obis);
+            -- FIX-2 (spec III.3.1 «μονάδα και κωδικό»): η μονάδα του πακέτου πρέπει να είναι αυτή του κωδικού
+            -- (OBIS_CODE.Unit, χωρίς διάκριση πεζών/κεφαλαίων: kvarh = kVARh). Π.χ. 1.8.0 σε Wh αντί για kWh θα
+            -- έγραφε τιμή 1000 φορές μεγαλύτερη. Αν το πακέτο δεν δίνει μονάδα, ισχύει η μονάδα του κωδικού.
+            UPDATE i SET Reason = LEFT(CONCAT(N'λάθος μονάδα ', i.Unit, N' (αναμένεται ', o.Unit, N')'), 100)
+              FROM @items i JOIN OBIS_CODE o ON o.ObisCode = i.Obis
+             WHERE i.Reason IS NULL AND i.Unit IS NOT NULL AND UPPER(i.Unit) <> UPPER(o.Unit);
             UPDATE i SET Reason = N'επαναλαμβάνεται μέσα στο πακέτο'
               FROM @items i
              WHERE i.Reason IS NULL

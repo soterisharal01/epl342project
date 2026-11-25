@@ -58,6 +58,13 @@ IF EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = 2 AND ObisCode = '1.8.0' AN
 IF NOT EXISTS (SELECT 1 FROM RAW_READING WHERE ObisCode = '99.9.9')
     PRINT 'OK   unknown OBIS not stored' ELSE PRINT 'FAIL unknown OBIS stored';
 
+-- ---------- FIX-2: λάθος μονάδα (Wh αντί για kWh) -> δεν αποθηκεύεται ----------
+DELETE @r;
+INSERT @r EXEC sp_dso_ingest_packet 7, N'{"Meter_Network_ID": "EAC-NIC-1001", "Transmission_Timestamp": "2026-11-21T11:30:00Z", "Cell_Signal_Strength_dBm": -90, "Network_Type": "NB-IoT", "Telemetry_Payload": [{"obis": "1.8.0", "value": 14400500, "unit": "Wh"}]}';
+IF EXISTS (SELECT 1 FROM @r WHERE IngestStatus = 'Partially accepted' AND ReadingsStored = 0 AND ErrorMessage LIKE N'%μονάδα%')
+   AND NOT EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = 1 AND IntervalStart = '2026-11-21 11:30:00')
+    PRINT 'OK   FIX-2 wrong unit (Wh for 1.8.0) -> not stored, reason in the packet' ELSE PRINT 'FAIL FIX-2 wrong unit accepted';
+
 -- ---------- Σπασμένο JSON ----------
 DELETE @r;
 INSERT @r EXEC sp_dso_ingest_packet 7, N'this is { not json';

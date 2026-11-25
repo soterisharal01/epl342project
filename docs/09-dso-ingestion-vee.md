@@ -107,3 +107,6 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 - [x] 3.2 The two spec examples work in the demo: spike 25.4 → suspect; gap at 10:30 → estimate 2.1 with status estimated.
 - [x] 3.2 After VEE: **immutable**. Finishing VEE triggers the aggregates (day, month, year), which are also final and never recomputed.
 - [x] II.C Analytics: sags/swells, **technical losses**, phase imbalance, suspected theft (event types in B14).
+
+### FIX-2: unit check on ingestion
+`sp_dso_ingest_packet` reads each item's `unit` and refuses the item (reason `λάθος μονάδα …`, packet `Partially accepted`) when it differs from `OBIS_CODE.Unit`, case-insensitively (`kvarh` = `kVARh`). An item without a unit takes the code's unit. Before, a `1.8.0` sent in `Wh` would have been stored 1000 times too large. Test: `FIX-2 wrong unit …` in `sql/tests/test_dso.sql`.
