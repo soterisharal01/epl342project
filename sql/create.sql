@@ -902,3 +902,28 @@ BEGIN
         THROW 50006, N'Διαγραφή επικυρωμένων μετρήσεων μόνο από τη διαδικασία διατήρησης δεδομένων.', 1;
 END;
 GO
+
+-- Aggregates: τελικά και αμετάβλητα (spec III.3.2, απόφαση B2). UPDATE ποτέ. DELETE μόνο με το ίδιο flag
+-- συντήρησης mdms_purge (καμία διαδικασία της εφαρμογής δεν σβήνει aggregates· το flag το χρειάζεται μόνο
+-- ο καθαρισμός δοκιμαστικών δεδομένων). Ένα λάθος διορθώνεται στις μετρήσεις ΠΡΙΝ χτιστεί η ημέρα.
+CREATE TRIGGER TR_METER_AGGREGATE_Immutable ON METER_AGGREGATE AFTER UPDATE, DELETE AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted) RETURN;
+    IF EXISTS (SELECT 1 FROM inserted)
+        THROW 50007, N'Τα aggregates είναι τελικά και δεν αλλάζουν.', 1;
+    IF ISNULL(CAST(SESSION_CONTEXT(N'mdms_purge') AS INT), 0) <> 1
+        THROW 50008, N'Τα aggregates είναι τελικά και δεν διαγράφονται.', 1;
+END;
+GO
+
+CREATE TRIGGER TR_TRANSFORMER_AGGREGATE_Immutable ON TRANSFORMER_AGGREGATE AFTER UPDATE, DELETE AS
+BEGIN
+    SET NOCOUNT ON;
+    IF NOT EXISTS (SELECT 1 FROM deleted) RETURN;
+    IF EXISTS (SELECT 1 FROM inserted)
+        THROW 50007, N'Τα aggregates είναι τελικά και δεν αλλάζουν.', 1;
+    IF ISNULL(CAST(SESSION_CONTEXT(N'mdms_purge') AS INT), 0) <> 1
+        THROW 50008, N'Τα aggregates είναι τελικά και δεν διαγράφονται.', 1;
+END;
+GO

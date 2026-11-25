@@ -259,6 +259,28 @@ AS RETURN
 );
 GO
 
+-- Ημέρες που η εκκαθάριση ΔΕΝ αγγίζει (απώλεια aggregates, κριτική 25/11): (μετρητής, 1.8.0/2.8.0, ημέρα UTC)
+-- πριν από @Before που έχουν ακόμη δεδομένα για aggregate (επικυρωμένη μέτρηση ή ωμή Pending/Suspect)
+-- αλλά ΔΕΝ έχουν ακόμη Day γραμμή στο METER_AGGREGATE. Αν σβήνονταν, το ημερήσιο/μηνιαίο/ετήσιο άθροισμα
+-- δεν θα μπορούσε να χτιστεί ποτέ. Μένουν μέχρι να τρέξει το DSO τα aggregates και σβήνονται στην επόμενη εκκαθάριση.
+-- Ημέρες μόνο με απορριφθείσες ωμές μετρήσεις δεν προστατεύονται (δεν θα έβγαζαν ποτέ aggregate).
+CREATE OR ALTER FUNCTION fn_retention_unaggregated_days (@Before DATETIME2(0))
+RETURNS TABLE
+AS RETURN
+(
+    SELECT x.MeterID, x.ObisCode, x.Day
+    FROM (SELECT v.MeterID, v.ObisCode, CAST(v.IntervalStart AS DATE) AS Day
+            FROM VALIDATED_READING v
+           WHERE v.ObisCode IN ('1.8.0', '2.8.0') AND v.IntervalStart < @Before
+          UNION
+          SELECT r.MeterID, r.ObisCode, CAST(r.IntervalStart AS DATE)
+            FROM RAW_READING r
+           WHERE r.ObisCode IN ('1.8.0', '2.8.0') AND r.VeeStatus IN ('Pending', 'Suspect') AND r.IntervalStart < @Before) x
+    WHERE NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a
+                       WHERE a.MeterID = x.MeterID AND a.ObisCode = x.ObisCode AND a.PeriodType = 'Day' AND a.PeriodStart = x.Day)
+);
+GO
+
 -- ---------------------------------------------------------------------
 -- Προεπισκόπηση (μόνο ανάγνωση): ανά μετρητή και ανά χρόνο διατήρησης, πόσες γραμμές θα σβηστούν.
 -- Μετρητές χωρίς τίποτα προς διαγραφή εμφανίζονται με 0 και τους μήνες που ισχύουν στο @AsOf.
@@ -279,13 +301,21 @@ BEGIN
         INSERT @seg SELECT MeterID, SegFrom, SegTo, UserID, RetentionMonths, Cutoff FROM fn_retention_cutoff(@asof0);
         DECLARE @minCutoff DATETIME2(0) = DATEADD(MONTH, -1, @asof0);   -- ο μικρότερος δυνατός χρόνος διατήρησης
 
-        WITH k AS (
-            SELECT r.MeterID, r.IntervalStart, CAST(1 AS INT) AS Raw, CAST(0 AS INT) AS Val, CAST(0 AS INT) AS Ed
+        DECLARE @keep TABLE (MeterID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL, Day DATE NOT NULL,
+                             PRIMARY KEY (MeterID, ObisCode, Day));
+        INSERT @keep SELECT MeterID, ObisCode, Day FROM fn_retention_unaggregated_days(@minCutoff);
+
+        WITH k0 AS (
+            SELECT r.MeterID, r.ObisCode, r.IntervalStart, CAST(1 AS INT) AS Raw, CAST(0 AS INT) AS Val, CAST(0 AS INT) AS Ed
             FROM RAW_READING r WHERE r.IntervalStart < @minCutoff
             UNION ALL
-            SELECT v.MeterID, v.IntervalStart, 0, 1, 0 FROM VALIDATED_READING v WHERE v.IntervalStart < @minCutoff
+            SELECT v.MeterID, v.ObisCode, v.IntervalStart, 0, 1, 0 FROM VALIDATED_READING v WHERE v.IntervalStart < @minCutoff
             UNION ALL
-            SELECT e.MeterID, e.IntervalStart, 0, 0, 1 FROM READING_EDIT e WHERE e.IntervalStart < @minCutoff
+            SELECT e.MeterID, e.ObisCode, e.IntervalStart, 0, 0, 1 FROM READING_EDIT e WHERE e.IntervalStart < @minCutoff
+        ), k AS (
+            SELECT k0.* FROM k0
+            WHERE NOT EXISTS (SELECT 1 FROM @keep kp WHERE kp.MeterID = k0.MeterID AND kp.ObisCode = k0.ObisCode
+                                                       AND kp.Day = CAST(k0.IntervalStart AS DATE))
         ), m AS (
             SELECT k.MeterID, k.Raw, k.Val, k.Ed, k.IntervalStart,
                    COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
@@ -348,6 +378,10 @@ BEGIN
         INSERT @seg SELECT MeterID, SegFrom, SegTo, RetentionMonths FROM fn_retention_cutoff(@asof0);
         DECLARE @minCutoff DATETIME2(0) = DATEADD(MONTH, -1, @asof0);
         DECLARE @batch INT = 5000, @n INT, @nRaw INT = 0, @nVal INT = 0, @nEd INT = 0;
+        -- Ημέρες χωρίς ακόμη Day aggregate: δεν σβήνεται τίποτα τους (fn_retention_unaggregated_days).
+        CREATE TABLE #rp_keep (MeterID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL, Day DATE NOT NULL,
+                               PRIMARY KEY (MeterID, ObisCode, Day));
+        INSERT #rp_keep SELECT MeterID, ObisCode, Day FROM fn_retention_unaggregated_days(@minCutoff);
 
         EXEC sp_set_session_context N'mdms_purge', 1;
 
@@ -357,7 +391,9 @@ BEGIN
             DELETE TOP (@batch) e FROM READING_EDIT e
             WHERE e.IntervalStart < @minCutoff
               AND e.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
-                    WHERE sg.MeterID = e.MeterID AND e.IntervalStart >= sg.SegFrom AND e.IntervalStart < sg.SegTo), 36), @asof0);
+                    WHERE sg.MeterID = e.MeterID AND e.IntervalStart >= sg.SegFrom AND e.IntervalStart < sg.SegTo), 36), @asof0)
+              AND NOT EXISTS (SELECT 1 FROM #rp_keep kp WHERE kp.MeterID = e.MeterID AND kp.ObisCode = e.ObisCode
+                                                          AND kp.Day = CAST(e.IntervalStart AS DATE));
             SET @n = @@ROWCOUNT;
             COMMIT;
             SET @nEd += @n;
@@ -369,7 +405,9 @@ BEGIN
             DELETE TOP (@batch) v FROM VALIDATED_READING v
             WHERE v.IntervalStart < @minCutoff
               AND v.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
-                    WHERE sg.MeterID = v.MeterID AND v.IntervalStart >= sg.SegFrom AND v.IntervalStart < sg.SegTo), 36), @asof0);
+                    WHERE sg.MeterID = v.MeterID AND v.IntervalStart >= sg.SegFrom AND v.IntervalStart < sg.SegTo), 36), @asof0)
+              AND NOT EXISTS (SELECT 1 FROM #rp_keep kp WHERE kp.MeterID = v.MeterID AND kp.ObisCode = v.ObisCode
+                                                          AND kp.Day = CAST(v.IntervalStart AS DATE));
             SET @n = @@ROWCOUNT;
             COMMIT;
             SET @nVal += @n;
@@ -381,7 +419,9 @@ BEGIN
             DELETE TOP (@batch) r FROM RAW_READING r
             WHERE r.IntervalStart < @minCutoff
               AND r.IntervalStart < DATEADD(MONTH, -COALESCE((SELECT MAX(sg.RetentionMonths) FROM @seg sg
-                    WHERE sg.MeterID = r.MeterID AND r.IntervalStart >= sg.SegFrom AND r.IntervalStart < sg.SegTo), 36), @asof0);
+                    WHERE sg.MeterID = r.MeterID AND r.IntervalStart >= sg.SegFrom AND r.IntervalStart < sg.SegTo), 36), @asof0)
+              AND NOT EXISTS (SELECT 1 FROM #rp_keep kp WHERE kp.MeterID = r.MeterID AND kp.ObisCode = r.ObisCode
+                                                          AND kp.Day = CAST(r.IntervalStart AS DATE));
             SET @n = @@ROWCOUNT;
             COMMIT;
             SET @nRaw += @n;

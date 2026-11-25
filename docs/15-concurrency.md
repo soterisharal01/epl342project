@@ -22,7 +22,18 @@ Ingestion only inserts into `TELEMETRY_PACKET` and `RAW_READING`. VEE reads `RAW
 
 ## 2. Isolation level and why
 
-All connections use SQL Server's default **READ COMMITTED**. No procedure and no PHP file changes the isolation level (there is no `SET TRANSACTION ISOLATION LEVEL` in `sql/` or `sources/`). Where a procedure needs a stronger guarantee it asks for it **per statement** with a lock hint:
+All connections use SQL Server's default **READ COMMITTED**. Where a procedure needs a stronger guarantee it asks for it **per statement** with a lock hint (table below): `HOLDLOCK` *is* the SERIALIZABLE level, applied to one table in one statement.
+
+Four procedures also set the level **explicitly** (FIX-3), so the choice is visible in the code. SQL Server restores the caller's level automatically when a procedure returns, so the rest of the connection stays READ COMMITTED (a test checks this).
+
+| Procedure | Level | Why |
+|---|---|---|
+| `sp_consumer_pay_invoice` | `SERIALIZABLE` | "balance >= amount" check and the payment insert must not be split by another payment (3.4). |
+| `sp_consumer_buy_history` | `SERIALIZABLE` | "no overlapping purchase" check and the insert (3.4). |
+| `sp_tech_add_note` | `SERIALIZABLE` | `MAX(NoteNo) + 1` and the insert (3.5). |
+| `sp_dso_losses_report` | `READ COMMITTED` | Read-only report over immutable aggregates: a stronger level would only hold locks longer. |
+
+Why not SERIALIZABLE everywhere? It range-locks everything a transaction reads, so long reads (VEE, reports, refresh) would block meter inserts. The hints keep the strong level on the few rows that need it. The hints stay in the four procedures as well, so they behave the same if someone calls them at a different level.
 
 | Hint | Used for |
 |---|---|
@@ -109,6 +120,8 @@ Mechanism: the leaf sums and then the sums of every ancestor are first computed 
 
 Validated readings are never updated. The trigger refuses every `UPDATE` (error 50005) and refuses `DELETE` (50006) unless the session has run `sp_set_session_context N'mdms_purge', 1`, which only the retention procedure does (agreement X5, and it resets the flag to 0 afterwards, also in CATCH). A corrected value is a **new** row with `Quality = 'Edited'` plus a `READING_EDIT` row. Immutable rows need no update locks, so report queries and VEE never fight over them, and the history stays auditable.
 
+The same holds for `METER_AGGREGATE` and `TRANSFORMER_AGGREGATE` (FIX-3): their triggers refuse `UPDATE` (50007) and `DELETE` (50008, unless the flag is set). An aggregate is written once, with `NOT EXISTS ... WITH (UPDLOCK, HOLDLOCK)`, and only for days whose VEE is finished.
+
 ### 3.12 Hot spots
 
 | Hot spot | Why it is hot | How it is handled |
@@ -148,6 +161,7 @@ If a deadlock still happens, the victim gets error 1205, the page shows the gene
 | Load shedding | order without commands | one transaction, set-based insert, XACT_ABORT | `sp_tso_load_shed` |
 | Current state | half-updated tree | one `MERGE` in one transaction, on demand | `sp_tso_refresh_current_state` |
 | Validated readings | updates behind reports | trigger refuses UPDATE and DELETE | `TR_VALIDATED_READING_Immutable` in `sql/create.sql` |
+| Aggregates | changed totals behind reports | triggers refuse UPDATE and DELETE (50007/50008) | `TR_METER_AGGREGATE_Immutable`, `TR_TRANSFORMER_AGGREGATE_Immutable` |
 | Open holding, installation, contract | two open rows | filtered unique indexes `UX_*_Open` | `sql/create.sql` |
 | `AUDIT_LOG`, IDENTITY | insert hot spot | append-only, written inside the caller's transaction | all writing procedures |
 

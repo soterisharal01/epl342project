@@ -280,6 +280,10 @@ VALUES (@ma, '1.8.0', '2026-10-01 00:00:00', 1, 0.1, 0.2, 'Manual edit', N'test'
 -- aggregate που δεν πρέπει να χαθεί
 INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
 VALUES (@ma, '1.8.0', 'Month', '2026-10-01', 9.5, 5, 0);
+-- Οι ημέρες των μετρήσεων έχουν ήδη Day aggregate (αλλιώς η εκκαθάριση τις κρατά: fn_retention_unaggregated_days).
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+SELECT DISTINCT v.MeterID, '1.8.0', 'Day', CAST(v.IntervalStart AS DATE), 0.1, 1, 0
+FROM VALIDATED_READING v JOIN @m m ON m.MeterID = v.MeterID;
 
 DECLARE @baseRaw INT = (SELECT COUNT(*) FROM RAW_READING WHERE MeterID BETWEEN 1 AND 4);
 DECLARE @baseVal INT = (SELECT COUNT(*) FROM VALIDATED_READING WHERE MeterID BETWEEN 1 AND 4);
@@ -374,6 +378,37 @@ DECLARE @p2 TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf 
 INSERT @p2 EXEC sp_retention_purge 1, '2026-12-25';
 IF EXISTS (SELECT 1 FROM @p2 WHERE RawDeleted = 0 AND ValidatedDeleted = 0 AND EditsDeleted = 0) PRINT 'OK   second purge -> 0 deleted (idempotent)' ELSE PRINT 'FAIL second purge';
 
+-- ---------- Κριτική 25/11: ημέρα χωρίς Day aggregate ΔΕΝ σβήνεται (αλλιώς το aggregate χάνεται για πάντα) ----------
+-- Ο μετρητής A (διατήρηση 1 μήνα) παίρνει 1.8.0 στις 10/11 χωρίς Day aggregate, και μία τάση 32.7.0 στις 10/11
+-- (η τάση δεν έχει aggregate, άρα σβήνεται κανονικά). Transaction + ROLLBACK.
+BEGIN TRAN;
+DECLARE @ua_pk BIGINT = (SELECT MIN(PacketID) FROM TELEMETRY_PACKET WHERE MeterID = @ma);
+INSERT RAW_READING (MeterID, ObisCode, IntervalStart, ReceivedValue, VeeStatus, PacketID)
+VALUES (@ma, '1.8.0', '2026-11-10 00:00:00', 100.0, 'Validated', @ua_pk), (@ma, '32.7.0', '2026-11-10 00:00:00', 230.0, 'Validated', @ua_pk);
+INSERT VALIDATED_READING (MeterID, ObisCode, IntervalStart, Value, Quality, RunID)
+VALUES (@ma, '1.8.0', '2026-11-10 00:00:00', 0.1, 'Validated', 1), (@ma, '32.7.0', '2026-11-10 00:00:00', 230.0, 'Validated', 1);
+DECLARE @ua_pv TABLE (MeterID INT, SerialNumber VARCHAR(40), RetentionMonths INT, Cutoff DATETIME2(0),
+                      RawToDelete INT, ValidatedToDelete INT, EditsToDelete INT, AsOf DATETIME2(0));
+INSERT @ua_pv EXEC sp_retention_preview 1, '2026-12-25';
+DECLARE @ua_p TABLE (RawDeleted INT, ValidatedDeleted INT, EditsDeleted INT, AsOf DATETIME2(0));
+INSERT @ua_p EXEC sp_retention_purge 1, '2026-12-25';
+IF EXISTS (SELECT 1 FROM @ua_p WHERE RawDeleted = 1 AND ValidatedDeleted = 1)
+   AND EXISTS (SELECT 1 FROM @ua_pv WHERE MeterID = @ma AND RawToDelete = 1 AND ValidatedToDelete = 1)
+   AND EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+   AND EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+   AND NOT EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = @ma AND ObisCode = '32.7.0')
+   AND NOT EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @ma AND ObisCode = '32.7.0')
+    PRINT 'OK   purge keeps a 1.8.0 day without Day aggregate (preview agrees), deletes the voltage reading of that day'
+ELSE PRINT 'FAIL purge deleted a day that has no aggregate yet';
+INSERT METER_AGGREGATE (MeterID, ObisCode, PeriodType, PeriodStart, SumValue, ReadingCount, EstimatedCount)
+VALUES (@ma, '1.8.0', 'Day', '2026-11-10', 0.1, 1, 0);
+DELETE @ua_p;
+INSERT @ua_p EXEC sp_retention_purge 1, '2026-12-25';
+IF EXISTS (SELECT 1 FROM @ua_p WHERE RawDeleted = 1 AND ValidatedDeleted = 1)
+   AND NOT EXISTS (SELECT 1 FROM VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-11-10')
+    PRINT 'OK   after the Day aggregate is built, the next purge deletes that day' ELSE PRINT 'FAIL purge after aggregate built';
+ROLLBACK;
+
 -- ---------- Trigger ακόμα ενεργό ----------
 BEGIN TRY DELETE VALIDATED_READING WHERE MeterID = @ma AND IntervalStart = '2026-12-01'; PRINT 'FAIL validated delete after purge'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 50006 PRINT 'OK   DELETE VALIDATED_READING after purge still refused -> 50006' ELSE PRINT 'FAIL trigger after purge: ' + ERROR_MESSAGE(); END CATCH;
@@ -390,7 +425,9 @@ DECLARE @gdp2tasks TABLE (TaskID INT);
 INSERT @gdp2tasks SELECT TaskID FROM METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE METER_INSTALLATION WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE FIELD_TASK WHERE TaskID IN (SELECT TaskID FROM @gdp2tasks);
+EXEC sp_set_session_context N'mdms_purge', 1;   -- τα aggregates σβήνονται μόνο με το flag (trigger 50008)
 DELETE METER_AGGREGATE WHERE MeterID IN (SELECT MeterID FROM @m);
+EXEC sp_set_session_context N'mdms_purge', 0;
 DELETE DOCUMENT WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE METER_CONNECTED_PHASE WHERE MeterID IN (SELECT MeterID FROM @m);
 DELETE METER WHERE MeterID IN (SELECT MeterID FROM @m);

@@ -78,6 +78,10 @@ IF (SELECT COUNT(*) FROM @li) = 2 AND (SELECT Remaining FROM @li WHERE InvoiceID
     PRINT 'OK   list invoices -> own 2, remaining 47.90' ELSE PRINT 'FAIL list invoices';
 
 EXEC sp_consumer_pay_invoice 3, 2, 1, 20.00;
+-- Κριτική 25/11: η πληρωμή τρέχει σε SERIALIZABLE, και μετά η σύνδεση επιστρέφει στο READ COMMITTED (= 2).
+IF OBJECT_DEFINITION(OBJECT_ID('sp_consumer_pay_invoice')) LIKE '%SET TRANSACTION ISOLATION LEVEL SERIALIZABLE%'
+   AND (SELECT transaction_isolation_level FROM sys.dm_exec_sessions WHERE session_id = @@SPID) = 2
+    PRINT 'OK   pay invoice: explicit SERIALIZABLE, caller back to READ COMMITTED after it' ELSE PRINT 'FAIL isolation level of pay invoice';
 IF (SELECT Status FROM INVOICE WHERE InvoiceID = 2) = 'Partially paid' PRINT 'OK   partial payment' ELSE PRINT 'FAIL partial';
 BEGIN TRY EXEC sp_consumer_pay_invoice 3, 2, 1, 100.00; PRINT 'FAIL overpayment accepted'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 51034 PRINT 'OK   overpayment -> 51034' ELSE PRINT 'FAIL overpay: ' + ERROR_MESSAGE(); END CATCH;

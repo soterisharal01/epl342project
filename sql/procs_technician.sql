@@ -505,6 +505,9 @@ CREATE OR ALTER PROCEDURE sp_tech_add_note
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
+    -- Ρητό isolation level (επιστρέφει αυτόματα στο προηγούμενο όταν τελειώσει η procedure): SERIALIZABLE,
+    -- ώστε έλεγχος και εγγραφή να μη χωρίζονται από άλλη συναλλαγή. Τα UPDLOCK/HOLDLOCK μένουν (doc 15, §2).
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
     EXEC sp_tech_assert @UserID;
     IF @NoteKind IS NULL OR @NoteKind NOT IN ('Observation', 'Finding')
         THROW 52125, N'Το είδος σημείωσης πρέπει να είναι Observation ή Finding.', 1;
