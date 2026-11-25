@@ -9,7 +9,7 @@
 MDMS-Cy serves two kinds of work at the same time.
 
 - **OLTP (many short transactions):** a consumer pays an invoice, a technician adds a note, an operator assigns a task, a meter sends a telemetry packet. Each touches a few rows.
-- **Analytic / batch (few long transactions):** the VEE run (`sp_dso_run_vee`) validates every pending reading of a period, `sp_tso_refresh_current_state` sums all leaf transformers, the retention purge (`sp_retention_purge`) deletes old rows, and the supplier, aggregator and TSO reports read `METER_AGGREGATE` and `TRANSFORMER_AGGREGATE`.
+- **Analytic / batch (few long transactions):** the VEE run (`sp_dso_run_vee`) validates every pending reading of a period, `sp_tso_refresh_current_state` sums all leaf transformers and their ancestors, the retention purge (`sp_retention_purge`) deletes old rows, and the supplier, aggregator and TSO reports read `METER_AGGREGATE` and `TRANSFORMER_AGGREGATE`.
 
 The design rule that follows: **writers of telemetry and readers of reports never touch the same table.** Data moves in one direction through intermediate tables, and each step is one transaction.
 
@@ -103,7 +103,7 @@ Mechanism: one transaction inserts the `LOAD_SHED_ORDER`, then **one `REMOTE_COM
 
 Risk: a refresh must not show a half-updated tree to the TSO page.
 
-Mechanism: the leaf sums are first computed into a table variable, then applied with a **single `MERGE` into `TRANSFORMER_CURRENT_STATE`** (update, insert, and delete rows of nodes that are no longer leaves) in one transaction. Readers (`sp_tso_current_state`) see the table before or after the commit. The refresh is a button, not a scheduler, so no background job competes with users. The upper tree levels are never stored; they are summed at query time, which removes a whole class of write contention.
+Mechanism: the leaf sums and then the sums of every ancestor are first computed into table variables, then applied with a **single `MERGE` into `TRANSFORMER_CURRENT_STATE`** (update, insert, and delete rows of removed nodes) in one transaction. Readers (`sp_tso_current_state`) see the whole tree before or after the commit, never a leaf updated without its ancestors. The refresh is a button, not a scheduler, so no background job competes with users.
 
 ### 3.11 Immutability instead of locking (`TR_VALIDATED_READING_Immutable`)
 
@@ -116,7 +116,7 @@ Validated readings are never updated. The trigger refuses every `UPDATE` (error 
 | `AUDIT_LOG` inserts | every state change and every login | Append-only, one narrow row, `LogID` IDENTITY, so inserts go to the end of the clustered key. The row is written inside the caller's transaction, so it commits with the change. |
 | `IDENTITY` columns (`PacketID`, `EventID`, `LogID`, ...) | many sessions insert at once | IDENTITY allocation is not transactional and takes no long lock. Gaps after a rollback are accepted, nothing depends on gap-free numbers. |
 | `RAW_READING` | 96 rows per meter per day per OBIS code | Key `(MeterID, ObisCode, IntervalStart)`: different meters write to different key ranges. Partitioning is future work ([17](17-extensibility.md)). |
-| `TRANSFORMER_CURRENT_STATE` | one MERGE rewrites all leaf rows | Small table (leaves times two codes), refreshed on demand only. |
+| `TRANSFORMER_CURRENT_STATE` | one MERGE rewrites all node rows | Small table (transformers times two codes), refreshed on demand only. |
 | Filtered unique indexes `UX_HOLDING_Open`, `UX_METER_INSTALLATION_Open`, `UX_SUPPLY_CONTRACT_Open` | "at most one open row" | The database refuses a second open row even if two sessions race, so the application needs no lock for this rule. |
 
 ## 4. Deadlock avoidance

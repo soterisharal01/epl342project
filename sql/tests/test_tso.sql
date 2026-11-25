@@ -176,18 +176,25 @@ IF (SELECT RefInterval FROM @s_ref) = @s_latest AND (SELECT LeafCount FROM @s_re
     PRINT 'OK   refresh: RefInterval is the latest validated interval, one pass over all leaves' ELSE PRINT 'FAIL refresh result';
 IF (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID IN (4, 5, 6) AND ObisCode IN ('1.8.0', '2.8.0')) = 6
     PRINT 'OK   refresh: leaves 4, 5, 6 have rows for 1.8.0 and 2.8.0' ELSE PRINT 'FAIL refresh rows for leaves 4, 5, 6';
-IF (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE) = 2 * @s_leaves
-   AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_CURRENT_STATE cs JOIN TRANSFORMER k ON k.ParentTransformerID = cs.TransformerID)
+IF (SELECT COUNT(*) FROM TRANSFORMER_CURRENT_STATE) = 2 * (SELECT COUNT(*) FROM TRANSFORMER)
    AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_CURRENT_STATE WHERE RefInterval <> @s_latest)
-    PRINT 'OK   refresh: only leaves stored (2 codes each), all with the same RefInterval' ELSE PRINT 'FAIL refresh stores non-leaves or mixed intervals';
+    PRINT 'OK   refresh: every node (leaves and ancestors) stored, 2 codes each, all with the same RefInterval' ELSE PRINT 'FAIL refresh does not store the whole tree or mixed intervals';
+IF (SELECT SumValue FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID = 2 AND ObisCode = '1.8.0')
+     = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID IN (4, 5) AND ObisCode = '1.8.0')
+   AND (SELECT SumValue FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID = 1 AND ObisCode = '2.8.0')
+     = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID IN (4, 5, 6) AND ObisCode = '2.8.0')
+   AND (SELECT MeterCount FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID = 1 AND ObisCode = '1.8.0')
+     = (SELECT SUM(MeterCount) FROM TRANSFORMER_CURRENT_STATE WHERE TransformerID IN (4, 5, 6) AND ObisCode = '1.8.0')
+    PRINT 'OK   refresh: stored ancestor rows = sum of their leaves (node 2 = 4 + 5, root = 4 + 5 + 6)' ELSE PRINT 'FAIL refresh ancestor rows';
 IF NOT EXISTS (
     SELECT 1
     FROM TRANSFORMER_CURRENT_STATE cs
     OUTER APPLY (SELECT SUM(vr.Value) AS S, COUNT(DISTINCT vr.MeterID) AS C
                  FROM METER m JOIN VALIDATED_READING vr ON vr.MeterID = m.MeterID
                  WHERE m.TransformerID = cs.TransformerID AND vr.ObisCode = cs.ObisCode AND vr.IntervalStart = @s_latest) d
-    WHERE cs.SumValue <> ISNULL(d.S, 0) OR cs.MeterCount <> ISNULL(d.C, 0))
-    PRINT 'OK   refresh: every stored SumValue/MeterCount equals a direct SUM over VALIDATED_READING' ELSE PRINT 'FAIL refresh sums differ from direct SUM';
+    WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = cs.TransformerID)
+      AND (cs.SumValue <> ISNULL(d.S, 0) OR cs.MeterCount <> ISNULL(d.C, 0)))
+    PRINT 'OK   refresh: every stored leaf SumValue/MeterCount equals a direct SUM over VALIDATED_READING' ELSE PRINT 'FAIL refresh sums differ from direct SUM';
 IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'TRANSFORMER_CURRENT_STATE' AND Action = 'Refresh' AND PerformedBy = 8)
     PRINT 'OK   refresh: AUDIT_LOG row written' ELSE PRINT 'FAIL refresh audit';
 
@@ -203,8 +210,8 @@ INSERT @s_st EXEC sp_tso_current_state 8;
 IF (SELECT COUNT(*) FROM @s_st) = (SELECT COUNT(*) FROM TRANSFORMER) AND (SELECT Level FROM @s_st WHERE TransformerID = 1) = 0
    AND (SELECT Level FROM @s_st WHERE TransformerID = 4) = 2
     PRINT 'OK   current state: one row per node, Level from the root' ELSE PRINT 'FAIL current state shape';
-IF (SELECT ImportKWh FROM @s_st WHERE TransformerID = 1) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0')
-   AND (SELECT ExportKWh FROM @s_st WHERE TransformerID = 1) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '2.8.0')
+IF (SELECT ImportKWh FROM @s_st WHERE TransformerID = 1) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0' AND TransformerID IN (4, 5, 6))
+   AND (SELECT ExportKWh FROM @s_st WHERE TransformerID = 1) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '2.8.0' AND TransformerID IN (4, 5, 6))
    AND (SELECT NetKWh FROM @s_st WHERE TransformerID = 1) = (SELECT ImportKWh - ExportKWh FROM @s_st WHERE TransformerID = 1)
     PRINT 'OK   current state: root = sum of all leaves (import, export, net)' ELSE PRINT 'FAIL current state root sum';
 IF (SELECT ImportKWh FROM @s_st WHERE TransformerID = 2) = (SELECT SUM(SumValue) FROM TRANSFORMER_CURRENT_STATE WHERE ObisCode = '1.8.0' AND TransformerID IN (4, 5))

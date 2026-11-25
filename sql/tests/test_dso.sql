@@ -339,6 +339,24 @@ BEGIN CATCH IF ERROR_NUMBER() = 53000 PRINT 'OK   consumer cannot list transform
 BEGIN TRY EXEC sp_dso_build_aggregates 7, NULL; PRINT 'FAIL NULL day accepted'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 53300 PRINT 'OK   NULL day -> 53300' ELSE PRINT 'FAIL null day: ' + ERROR_MESSAGE(); END CATCH;
 
+-- ---------- Μόνο οριστικοποιημένα: ημέρα με ύποπτη (Suspect) μέτρηση δεν «κλειδώνει» ----------
+-- Ο μετρητής 1 έχει ύποπτη 1.8.0 στις 20/11 04:00 (VEE παραπάνω). Μέσα σε transaction + ROLLBACK,
+-- ώστε τα παρακάτω tests (pending 20-24/11) να βλέπουν την ίδια κατάσταση.
+BEGIN TRAN;
+INSERT @d4_agg EXEC sp_dso_build_aggregates 7, '2026-11-20';
+IF EXISTS (SELECT 1 FROM RAW_READING WHERE MeterID = 1 AND ObisCode = '1.8.0' AND VeeStatus = 'Suspect'
+              AND IntervalStart >= '2026-11-20' AND IntervalStart < '2026-11-21')
+   AND NOT EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 1 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-20')
+   AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 4 AND ObisCode = '1.8.0' AND PeriodType = 'Day' AND PeriodStart = '2026-11-20')
+    PRINT 'OK   day with an open Suspect reading: no meter row and no leaf row yet (not final until edited)' ELSE PRINT 'FAIL aggregate built over an unfinished VEE day';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'AGGREGATE' AND ObjectID = '2026-11-20' AND ResultComment LIKE N'%παραλείφθηκαν%')
+    PRINT 'OK   skipped series counted in the audit row' ELSE PRINT 'FAIL skipped audit';
+ROLLBACK;
+DELETE @d4_agg;
+DECLARE @d4_today DATE = CAST(SYSUTCDATETIME() AS DATE);
+BEGIN TRY EXEC sp_dso_build_aggregates 7, @d4_today; PRINT 'FAIL today built (day not over)'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 53305 PRINT 'OK   today (day not over) -> 53305' ELSE PRINT 'FAIL today: ' + ERROR_MESSAGE(); END CATCH;
+
 -- ---------- Ημέρα 22/11 (μετρητής 2, 1.8.0, φύλλο 5) ----------
 SELECT @d4_sum = SUM(Value), @d4_cnt = COUNT(*), @d4_est = SUM(CASE WHEN Quality = 'Estimated' THEN 1 ELSE 0 END)
   FROM VALIDATED_READING WHERE MeterID = 2 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-22' AND IntervalStart < '2026-11-23';
@@ -514,12 +532,13 @@ IF EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 4 AND a.ObisCode = 
    AND EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 1 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-23' AND a.SumValue = 0 AND a.ReadingCount = 9)
    AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 4 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Day' AND t.PeriodStart = '2026-11-23' AND t.SumValue = 4.5 AND t.MeterCount = 2)
     PRINT 'OK   23/11 aggregates: meter 4 = 4.5 (9 readings), meter 1 = 0, transformer 4 = 4.5 from 2 meters' ELSE PRINT 'FAIL 23/11 aggregates';
-IF EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 1 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-20'
-              AND a.SumValue = (SELECT SUM(Value) FROM VALIDATED_READING WHERE MeterID = 1 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-20' AND IntervalStart < '2026-11-21'))
-   AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 4 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Day' AND t.PeriodStart = '2026-11-20'
-              AND t.SumValue = (SELECT SUM(v.Value) FROM VALIDATED_READING v JOIN METER m ON m.MeterID = v.MeterID
-                                 WHERE m.TransformerID = 4 AND v.ObisCode = '1.8.0' AND v.IntervalStart >= '2026-11-20' AND v.IntervalStart < '2026-11-21'))
-    PRINT 'OK   20/11 aggregates equal the validated sums (meter 1 and transformer 4)' ELSE PRINT 'FAIL 20/11 aggregates';
+-- 20/11: ο μετρητής 1 έχει ακόμη ύποπτη μέτρηση, άρα ούτε αυτός ούτε το φύλλο 4 «κλειδώνουν»· ο μετρητής 2 (φύλλο 5) ναι.
+IF NOT EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 1 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-20')
+   AND NOT EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 4 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Day' AND t.PeriodStart = '2026-11-20')
+   AND EXISTS (SELECT 1 FROM METER_AGGREGATE a WHERE a.MeterID = 2 AND a.ObisCode = '1.8.0' AND a.PeriodType = 'Day' AND a.PeriodStart = '2026-11-20'
+              AND a.SumValue = (SELECT SUM(Value) FROM VALIDATED_READING WHERE MeterID = 2 AND ObisCode = '1.8.0' AND IntervalStart >= '2026-11-20' AND IntervalStart < '2026-11-21'))
+   AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE t WHERE t.TransformerID = 5 AND t.ObisCode = '1.8.0' AND t.PeriodType = 'Day' AND t.PeriodStart = '2026-11-20')
+    PRINT 'OK   20/11: meter 1 and leaf 4 wait for the open Suspect reading; meter 2 = its validated sum, leaf 5 built' ELSE PRINT 'FAIL 20/11 aggregates';
 DELETE @d4_pend;
 INSERT @d4_pend EXEC sp_dso_build_aggregates_pending 7, '2026-11-20', '2026-11-24';
 IF EXISTS (SELECT 1 FROM @d4_pend WHERE DaysBuilt = 0 AND MeterRows = 0 AND TransformerRows = 0)

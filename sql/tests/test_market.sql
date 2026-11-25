@@ -187,3 +187,14 @@ IF EXISTS (SELECT 1 FROM @t4pr WHERE PremiseID = 5 AND IsActive = 0)
     PRINT 'OK   list portfolio premises shows the closed row' ELSE PRINT 'FAIL list portfolio premises';
 BEGIN TRY EXEC sp_aggregator_list_portfolio_premises 10, 99999; PRINT 'FAIL listed foreign portfolio'; END TRY
 BEGIN CATCH IF ERROR_NUMBER() = 52512 PRINT 'OK   list foreign portfolio -> 52512' ELSE PRINT 'FAIL foreign list: ' + ERROR_MESSAGE(); END CATCH;
+
+-- ---------- Μόνο οι ημέρες του συμβολαίου ----------
+-- Σαν να έληξε το συμβόλαιο 1 (υποστατικό 1, μετρητής 1) στις 18/11: η 19/11 του μετρητή 1 δεν μετρά πια.
+BEGIN TRAN;
+DECLARE @cc1 TABLE (PeriodStart DATE, ImportKWh DECIMAL(18,4), ExportKWh DECIMAL(18,4), NetKWh DECIMAL(18,4), MeterCount INT, EstimatedCount INT);
+UPDATE SUPPLY_CONTRACT SET EndDate = '2026-11-18' WHERE ContractID = 1;
+INSERT @cc1 EXEC sp_supplier_totals 9, 'Day', '2026-11-18', '2026-11-19';
+IF (SELECT MeterCount FROM @cc1 WHERE PeriodStart = '2026-11-18') = 3
+   AND (SELECT MeterCount FROM @cc1 WHERE PeriodStart = '2026-11-19') = 2
+    PRINT 'OK   contract ended 18/11: meter 1 counted on 18/11, not on 19/11' ELSE PRINT 'FAIL supplier sees days outside the contract';
+ROLLBACK;

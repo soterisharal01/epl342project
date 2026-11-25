@@ -14,12 +14,12 @@
 
 | Procedure | Who | What it does |
 |---|---|---|
-| `sp_gdpr_submit(@UserID)` | Active Consumer | Creates a `Submitted` request; refused (51403) if one is open (Submitted / Under review / Pre-approved / Approved). Returns `GdprRequestID`. |
-| `sp_gdpr_list(@UserID, @Status = NULL)` | Consumer, Operator, Admin | Consumer sees only own requests; Operator and Admin see all, with the consumer's username and names, and who pre-approved and decided. |
+| `sp_gdpr_submit(@UserID, @RequestType = 'Erasure')` | Active Consumer | Creates a `Submitted` request of type `'Erasure'` (right to be forgotten) or `'Retention'` (keep the account, keep detailed readings only 1 month, spec III.1.4); refused if one is open (51403), if the type is unknown (51413), or for `'Retention'` when retention is already 1 month (51414). Returns `GdprRequestID`. |
+| `sp_gdpr_list(@UserID, @Status = NULL)` | Consumer, Operator, Admin | Consumer sees only own requests; Operator and Admin see all, with the consumer's username and names, who pre-approved and decided, and `RequestType`. |
 | `sp_gdpr_start_review(@UserID, @GdprRequestID)` | Operator | `Submitted` to `Under review` (optional step). |
 | `sp_gdpr_preapprove(@UserID, @GdprRequestID, @Approve, @Comment)` | Operator | From `Submitted` or `Under review` to `Pre-approved` or `Rejected`. |
 | `sp_gdpr_decide(@UserID, @GdprRequestID, @Approve, @Comment)` | Admin | From `Pre-approved` to `Approved` or `Rejected`. |
-| `sp_gdpr_apply(@UserID, @GdprRequestID)` | Admin | From `Approved` to `Applied`: anonymises and erases in one transaction; returns a summary row of counts. |
+| `sp_gdpr_apply(@UserID, @GdprRequestID)` | Admin | From `Approved` to `Applied` in one transaction. `'Erasure'`: anonymises and erases (table below). `'Retention'`: only `RawRetentionMonths = 1`, the account stays Active. **Then, automatically**, runs `sp_retention_purge_core`, so the older readings are deleted at once without the Admin pressing the retention button (if another purge is running, the apply still holds and the next purge deletes them). Returns a summary row of counts plus `RequestType, RawPurged, ValidatedPurged`. |
 | `sp_gdpr_assert_role` | helper | Active user with the given role, else 51400 / 51401 / 51402. |
 
 THROW numbers: 51400 not a consumer, 51401 not an Operator, 51402 not an Admin, 51403 open request exists, 51404 role may not list,
@@ -45,7 +45,7 @@ What `sp_gdpr_apply` does:
 |---|---|
 | `USER_ACCOUNT`: `Username = deleted_<id>`, name `Διαγραμμένος Διαγραμμένος`, `Email = deleted<id>@anon.invalid`, `Phone = NULL`, `PasswordHash = '!ERASED!' + GUID` (not a valid hash, nobody can log in), `AccountStatus = 'Suspended'`, `RawRetentionMonths = 1` | `INVOICE`, `PAYMENT` (legal obligation) |
 | `CONSUMER_NOTIFICATION_CHANNEL` rows deleted | `HOLDING`, `PREMISE`, `SUPPLY_CONTRACT` |
-| `CONSUMPTION_THRESHOLD` rows deactivated (`IsActive = 0`) | Aggregates and readings (raw readings older than 1 month are removed later by GDP-2) |
+| `CONSUMPTION_THRESHOLD` rows deactivated (`IsActive = 0`) | Aggregates and readings (raw readings older than 1 month are removed at once by the automatic purge) |
 | `PAYMENT.BankAccountID` set to NULL, `ACCOUNT_FOR` and `BANK_ACCOUNT` rows deleted | The `AUDIT_LOG` history |
 
 `AUDIT_LOG` rows written by apply contain only counts and IDs. Older audit rows (for example `Add bank account`, which stores the last 4 IBAN digits) are not rewritten.
@@ -64,7 +64,8 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 |---|---|---|
 | `fn_retention_cutoff(@AsOf)` | inline TVF | Time segments per meter: `METER_INSTALLATION` (not Rejected) joined to the `HOLDING` of the premise and the holder's `RawRetentionMonths`. Columns `MeterID, SegFrom, SegTo, UserID, RetentionMonths, Cutoff`. |
 | `sp_retention_preview(@UserID, @AsOf = NULL)` | Admin | Read only. One row per meter and retention length: `MeterID, SerialNumber, RetentionMonths, Cutoff, RawToDelete, ValidatedToDelete, EditsToDelete, AsOf`. Meters with nothing to delete show 0. |
-| `sp_retention_purge(@UserID, @AsOf = NULL)` | Admin | Deletes expired rows; returns `RawDeleted, ValidatedDeleted, EditsDeleted, AsOf`. Writes one `AUDIT_LOG` row (`ObjectType = 'RETENTION'`, counts in `ResultComment`). |
+| `sp_retention_purge_core(@UserID, @AsOf, @Raw OUTPUT, @Validated OUTPUT, @Edits OUTPUT)` | Admin (internal) | The purge itself, no result set; called by the button and by `sp_gdpr_apply`. |
+| `sp_retention_purge(@UserID, @AsOf = NULL)` | Admin | The button: calls the core. Deletes expired rows; returns `RawDeleted, ValidatedDeleted, EditsDeleted, AsOf`. Writes one `AUDIT_LOG` row (`ObjectType = 'RETENTION'`, counts in `ResultComment`). |
 
 `@AsOf` defaults to now (UTC); the demo and the tests pass a later date.
 THROW numbers: 51450 `@AsOf` more than one year in the future (protects against a typo wiping everything), 51451 another purge is running (`sp_getapplock`), 51402 not an Admin.

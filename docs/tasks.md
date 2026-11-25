@@ -150,6 +150,7 @@ change them only through the schema-change process or in the coordinating sessio
 | REL-3 | 30-minute demo rehearsal (everyone presents and explains an area they did not build) | REL-2 | 3/12 | ○ | Pack ready, needs the human: script in [24](24-demo-script.md); presenters 1 to 4 to be named |
 | REL-4 | `12.zip` + printed `docx/` + Moodle upload before 11:00 | REL-3 | 4/12 | ○ | Pack ready, needs the human: `python sql/tools/make_zip.py`, checklist in [23](23-release.md) section 4 |
 | REL-5 | `sql/select.sql`: demo and analytic queries for the exam (not part of the build) | | 2/12 | ✓ | 27 queries; parse check on a database pending |
+| FIX-1 | Spec re-check fixes: current state stored for every node (III.4.2, B16); aggregates only from finished VEE days (III.3.2); a new tenant sees nothing of the previous holder (B18) | | 26/11 | 👀 | Found by a line-by-line check of the spec; 773 OK locally. **After merge: rebuild `sharal01` (REL-1 runbook).** |
 
 ## Old IDs
 

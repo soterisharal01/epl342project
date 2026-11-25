@@ -232,10 +232,12 @@ GO
 -- ---------------------------------------------------------------------
 -- Ανανέωση (κουμπί, όχι scheduler). Κοινό διάστημα αναφοράς: το ΤΕΛΕΥΤΑΙΟ IntervalStart που έχει
 -- επικυρωμένη μέτρηση 1.8.0 ή 2.8.0 (MAX του VALIDATED_READING για τους δύο κωδικούς).
--- Για κάθε ΦΥΛΛΟ και κάθε κωδικό: SUM(Value) των μετρητών του στο διάστημα αυτό και πόσοι μετρητές συνεισέφεραν
--- (Value = ενέργεια 15λέπτου, απόφαση B2). Όσοι μετρητές δεν έχουν μέτρηση απλώς δεν μετράνε.
--- Φύλλο χωρίς καμία μέτρηση παίρνει γραμμή με SumValue 0 και MeterCount 0 (ώστε η σελίδα να δείχνει όλα τα φύλλα).
--- MERGE μόνο για φύλλα: γραμμές κόμβων που δεν είναι πια φύλλα σβήνονται (WHEN NOT MATCHED BY SOURCE).
+-- 1) Για κάθε ΦΥΛΛΟ και κάθε κωδικό: SUM(Value) των μετρητών του στο διάστημα αυτό και πόσοι μετρητές συνεισέφεραν
+--    (Value = ενέργεια 15λέπτου, απόφαση B2). Όσοι μετρητές δεν έχουν μέτρηση απλώς δεν μετράνε.
+-- 2) Για ΚΑΘΕ κόμβο του δέντρου (φύλλα ΚΑΙ όλοι οι πρόγονοι, απόφαση B16 / spec III.4.2): το άθροισμα των φύλλων
+--    από κάτω του, σε οποιοδήποτε βάθος (αναδρομικό CTE: ζεύγη πρόγονος-απόγονος).
+-- Κόμβος χωρίς καμία μέτρηση παίρνει γραμμή με SumValue 0 και MeterCount 0 (ώστε η σελίδα να δείχνει όλο το δέντρο).
+-- Ένα MERGE για όλους τους κόμβους στην ίδια συναλλαγή: όταν αλλάζει ένα φύλλο, ενημερώνονται μαζί και όλοι οι πρόγονοί του.
 -- Μία συναλλαγή + μία γραμμή AUDIT_LOG. Επιστρέφει: RefInterval, LeafCount, RowsAffected.
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE sp_tso_refresh_current_state
@@ -252,10 +254,10 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRAN;
-        DECLARE @Src TABLE (TransformerID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL,
-                            SumValue DECIMAL(18,4) NOT NULL, MeterCount INT NOT NULL,
-                            PRIMARY KEY (TransformerID, ObisCode));
-        INSERT @Src (TransformerID, ObisCode, SumValue, MeterCount)
+        DECLARE @Leaf TABLE (TransformerID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL,
+                             SumValue DECIMAL(18,4) NOT NULL, MeterCount INT NOT NULL,
+                             PRIMARY KEY (TransformerID, ObisCode));
+        INSERT @Leaf (TransformerID, ObisCode, SumValue, MeterCount)
         SELECT l.TransformerID, c.ObisCode,
                CAST(ISNULL(SUM(vr.Value), 0) AS DECIMAL(18,4)),
                COUNT(DISTINCT vr.MeterID)
@@ -266,7 +268,31 @@ BEGIN
         WHERE NOT EXISTS (SELECT 1 FROM TRANSFORMER k WHERE k.ParentTransformerID = l.TransformerID)
         GROUP BY l.TransformerID, c.ObisCode;
 
-        DECLARE @Leaves INT = (SELECT COUNT(DISTINCT TransformerID) FROM @Src), @Rows INT;
+        DECLARE @Leaves INT = (SELECT COUNT(DISTINCT TransformerID) FROM @Leaf), @Rows INT;
+
+        -- Ζεύγη (πρόγονος, απόγονος), μαζί με τον ίδιο τον κόμβο, για δέντρο οποιουδήποτε βάθους.
+        DECLARE @Closure TABLE (AncestorID INT NOT NULL, DescendantID INT NOT NULL);
+        WITH down AS (
+            SELECT t.TransformerID AS AncestorID, t.TransformerID AS DescendantID, 0 AS Depth FROM TRANSFORMER t
+            UNION ALL
+            SELECT d.AncestorID, c.TransformerID, d.Depth + 1
+            FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.DescendantID
+            WHERE d.Depth < 100
+        )
+        INSERT @Closure (AncestorID, DescendantID)
+        SELECT AncestorID, DescendantID FROM down OPTION (MAXRECURSION 100);
+
+        -- Κάθε κόμβος = άθροισμα των φύλλων του υποδέντρου του (ένα φύλλο = ο εαυτός του).
+        DECLARE @Src TABLE (TransformerID INT NOT NULL, ObisCode VARCHAR(20) NOT NULL,
+                            SumValue DECIMAL(18,4) NOT NULL, MeterCount INT NOT NULL,
+                            PRIMARY KEY (TransformerID, ObisCode));
+        INSERT @Src (TransformerID, ObisCode, SumValue, MeterCount)
+        SELECT c.AncestorID, k.ObisCode,
+               CAST(ISNULL(SUM(l.SumValue), 0) AS DECIMAL(18,4)), ISNULL(SUM(l.MeterCount), 0)
+        FROM @Closure c
+        CROSS JOIN (VALUES ('1.8.0'), ('2.8.0')) AS k (ObisCode)
+        LEFT JOIN @Leaf l ON l.TransformerID = c.DescendantID AND l.ObisCode = k.ObisCode
+        GROUP BY c.AncestorID, k.ObisCode;
 
         MERGE TRANSFORMER_CURRENT_STATE AS t
         USING @Src AS s ON t.TransformerID = s.TransformerID AND t.ObisCode = s.ObisCode
@@ -294,11 +320,11 @@ END;
 GO
 
 -- ---------------------------------------------------------------------
--- Τρέχουσα κατάσταση ανά κόμβο: για κάθε κόμβο (ή τον @TransformerID και το υποδέντρο του) το άθροισμα
--- των φύλλων από κάτω, από τον πίνακα TRANSFORMER_CURRENT_STATE. Τα ανώτερα επίπεδα υπολογίζονται εδώ, δεν αποθηκεύονται.
+-- Τρέχουσα κατάσταση ανά κόμβο: για κάθε κόμβο (ή τον @TransformerID και το υποδέντρο του) η αποθηκευμένη
+-- γραμμή του ενδιάμεσου πίνακα TRANSFORMER_CURRENT_STATE (η ανανέωση γράφει φύλλα ΚΑΙ προγόνους, B16).
+-- Μόνο ανάγνωση, κανένας επανυπολογισμός. Κόμβος που προστέθηκε μετά την τελευταία ανανέωση δείχνει 0.
 -- Level: 0 για τη ρίζα (ή για τον κόμβο που ζητήθηκε). ImportKWh = 1.8.0, ExportKWh = 2.8.0, NetKWh = Import - Export.
 -- MeterCount = μετρητές που συνεισέφεραν στο 1.8.0. RefInterval = το πιο πρόσφατο διάστημα των φύλλων (NULL αν δεν έγινε ανανέωση).
--- Το αναδρομικό CTE δεν έχει aggregates: πρώτα ζεύγη (πρόγονος, απόγονος), μετά το SUM.
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE sp_tso_current_state
     @UserID INT, @TransformerID INT = NULL
@@ -309,27 +335,16 @@ BEGIN
     IF @TransformerID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM TRANSFORMER WHERE TransformerID = @TransformerID)
         THROW 53601, N'Ο μετασχηματιστής δεν υπάρχει στο δέντρο.', 1;
 
-    DECLARE @Closure TABLE (AncestorID INT NOT NULL, DescendantID INT NOT NULL);
-    WITH down AS (
-        SELECT t.TransformerID AS AncestorID, t.TransformerID AS DescendantID, 0 AS Depth FROM TRANSFORMER t
-        UNION ALL
-        SELECT d.AncestorID, c.TransformerID, d.Depth + 1
-        FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.DescendantID
-        WHERE d.Depth < 100
-    )
-    INSERT @Closure (AncestorID, DescendantID)
-    SELECT AncestorID, DescendantID FROM down OPTION (MAXRECURSION 100);
-
     DECLARE @Sums TABLE (TransformerID INT PRIMARY KEY, RefInterval DATETIME2(0) NULL,
                          ImportKWh DECIMAL(18,4) NOT NULL, ExportKWh DECIMAL(18,4) NOT NULL, MeterCount INT NOT NULL);
     INSERT @Sums (TransformerID, RefInterval, ImportKWh, ExportKWh, MeterCount)
-    SELECT c.AncestorID, MAX(cs.RefInterval),
+    SELECT t.TransformerID, MAX(cs.RefInterval),
            CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '1.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4)),
            CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '2.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4)),
            ISNULL(SUM(CASE WHEN cs.ObisCode = '1.8.0' THEN cs.MeterCount END), 0)
-    FROM @Closure c
-    LEFT JOIN TRANSFORMER_CURRENT_STATE cs ON cs.TransformerID = c.DescendantID
-    GROUP BY c.AncestorID;
+    FROM TRANSFORMER t
+    LEFT JOIN TRANSFORMER_CURRENT_STATE cs ON cs.TransformerID = t.TransformerID
+    GROUP BY t.TransformerID;
 
     WITH tree AS (
         SELECT t.TransformerID, t.Name, 0 AS Level,
@@ -561,7 +576,7 @@ GO
 -- Στήλη Kind: 'Transformer' (μία γραμμή ανά μετασχηματιστή) ή 'Meter' (μία ανά μετρητή).
 -- Στήλες που δεν ταιριάζουν στο είδος είναι NULL. Μόνο ανάγνωση.
 -- Ρόλοι: ενεργός TSO, DSO ή Operator (οι DSO/Operator βλέπουν το ίδιο δίκτυο, δεν αλλάζει τίποτα).
--- ImportKWh/ExportKWh: άθροισμα 1.8.0/2.8.0 από TRANSFORMER_CURRENT_STATE σε όλο το υποδέντρο.
+-- ImportKWh/ExportKWh: η αποθηκευμένη γραμμή 1.8.0/2.8.0 του κόμβου στο TRANSFORMER_CURRENT_STATE (ήδη άθροισμα του υποδέντρου).
 -- Λάθος: 53800 ο χρήστης δεν είναι ενεργός TSO/DSO/Operator.
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE sp_tso_map_data
@@ -572,25 +587,14 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @UserID AND Role IN ('TSO', 'DSO', 'Operator') AND AccountStatus = 'Active')
         THROW 53800, N'Δεν επιτρέπεται: ο χάρτης είναι μόνο για ενεργό TSO, DSO ή Operator.', 1;
 
-    DECLARE @Closure TABLE (AncestorID INT NOT NULL, DescendantID INT NOT NULL);
-    WITH down AS (
-        SELECT t.TransformerID AS AncestorID, t.TransformerID AS DescendantID, 0 AS Depth FROM TRANSFORMER t
-        UNION ALL
-        SELECT d.AncestorID, c.TransformerID, d.Depth + 1
-        FROM down d JOIN TRANSFORMER c ON c.ParentTransformerID = d.DescendantID
-        WHERE d.Depth < 100
-    )
-    INSERT @Closure (AncestorID, DescendantID)
-    SELECT AncestorID, DescendantID FROM down OPTION (MAXRECURSION 100);
-
     DECLARE @Sums TABLE (TransformerID INT PRIMARY KEY, ImportKWh DECIMAL(18,4) NOT NULL, ExportKWh DECIMAL(18,4) NOT NULL);
     INSERT @Sums (TransformerID, ImportKWh, ExportKWh)
-    SELECT c.AncestorID,
+    SELECT t.TransformerID,
            CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '1.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4)),
            CAST(ISNULL(SUM(CASE WHEN cs.ObisCode = '2.8.0' THEN cs.SumValue END), 0) AS DECIMAL(18,4))
-    FROM @Closure c
-    LEFT JOIN TRANSFORMER_CURRENT_STATE cs ON cs.TransformerID = c.DescendantID
-    GROUP BY c.AncestorID;
+    FROM TRANSFORMER t
+    LEFT JOIN TRANSFORMER_CURRENT_STATE cs ON cs.TransformerID = t.TransformerID
+    GROUP BY t.TransformerID;
 
     WITH tree AS (
         SELECT t.TransformerID, 0 AS Level FROM TRANSFORMER t WHERE t.ParentTransformerID IS NULL

@@ -29,12 +29,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash(last_error(), 'error');
             } else {
                 $x = $r[0];
+                $purged = $x['RawPurged'] === null ? 'η αυτόματη εκκαθάριση δεν έτρεξε τώρα (τρέχει άλλη), πατήστε «Διατήρηση δεδομένων»'
+                    : 'αυτόματη εκκαθάριση: ωμές ' . $x['RawPurged'] . ', επικυρωμένες ' . $x['ValidatedPurged'];
+                if (($x['RequestType'] ?? '') === 'Retention') {
+                    flash('Το αίτημα ' . $id . ' εφαρμόστηκε: η διατήρηση των ωμών μετρήσεων του χρήστη '
+                        . $x['ConsumerID'] . ' είναι πλέον 1 μήνας (ο λογαριασμός μένει ενεργός); ' . $purged . '.');
+                } else
                 flash('Το αίτημα ' . $id . ' εφαρμόστηκε. Ανωνυμοποιήθηκε ο χρήστης ' . $x['AnonymisedUsername']
                     . '. Διαγράφηκαν: κανάλια ' . $x['ChannelsDeleted'] . ', τραπεζικοί λογαριασμοί ' . $x['BankAccountsDeleted']
                     . ' (συνδέσεις ' . $x['AccountForDeleted'] . '); απενεργοποιήθηκαν όρια ' . $x['ThresholdsDeactivated']
                     . '; αποσυνδέθηκαν πληρωμές ' . $x['PaymentsDetached'] . '. Διατηρήθηκαν: τιμολόγια ' . $x['InvoicesKept']
                     . ', πληρωμές ' . $x['PaymentsKept'] . ', κατοχές ' . $x['HoldingsKept']
-                    . '. Διατήρηση ωμών μετρήσεων: ' . $x['RawRetentionMonths'] . ' μήνας.');
+                    . '. Διατήρηση ωμών μετρήσεων: ' . $x['RawRetentionMonths'] . ' μήνας; ' . $purged . '.');
             }
         }
     } else {
@@ -45,8 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 page_header('Αιτήματα GDPR');
 ?>
-<p>Ο Admin αποφασίζει μόνο για αιτήματα που έχουν προεγκριθεί από Operator. Η εφαρμογή ανωνυμοποιεί τον χρήστη
-   οριστικά και διατηρεί τιμολόγια και πληρωμές. Η εκκαθάριση παλιών μετρήσεων είναι στη σελίδα
+<p>Ο Admin αποφασίζει μόνο για αιτήματα που έχουν προεγκριθεί από Operator. Η εφαρμογή μιας «Διαγραφής» ανωνυμοποιεί τον χρήστη
+   οριστικά και διατηρεί τιμολόγια και πληρωμές· μιας «Διατήρησης 1 μήνα» αλλάζει μόνο τη διατήρηση. Και στα δύο οι παλιές
+   μετρήσεις σβήνονται αυτόματα αμέσως. Η εκκαθάριση για όλους (π.χ. τα 3 χρόνια) είναι στη σελίδα
    <a href="gdp_retention.php">Διατήρηση δεδομένων</a>.</p>
 <form method="get" class="inline-form">
   Κατάσταση
@@ -63,10 +70,12 @@ $rows = call_proc('sp_gdpr_list', [uid(), $filter]);
 if ($rows === false || !$rows) {
     print_table($rows);
 } else {
-    echo '<table class="data"><tr><th>#</th><th>Υποβλήθηκε</th><th>Καταναλωτής</th><th>Κατάσταση</th><th>Προέγκριση από</th>'
+    echo '<table class="data"><tr><th>#</th><th>Είδος</th><th>Υποβλήθηκε</th><th>Καταναλωτής</th><th>Κατάσταση</th><th>Προέγκριση από</th>'
        . '<th>Απόφαση</th><th>Εφαρμόστηκε</th><th>Ενέργεια</th></tr>';
     foreach ($rows as $q) {
-        echo '<tr><td>' . h($q['GdprRequestID']) . '</td><td>' . h($q['SubmittedAt']) . '</td><td>'
+        echo '<tr><td>' . h($q['GdprRequestID']) . '</td><td>'
+           . h(($q['RequestType'] ?? 'Erasure') === 'Retention' ? 'Διατήρηση 1 μήνα' : 'Διαγραφή')
+           . '</td><td>' . h($q['SubmittedAt']) . '</td><td>'
            . h($q['Username'] . ' (' . $q['FirstName'] . ' ' . $q['LastName'] . ')') . '</td><td>' . h($q['Status'])
            . '</td><td>' . h($q['PreApprovedByUsername'] ?? '') . ' ' . h($q['PreApprovedAt'] ?? '')
            . '</td><td>' . h($q['DecidedByUsername'] ?? '') . ' ' . h($q['DecidedAt'] ?? '')

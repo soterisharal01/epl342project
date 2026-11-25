@@ -48,7 +48,7 @@ The table count: 62 in Phase A − 7 role tables − `READING` + `RAW_READING` +
 - `GEOFENCE_AGGREGATE` became `TRANSFORMER_AGGREGATE`, stored only for leaves (trigger `TR_TRANSFORMER_AGGREGATE_Leaf`),
   with `PeriodType` Day, Month or Year. The professor said to keep the smallest period we need, because a large period can be built
   from small ones and not the other way round (months give quarters). Day is needed for Day-Ahead data (III.5.2); month and year for reports.
-- `GEOFENCE_CURRENT_STATE` became `TRANSFORMER_CURRENT_STATE`, also for leaves only.
+- `GEOFENCE_CURRENT_STATE` became `TRANSFORMER_CURRENT_STATE`, with a row for every node of the tree (B16).
 - Higher levels are never stored: they are computed on demand with a recursive CTE over the tree (example: `test-step0.sql`, check 4c).
 
 ## Table map by area
@@ -64,7 +64,7 @@ The table count: 62 in Phase A − 7 role tables − `READING` + `RAW_READING` +
 | Aggregates and grid | `METER_AGGREGATE`, `GEOFENCE`, `TRANSFORMER`, `TRANSFORMER_AGGREGATE`, `TRANSFORMER_CURRENT_STATE`, `LOAD_SHED_ORDER` |
 | Events | `EVENT`, `LEADS_TO` |
 | Market | `PORTFOLIO`, `INCLUDES` |
-| Compliance | `GDPR_REQUEST`, `AUDIT_LOG` |
+| Compliance | `GDPR_REQUEST` (with `RequestType` `'Erasure'`/`'Retention'`, added by FIX-1), `AUDIT_LOG` |
 
 ## Things to know when writing procedures
 

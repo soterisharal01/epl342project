@@ -60,7 +60,7 @@ JSON packet ─> TELEMETRY_PACKET ─> RAW_READING (Pending)
                                        ▼
                          VALIDATED_READING (immutable) ──> METER_AGGREGATE (Day/Month/Year)
                                        │                    └─> TRANSFORMER_AGGREGATE (leaves)
-                                       └─> TRANSFORMER_CURRENT_STATE (latest 15-min, leaves)
+                                       └─> TRANSFORMER_CURRENT_STATE (latest 15-min, every node)
                                                    └─> any tree level: computed on demand
 ```
 

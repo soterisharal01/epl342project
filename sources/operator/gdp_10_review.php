@@ -50,10 +50,12 @@ $rows = call_proc('sp_gdpr_list', [uid(), $filter]);
 if ($rows === false || !$rows) {
     print_table($rows);
 } else {
-    echo '<table class="data"><tr><th>#</th><th>Υποβλήθηκε</th><th>Καταναλωτής</th><th>Κατάσταση</th><th>Εξέταση από</th>'
+    echo '<table class="data"><tr><th>#</th><th>Είδος</th><th>Υποβλήθηκε</th><th>Καταναλωτής</th><th>Κατάσταση</th><th>Εξέταση από</th>'
        . '<th>Απόφαση Admin</th><th>Ενέργεια</th></tr>';
     foreach ($rows as $q) {
-        echo '<tr><td>' . h($q['GdprRequestID']) . '</td><td>' . h($q['SubmittedAt']) . '</td><td>'
+        echo '<tr><td>' . h($q['GdprRequestID']) . '</td><td>'
+           . h(($q['RequestType'] ?? 'Erasure') === 'Retention' ? 'Διατήρηση 1 μήνα' : 'Διαγραφή')
+           . '</td><td>' . h($q['SubmittedAt']) . '</td><td>'
            . h($q['Username'] . ' (' . $q['FirstName'] . ' ' . $q['LastName'] . ')') . '</td><td>' . h($q['Status'])
            . '</td><td>' . h($q['PreApprovedByUsername'] ?? '') . ' ' . h($q['PreApprovedAt'] ?? '')
            . '</td><td>' . h($q['DecidedByUsername'] ?? '') . ' ' . h($q['DecidedAt'] ?? '') . '</td><td>';

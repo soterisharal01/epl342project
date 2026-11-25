@@ -181,3 +181,4 @@ The assignment PDF is not in the repo. Each component doc (05–11) has a **Spec
 | 21/11 | `THROW` sub-ranges per area; `run_sql.ps1` serialises full runs with a database lock (parallel sessions). |
 | 21/11 | `finish` command and `docs/next-session.md`. Rule: no `dbo.` and no scalar functions (department server uses per-user schemas). |
 | 21/11 | Ported from the old plan (PR #6, the line-by-line spec audit): spec checklists in docs 05–11 and section 8, agreements X7–X8, decisions B14–B19, professor questions and deliverable names in doc 18, tasks DAT-5 and DOC-4. |
+| 25/11 | FIX-1 (spec re-check): `GDPR_REQUEST.RequestType` added (`'Erasure'` default, `'Retention'`), so a consumer can keep the account and cut detailed retention to 1 month; apply purges automatically. Consumer aggregates follow the same paid-month rule as readings. B16/B18 now enforced in code. |

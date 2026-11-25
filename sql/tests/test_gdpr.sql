@@ -50,7 +50,8 @@ BEGIN CATCH IF ERROR_NUMBER() = 51400 PRINT 'OK   operator submit -> 51400' ELSE
 -- ---------- Λίστα ----------
 DECLARE @l TABLE (GdprRequestID INT, SubmittedAt DATETIME2(0), Status VARCHAR(12), PreApprovedAt DATETIME2(0), DecidedAt DATETIME2(0),
                   AppliedAt DATETIME2(0), ConsumerID INT, Username NVARCHAR(50), FirstName NVARCHAR(50), LastName NVARCHAR(50),
-                  PreApprovedBy INT, PreApprovedByUsername NVARCHAR(50), DecidedBy INT, DecidedByUsername NVARCHAR(50));
+                  PreApprovedBy INT, PreApprovedByUsername NVARCHAR(50), DecidedBy INT, DecidedByUsername NVARCHAR(50),
+                  RequestType VARCHAR(9));
 INSERT @l EXEC sp_gdpr_list @a;
 IF (SELECT COUNT(*) FROM @l) = 1 AND (SELECT ConsumerID FROM @l) = @a PRINT 'OK   consumer list -> only own' ELSE PRINT 'FAIL consumer list';
 DELETE @l;
@@ -114,11 +115,14 @@ BEGIN CATCH IF ERROR_NUMBER() = 51403 PRINT 'OK   submit while Approved -> 51403
 -- ---------- Εφαρμογή ----------
 DECLARE @ap TABLE (GdprRequestID INT, ConsumerID INT, AnonymisedUsername NVARCHAR(50), ChannelsDeleted INT, ThresholdsDeactivated INT,
                    PaymentsDetached INT, AccountForDeleted INT, BankAccountsDeleted INT, InvoicesKept INT, PaymentsKept INT,
-                   HoldingsKept INT, RawRetentionMonths TINYINT);
+                   HoldingsKept INT, RawRetentionMonths TINYINT, RequestType VARCHAR(9), RawPurged INT, ValidatedPurged INT);
 INSERT @ap EXEC sp_gdpr_apply 1, @ra;
 IF EXISTS (SELECT 1 FROM @ap WHERE ConsumerID = @a AND ChannelsDeleted = 2 AND ThresholdsDeactivated = 1 AND PaymentsDetached = 1
            AND AccountForDeleted = 1 AND BankAccountsDeleted = 1 AND InvoicesKept = 1 AND PaymentsKept = 1 AND HoldingsKept = 1 AND RawRetentionMonths = 1)
     PRINT 'OK   apply -> summary counts' ELSE PRINT 'FAIL apply summary';
+IF EXISTS (SELECT 1 FROM @ap WHERE RequestType = 'Erasure' AND RawPurged IS NOT NULL)
+   AND EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'RETENTION' AND Action = 'Retention purge' AND PerformedBy = 1)
+    PRINT 'OK   apply ran the retention purge automatically' ELSE PRINT 'FAIL automatic purge after apply';
 IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @a AND Username = CONCAT(N'deleted_', @a) AND FirstName = N'Διαγραμμένος'
            AND Email = CONCAT('deleted', @a, '@anon.invalid') AND Phone IS NULL AND AccountStatus = 'Suspended'
            AND RawRetentionMonths = 1 AND PasswordHash LIKE '!ERASED!%')
@@ -174,6 +178,31 @@ BEGIN TRY EXEC sp_gdpr_apply 1, @rc; PRINT 'FAIL applied a rejected request'; EN
 BEGIN CATCH IF ERROR_NUMBER() = 51411 PRINT 'OK   apply rejected request -> 51411' ELSE PRINT 'FAIL apply rejected: ' + ERROR_MESSAGE(); END CATCH;
 IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @c AND Username = N'test_gdp_c' AND AccountStatus = 'Active' AND RawRetentionMonths = 36)
     PRINT 'OK   admin-rejected consumer untouched' ELSE PRINT 'FAIL admin-rejected consumer changed';
+
+-- ---------- Αίτημα 'Retention': ο λογαριασμός μένει, διατήρηση 1 μήνας (καταναλωτής D) ----------
+DELETE @r;
+INSERT @r EXEC sp_auth_register_consumer N'test_gdp_d', '$2y$10$abcdefghijklmnopqrstuv', 'gdp_d@test.cy', NULL, N'Δήμητρα', N'Δοκιμή', 'Email';
+DECLARE @d INT = (SELECT MAX(UserID) FROM @r);
+BEGIN TRY EXEC sp_gdpr_submit @d, 'Nonsense'; PRINT 'FAIL bad request type accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51413 PRINT 'OK   bad request type -> 51413' ELSE PRINT 'FAIL bad type: ' + ERROR_MESSAGE(); END CATCH;
+DECLARE @sd TABLE (GdprRequestID INT);
+INSERT @sd EXEC sp_gdpr_submit @d, 'Retention';
+DECLARE @rd INT = (SELECT GdprRequestID FROM @sd);
+IF EXISTS (SELECT 1 FROM GDPR_REQUEST WHERE GdprRequestID = @rd AND RequestType = 'Retention' AND Status = 'Submitted')
+    PRINT 'OK   retention request submitted with its type' ELSE PRINT 'FAIL retention submit';
+EXEC sp_gdpr_preapprove 2, @rd, 1;
+EXEC sp_gdpr_decide 1, @rd, 1;
+DELETE @ap;
+INSERT @ap EXEC sp_gdpr_apply 1, @rd;
+IF EXISTS (SELECT 1 FROM @ap WHERE RequestType = 'Retention' AND AnonymisedUsername IS NULL AND BankAccountsDeleted = 0 AND RawRetentionMonths = 1)
+   AND EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = @d AND Username = N'test_gdp_d' AND AccountStatus = 'Active'
+                  AND RawRetentionMonths = 1 AND Email = 'gdp_d@test.cy')
+   AND EXISTS (SELECT 1 FROM GDPR_REQUEST WHERE GdprRequestID = @rd AND Status = 'Applied')
+    PRINT 'OK   retention apply: account stays Active and named, RawRetentionMonths = 1' ELSE PRINT 'FAIL retention apply';
+IF EXISTS (SELECT 1 FROM AUDIT_LOG WHERE ObjectType = 'USER_ACCOUNT' AND ObjectID = CAST(@d AS VARCHAR) AND Action = 'GDPR retention')
+    PRINT 'OK   retention apply -> AUDIT_LOG' ELSE PRINT 'FAIL retention audit';
+BEGIN TRY EXEC sp_gdpr_submit @d, 'Retention'; PRINT 'FAIL second retention request accepted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 51414 PRINT 'OK   retention already 1 month -> 51414' ELSE PRINT 'FAIL second retention: ' + ERROR_MESSAGE(); END CATCH;
 
 -- ---------- Το demo δεν πειράχτηκε ----------
 IF EXISTS (SELECT 1 FROM USER_ACCOUNT WHERE UserID = 3 AND Username = N'consumer1' AND AccountStatus = 'Active')
