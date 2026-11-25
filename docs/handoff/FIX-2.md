@@ -11,7 +11,7 @@ Review and merge (tests already pass, see below). Re-run if anything changes: (`
 and check that the new FIX-2 lines print `OK` (`FIX-2 finished month closed…`, `FIX-2 second run…`, and `history: prosumer…`). Then merge.
 
 ## Done so far
-- 2026-11-25 14:34 UTC: `build_all.py --drop --tests` run in SSMS on a member's own database on `mssql.cs.ucy.ac.cy\SQL2025`: finished in 55 s, "Query executed successfully", 0 lines starting with `FAIL` (match case), all 5 `FIX-2` lines `OK` (wrong unit, finished month closed, second run, purge keeps, purge deletes).
+- 2026-11-25 14:34 UTC: `build_all.py --drop --tests` run in SSMS on a member's own database on `mssql.cs.ucy.ac.cy\SQL2025`: finished in 55 s, "Query executed successfully", 0 lines starting with `FAIL` (match case), all `FIX-2` lines `OK` (wrong unit, finished month closed, second run; the two purge tests of that run moved to PR #47).
 - 2026-11-25: review of PRs #44 and #45 (both merged). Two gaps found in FIX-1 and fixed here:
   1. `sp_dso_build_aggregates_pending` (sql/procs_dso.sql): after the day loop, a second pass closes every month/year that ended
      before `@UpTo` and has Day rows without a Month/Year row. Before, the month row was written **only** when the helper ran
