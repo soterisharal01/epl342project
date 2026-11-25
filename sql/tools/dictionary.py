@@ -243,6 +243,8 @@ TRIGGER_TEXT = {
     "TR_TRANSFORMER_Tree": "Error 50001: a parent transformer may not have meters. Error 50002: no cycles in the tree.",
     "TR_METER_LeafTransformer": "Error 50003: a meter may be attached only to a transformer that has no children.",
     "TR_TRANSFORMER_AGGREGATE_Leaf": "Error 50004: aggregates are stored only for leaf transformers.",
+    "TR_METER_AGGREGATE_Immutable": "Error 50007: UPDATE is always rejected. Error 50008: DELETE is rejected unless session context mdms_purge = 1 (no application procedure deletes aggregates).",
+    "TR_TRANSFORMER_AGGREGATE_Immutable": "Error 50007: UPDATE is always rejected. Error 50008: DELETE is rejected unless session context mdms_purge = 1 (no application procedure deletes aggregates).",
     "TR_VALIDATED_READING_Immutable": "Error 50005: UPDATE is always rejected. Error 50006: DELETE is rejected unless the retention procedure set session context mdms_purge = 1.",
 }
 

@@ -63,6 +63,7 @@ The assignment PDF is not in the repo, so this list carries the spec for this ar
 | Object | Who | What it does |
 |---|---|---|
 | `fn_retention_cutoff(@AsOf)` | inline TVF | Time segments per meter: `METER_INSTALLATION` (not Rejected) joined to the `HOLDING` of the premise and the holder's `RawRetentionMonths`. Columns `MeterID, SegFrom, SegTo, UserID, RetentionMonths, Cutoff`. |
+| `fn_retention_unaggregated_days(@Before)` | inline TVF | (FIX-3) The (meter, `1.8.0`/`2.8.0`, day) groups before `@Before` that still have data for an aggregate but no `Day` row yet; preview and purge skip them. |
 | `sp_retention_preview(@UserID, @AsOf = NULL)` | Admin | Read only. One row per meter and retention length: `MeterID, SerialNumber, RetentionMonths, Cutoff, RawToDelete, ValidatedToDelete, EditsToDelete, AsOf`. Meters with nothing to delete show 0. |
 | `sp_retention_purge_core(@UserID, @AsOf, @Raw OUTPUT, @Validated OUTPUT, @Edits OUTPUT)` | Admin (internal) | The purge itself, no result set; called by the button and by `sp_gdpr_apply`. |
 | `sp_retention_purge(@UserID, @AsOf = NULL)` | Admin | The button: calls the core. Deletes expired rows; returns `RawDeleted, ValidatedDeleted, EditsDeleted, AsOf`. Writes one `AUDIT_LOG` row (`ObjectType = 'RETENTION'`, counts in `ResultComment`). |
@@ -80,6 +81,11 @@ Design choices:
   the price is that the whole purge is not atomic.
 - **`READING_EDIT`**: the edit rows of purged readings are deleted too, because they hold `OldValue`/`NewValue`, the same values we erase. Order: edits, validated, raw.
 - Never touched: `METER_AGGREGATE`, `TRANSFORMER_AGGREGATE`, transformer data.
+- **Days without a Day aggregate are kept (FIX-3).** `fn_retention_unaggregated_days(@Before)` lists every (meter, `1.8.0`/`2.8.0`, UTC day)
+  that still has a validated reading or a Pending/Suspect raw reading but no `Day` row in `METER_AGGREGATE`. The purge and the preview skip
+  the raw, validated and edit rows of those days, because once they are gone the day, month and year sums could never be built. They are
+  deleted by the first purge after the DSO builds the aggregates (`sp_dso_build_aggregates_pending`). Other codes (voltage etc.) have no
+  aggregates and are purged as before.
 - The page `admin/gdp_retention.php` shows the preview (optional reference date) and a purge button with a confirmation and CSRF.
 
 ## Planned

@@ -827,6 +827,7 @@ Stored daily, monthly or yearly sum of validated readings per meter and OBIS cod
 - **Check** `CK_METER_AGGREGATE_EstimatedCount`: EstimatedCount >= 0
 - **Check** `CK_METER_AGGREGATE_Counts`: EstimatedCount <= ReadingCount
 - **Check** `CK_METER_AGGREGATE_Period`: (PeriodType = 'Day') OR (PeriodType = 'Month' AND DAY(PeriodStart) = 1) OR (PeriodType = 'Year' AND DAY(PeriodStart) = 1 AND MONTH(PeriodStart) = 1)
+- **Trigger** `TR_METER_AGGREGATE_Immutable` (after update, delete): Error 50007: UPDATE is always rejected. Error 50008: DELETE is rejected unless session context mdms_purge = 1 (no application procedure deletes aggregates).
 
 ### GEOFENCE
 
@@ -885,6 +886,7 @@ Stored Day, Month or Year totals for leaf transformers; upper levels are compute
 - **Check** `CK_TRANSFORMER_AGGREGATE_MeterCount`: MeterCount >= 0
 - **Check** `CK_TRANSFORMER_AGGREGATE_Period`: (PeriodType = 'Day') OR (PeriodType = 'Month' AND DAY(PeriodStart) = 1) OR (PeriodType = 'Year' AND DAY(PeriodStart) = 1 AND MONTH(PeriodStart) = 1)
 - **Trigger** `TR_TRANSFORMER_AGGREGATE_Leaf` (after insert, update): Error 50004: aggregates are stored only for leaf transformers.
+- **Trigger** `TR_TRANSFORMER_AGGREGATE_Immutable` (after update, delete): Error 50007: UPDATE is always rejected. Error 50008: DELETE is rejected unless session context mdms_purge = 1 (no application procedure deletes aggregates).
 
 ### TRANSFORMER_CURRENT_STATE
 

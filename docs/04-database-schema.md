@@ -35,6 +35,9 @@ The table count: 62 in Phase A − 7 role tables − `READING` + `RAW_READING` +
   unless the retention procedure first ran `EXEC sp_set_session_context N'mdms_purge', 1`.
 - `READING_EDIT` records VEE estimates and manual fixes. It points to `METER` and `OBIS_CODE`, because an estimate for a gap has no raw row.
 - `METER_AGGREGATE` is computed only from `VALIDATED_READING`.
+- `METER_AGGREGATE` and `TRANSFORMER_AGGREGATE` are final and never change (FIX-3). Triggers `TR_METER_AGGREGATE_Immutable` and
+  `TR_TRANSFORMER_AGGREGATE_Immutable` reject every UPDATE (50007), and every DELETE (50008) unless the session set the `mdms_purge` flag.
+  No application procedure deletes aggregates; the flag is only used by test clean-up.
 
 ### 3. Transformers: a strict tree
 
@@ -70,7 +73,7 @@ The table count: 62 in Phase A − 7 role tables − `READING` + `RAW_READING` +
 
 - Filtered unique indexes (one open row at a time): `UX_HOLDING_Open`, `UX_METER_INSTALLATION_Open`, `UX_SUPPLY_CONTRACT_Open`.
   They need `SET QUOTED_IDENTIFIER ON` on every connection that writes (SSMS and the PHP driver set it; `sqlcmd` needs `-I`).
-- Trigger error numbers 50001–50006 are used by `create.sql`.
+- Trigger error numbers 50001–50008 are used by `create.sql`.
 - `TRANSFORMER_CURRENT_STATE.ObisCode` only accepts `1.8.0` and `2.8.0`.
 - `REMOTE_COMMAND`: `CommandType = 'Load shed'` if and only if `ShedOrderID` is set.
 
