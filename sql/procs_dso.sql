@@ -1284,6 +1284,9 @@ CREATE OR ALTER PROCEDURE sp_dso_losses_report
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
+    -- Ρητό isolation level (επιστρέφει αυτόματα στο προηγούμενο όταν τελειώσει η procedure). Αναφορά μόνο
+    -- ανάγνωσης πάνω σε αμετάβλητα aggregates: αρκεί READ COMMITTED, δεν κλειδώνει τίποτα για πολύ (doc 15).
+    SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
     EXEC sp_dso_assert @UserID;
     IF @From IS NULL OR @To IS NULL OR @From > @To
         THROW 53312, N'Λάθος περίοδος: η αρχή πρέπει να είναι πριν ή ίση με το τέλος.', 1;

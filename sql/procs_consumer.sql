@@ -338,6 +338,9 @@ CREATE OR ALTER PROCEDURE sp_consumer_pay_invoice
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
+    -- Ρητό isolation level (επιστρέφει αυτόματα στο προηγούμενο όταν τελειώσει η procedure): SERIALIZABLE,
+    -- ώστε έλεγχος και εγγραφή να μη χωρίζονται από άλλη συναλλαγή. Τα UPDLOCK/HOLDLOCK μένουν (doc 15, §2).
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
     EXEC sp_consumer_assert @UserID;
     IF NOT EXISTS (SELECT 1 FROM INVOICE WHERE InvoiceID = @InvoiceID AND UserID = @UserID)
         THROW 51030, N'Το τιμολόγιο δεν είναι δικό σας.', 1;
@@ -536,6 +539,9 @@ CREATE OR ALTER PROCEDURE sp_consumer_buy_history
 AS
 BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
+    -- Ρητό isolation level (επιστρέφει αυτόματα στο προηγούμενο όταν τελειώσει η procedure): SERIALIZABLE,
+    -- ώστε έλεγχος και εγγραφή να μη χωρίζονται από άλλη συναλλαγή. Τα UPDLOCK/HOLDLOCK μένουν (doc 15, §2).
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
     EXEC sp_consumer_assert @UserID;
     IF @MonthFrom IS NULL OR @MonthTo IS NULL
         THROW 51109, N'Δώστε μήνα έναρξης και λήξης.', 1;

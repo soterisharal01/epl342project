@@ -575,6 +575,18 @@ BEGIN
 END;
 ROLLBACK;
 
+-- ---------- Κριτική 25/11: τα aggregates είναι αμετάβλητα (TR_*_AGGREGATE_Immutable) ----------
+BEGIN TRY UPDATE METER_AGGREGATE SET SumValue = SumValue + 1 WHERE MeterID = 2 AND PeriodType = 'Day'; PRINT 'FAIL meter aggregate updated'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 50007 PRINT 'OK   UPDATE METER_AGGREGATE -> 50007' ELSE PRINT 'FAIL meter aggregate update: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY DELETE METER_AGGREGATE WHERE MeterID = 2 AND PeriodType = 'Day'; PRINT 'FAIL meter aggregate deleted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 50008 PRINT 'OK   DELETE METER_AGGREGATE without flag -> 50008' ELSE PRINT 'FAIL meter aggregate delete: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY UPDATE TRANSFORMER_AGGREGATE SET SumValue = SumValue + 1 WHERE TransformerID = 5; PRINT 'FAIL transformer aggregate updated'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 50007 PRINT 'OK   UPDATE TRANSFORMER_AGGREGATE -> 50007' ELSE PRINT 'FAIL transformer aggregate update: ' + ERROR_MESSAGE(); END CATCH;
+BEGIN TRY DELETE TRANSFORMER_AGGREGATE WHERE TransformerID = 5; PRINT 'FAIL transformer aggregate deleted'; END TRY
+BEGIN CATCH IF ERROR_NUMBER() = 50008 PRINT 'OK   DELETE TRANSFORMER_AGGREGATE without flag -> 50008' ELSE PRINT 'FAIL transformer aggregate delete: ' + ERROR_MESSAGE(); END CATCH;
+IF EXISTS (SELECT 1 FROM METER_AGGREGATE WHERE MeterID = 2 AND PeriodType = 'Day') AND EXISTS (SELECT 1 FROM TRANSFORMER_AGGREGATE WHERE TransformerID = 5)
+    PRINT 'OK   refused changes left the aggregates in place' ELSE PRINT 'FAIL aggregates lost';
+
 -- ---------- Αναφορά απωλειών ----------
 DECLARE @d4_ls TABLE (TransformerID INT, Name NVARCHAR(100), ObisCode VARCHAR(20), PeriodStart DATE, TransformerSum DECIMAL(18,4), MetersSum DECIMAL(18,4),
                       Difference DECIMAL(18,4), DifferencePct DECIMAL(9,2), MeterCount INT, MetersWithData INT, ActiveMeters INT);
