@@ -501,5 +501,12 @@ The order below touches every ★ function once and keeps the data consistent be
   to students) would run them every 15 minutes or nightly.
 - **Rectangular geofences.** Real areas are polygons; SQL Server's `geography` type would allow them.
 - **One currency, simple tariffs.** Prices per time of day or tiered tariffs are not modelled.
+- **Market totals per leaf area only.** Suppliers and aggregators get Day-Ahead and Intraday totals per leaf transformer
+  (and its geofence), not per higher level of the tree; summing up the tree would be one more query.
+- **Some type lists are fixed.** OBIS codes, meter models, communication types, supply schemes and VEE rules are rows in
+  lookup tables (a new one needs no schema change), but document, task and command types are `CHECK` lists, so a new type
+  there means changing the constraint.
+- **A suspect reading that is never edited holds its day.** That day gets no day total, and the retention purge keeps its
+  readings (even past the retention period) so the total can still be built. The DSO edits the value, or forces the month.
 - **Database login.** The web app uses the member's own SQL login; a production system would use a separate login with
   `EXECUTE` permission only on the procedures (see [16-security.md](16-security.md)).

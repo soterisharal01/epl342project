@@ -103,7 +103,7 @@ def prepare_markdown(parts, title):
             continue
         text = open(p, encoding='utf-8').read()
         text = re.sub(r'(?m)^\[(?:←|<-)[^\n]*\n', '', text)                       # "Back to the menu" line
-        text = re.sub(r'(?m)^> \*\*Status[^\n]*\n', '', text)                           # internal status line
+        text = re.sub(r'(?m)^> \*\*Status[^\n]*\n(?:>[^\n]*\n)*', '', text)              # internal status note (all its lines)
         text = re.sub(r'\[([^\]]+)\]\((?!https?://|#)[^)]*\.md[^)]*\)', r'\1', text)    # links to other .md files
 
         def fix_img(m, p=p, rel=rel):

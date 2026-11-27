@@ -2,7 +2,7 @@
 
 [← Back to the menu](../README.md) · Task: CCY-1 in [tasks.md](tasks.md) · Part of docx (b), chapter (a)
 
-> **Status: written.** Every mechanism below exists in `sql/create.sql` or `sql/procs_*.sql` and is named with its procedure. The 10,000-request numbers (section 8) are filled in by PRF-4.
+> **Status: written.** Every mechanism below exists in `sql/create.sql` or `sql/procs_*.sql` and is named with its procedure. The 10,000-request numbers (section 8) are the PRF-4 measurement of 21/11.
 
 ## 1. Two workloads on one database
 
@@ -173,21 +173,21 @@ The files `sql/tests/test_*.sql` run on one connection. They check the **logic**
 
 - No `SNAPSHOT` or RCSI (open question to the professor).
 - Ingesting a duplicate of a VEE-locked row waits for the run to finish (3.1).
-- A VEE run over a very large period holds many row locks, and SQL Server may escalate them to a table lock. We have not measured where this happens. PRF-4 should try a large period while the load test runs.
+- A VEE run over a very large period holds many row locks, and SQL Server may escalate them to a table lock. We have not measured where this happens: the 10,000-request test (section 8) is read-only and ran without a VEE run.
 
 ## 8. The 10,000-request test (PRF-4)
 
-**Method (planned, script written by PRF-4):** a script calls a mix of OLTP procedures 10,000 times with several parallel workers, measures each call, and reports the share under 2 seconds (requirement: 95%). The mix, from [14](14-indexes-and-performance.md): login, consumer readings and billing, technician task list, telemetry ingest. While it runs, one VEE run is started to show that OLTP calls are not blocked by it.
+**Method:** [sql/perf/perf_10000.py](../sql/perf/perf_10000.py) calls 10,000 stored procedures, the same calls the PHP pages make, with users picked at random, over 4 parallel connections, and measures each call. The requirement is 95% of the calls under 2 seconds. Details and the per-procedure table are in [14](14-indexes-and-performance.md).
 
-**Results (to be filled in by PRF-4):**
+**Results (PRF-4, 21/11):**
 
 | Item | Value |
 |---|---|
-| Date, machine, network (VPN or on campus) | _pending_ |
-| Workers (parallel connections) | _pending_ |
-| Mix (share of each procedure) | _pending_ |
-| Requests | 10,000 |
-| Median / p95 / p99 / max (ms) | _pending_ |
-| Share under 2 s | _pending_ (target 95%) |
-| Errors, deadlocks (1205), 53101 refusals | _pending_ |
-| VEE running during the test? | _pending_ |
+| Date, machine, network | 21/11/2026, local SQL Server 2025 with the large data set (sized for the 27 MB department limit) |
+| Workers (parallel connections) | 4 |
+| Mix (share of each procedure) | consumer readings 25%, invoices 15%, premises 15%, login lookup 15%, technician tasks 10%, supplier Day-Ahead totals 10%, DSO packet list 10% |
+| Requests | 10,000 (24.5 s, about 408 per second) |
+| Median / p95 / p99 / max (ms) | 3.9 / 62.6 / 80.6 / 140.6 |
+| Share under 2 s | **100%** (target 95%) → PASS |
+| Errors, deadlocks (1205), 53101 refusals | 0 errors, 0 deadlocks, 0 refusals |
+| VEE running during the test? | No: the test is read-only. Ingest and VEE under the same load were not measured (section 7) |
