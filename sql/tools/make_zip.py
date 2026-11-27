@@ -103,7 +103,7 @@ def prepare_markdown(parts, title):
             continue
         text = open(p, encoding='utf-8').read()
         text = re.sub(r'(?m)^\[(?:←|<-)[^\n]*\n', '', text)                       # "Back to the menu" line
-        text = re.sub(r'(?m)^> \*\*Status[^\n]*\n', '', text)                           # internal status line
+        text = re.sub(r'(?m)^> \*\*Status[^\n]*\n(?:>[^\n]*\n)*', '', text)              # internal status note (all its lines)
         text = re.sub(r'\[([^\]]+)\]\((?!https?://|#)[^)]*\.md[^)]*\)', r'\1', text)    # links to other .md files
 
         def fix_img(m, p=p, rel=rel):
@@ -128,7 +128,8 @@ def to_docx(parts, title, outname):
         warn(f'{outname}: no source documents exist, not built')
         return None
     fmt = 'markdown+pipe_tables+yaml_metadata_block-raw_tex'
-    args = ['--toc', '--toc-depth=2', '--standalone',
+    # No --toc: Word leaves a TOC field empty until «Update field», so it could print blank. The manual has its own Contents list.
+    args = ['--standalone',
             '--resource-path=' + os.pathsep.join([ROOT, os.path.join(ROOT, 'docs')])]
     os.makedirs(BUILD_DOCX, exist_ok=True)
     out = os.path.join(BUILD_DOCX, outname)
